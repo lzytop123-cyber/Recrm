@@ -1,0 +1,241 @@
+- generic [active] [ref=e1]:
+  - link "跳到主要内容" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "主导航" [ref=e4]:
+      - generic [ref=e10]:
+        - strong [ref=e11]: 中泰旭鼎
+        - generic [ref=e12]: 经营管理系统
+      - navigation [ref=e13]:
+        - paragraph [ref=e14]: 经营
+        - button "⌂ 经营总览" [ref=e15] [cursor=pointer]:
+          - generic [ref=e16]: ⌂
+          - generic [ref=e17]: 经营总览
+        - button "◎ 销售中心 12" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: ◎
+          - generic [ref=e20]: 销售中心
+          - generic [ref=e21]: "12"
+        - button "▣ 项目交付" [ref=e22] [cursor=pointer]:
+          - generic [ref=e23]: ▣
+          - generic [ref=e24]: 项目交付
+        - button "↗ 协作工单 5" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: ↗
+          - generic [ref=e27]: 协作工单
+          - generic [ref=e28]: "5"
+        - button "□ 排期会议" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: □
+          - generic [ref=e31]: 排期会议
+        - paragraph [ref=e32]: 组织
+        - button "◇ 目标绩效" [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: ◇
+          - generic [ref=e35]: 目标绩效
+        - button "♙ 员工管理" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: ♙
+          - generic [ref=e38]: 员工管理
+        - button "▦ 固定资产 3" [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: ▦
+          - generic [ref=e41]: 固定资产
+          - generic [ref=e42]: "3"
+        - button "◫ AI知识库" [ref=e43] [cursor=pointer]:
+          - generic [ref=e44]: ◫
+          - generic [ref=e45]: AI知识库
+      - generic [ref=e46]:
+        - button "↻ 飞书同步正常 最近同步 09:42" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: ↻
+          - generic [ref=e49]:
+            - generic [ref=e50]: 飞书同步正常
+            - generic [ref=e51]: 最近同步 09:42
+        - button "打开账户菜单" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: 王
+          - generic [ref=e55]:
+            - generic [ref=e56]: 王晨
+            - generic [ref=e57]: 经营管理层
+          - generic [ref=e58]: •••
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic [ref=e312]: 经营中心
+          - generic [ref=e313]: /
+          - strong [ref=e314]: 目标绩效
+        - generic [ref=e65]:
+          - button "⌕ 搜索客户、项目、员工 ⌘ K" [ref=e66] [cursor=pointer]:
+            - generic [ref=e67]: ⌕
+            - generic [ref=e68]: 搜索客户、项目、员工
+            - generic [ref=e69]: ⌘ K
+          - button "帮助" [ref=e70] [cursor=pointer]: "?"
+          - button "通知" [ref=e71] [cursor=pointer]:
+            - text: ♢
+            - generic [ref=e72]: "4"
+      - main [ref=e73]:
+        - generic [ref=e315]:
+          - generic [ref=e316]:
+            - heading "目标绩效" [level=1] [ref=e317]
+            - paragraph [ref=e318]: 管理层统一查看全公司目标、考核、校准和绩效风险。
+          - generic [ref=e319]:
+            - generic [ref=e320]: 演示数据
+            - generic [ref=e321]: 管理层专属
+        - generic [ref=e322]:
+          - tablist [ref=e323]:
+            - button "BI总览" [ref=e324] [cursor=pointer]
+            - button "目标地图" [ref=e325] [cursor=pointer]
+            - button "月度考核" [ref=e326] [cursor=pointer]
+            - button "校准与申诉" [ref=e327] [cursor=pointer]
+            - button "工资批次" [ref=e328] [cursor=pointer]
+          - region "目标绩效管理BI看板" [ref=e329]:
+            - generic [ref=e330]:
+              - generic [ref=e331]:
+                - generic [ref=e332]: 管理层专属 BI
+                - generic [ref=e333]: 汇总目标、评价、校准与绩效工资过程数据
+              - generic [ref=e334]: ◇ 仅董事会 / 经营管理层可访问
+            - generic [ref=e335]:
+              - generic [ref=e336]:
+                - heading "新媒体中心绩效经营分析" [level=2] [ref=e337]
+                - paragraph [ref=e338]: 数据更新至 2026-07-27 09:42 · 演示数据
+              - generic [ref=e339]:
+                - generic [ref=e340]:
+                  - text: 目标周期
+                  - combobox "目标周期" [ref=e341]:
+                    - option "2026年第三季度" [selected]
+                - generic [ref=e342]:
+                  - text: 考核月份
+                  - combobox "考核月份" [ref=e343]:
+                    - option "2026年7月" [selected]
+                - generic [ref=e344]:
+                  - text: 部门
+                  - combobox "部门" [ref=e345]:
+                    - option "全部部门"
+                    - option "市场销售中心"
+                    - option "技术交付中心"
+                    - option "新媒体中心" [selected]
+                    - option "讲师部"
+                    - option "业务部"
+                    - option "培训部"
+                    - option "综合管理部"
+                    - option "财务部"
+            - generic [ref=e346]:
+              - article [ref=e347]:
+                - generic [ref=e348]: 目标总体达成率
+                - strong [ref=e349]: 74%
+                - text: 部门目标平均进度
+              - article [ref=e350]:
+                - generic [ref=e351]: 月度考核完成率
+                - strong [ref=e352]: 68%
+                - text: 33 / 48 人已完成
+              - article [ref=e353]:
+                - generic [ref=e354]: 待校准与申诉
+                - strong [ref=e355]: "20"
+                - text: 待校准 18 · 申诉 2
+              - article [ref=e356]:
+                - generic [ref=e357]: 低进度关键结果
+                - strong [ref=e358]: "6"
+                - text: 低于计划进度 10%
+              - article [ref=e359]:
+                - generic [ref=e360]: 绩效工资待衔接
+                - strong [ref=e361]: "3"
+                - text: 评价或申诉尚未完成
+            - generic [ref=e362]:
+              - article [ref=e363]:
+                - generic [ref=e364]:
+                  - generic [ref=e365]:
+                    - heading "目标达成趋势" [level=2] [ref=e366]
+                    - paragraph [ref=e367]: 公司目标平均达成率 · 最近6个月
+                  - generic [ref=e368]: 当前 76%
+                - generic [ref=e369]:
+                  - img "公司目标平均达成率趋势 二月至七月分别为68、70、69、73、72、76%。" [ref=e370]:
+                    - generic [ref=e373]: 68%
+                    - generic [ref=e376]: 70%
+                    - generic [ref=e379]: 69%
+                    - generic [ref=e382]: 73%
+                    - generic [ref=e385]: 72%
+                    - generic [ref=e388]: 76%
+                  - generic [ref=e391]:
+                    - generic [ref=e392]: 2月
+                    - generic [ref=e393]: 3月
+                    - generic [ref=e394]: 4月
+                    - generic [ref=e395]: 5月
+                    - generic [ref=e396]: 6月
+                    - generic [ref=e397]: 7月
+              - article [ref=e398]:
+                - generic [ref=e399]:
+                  - generic [ref=e400]:
+                    - heading "绩效等级分布" [level=2] [ref=e401]
+                    - paragraph [ref=e402]: 已形成结果的 44 人
+                  - generic [ref=e403]: 评价中
+                - generic [ref=e404]:
+                  - img "A加和A占39%，B占47%，C和D占14%" [ref=e405]:
+                    - generic [ref=e406]:
+                      - strong [ref=e407]: "44"
+                      - generic [ref=e408]: 已出结果
+                  - generic [ref=e409]:
+                    - generic [ref=e410]:
+                      - generic [ref=e412]: A+ / A
+                      - emphasis [ref=e413]: 17人 · 39%
+                    - generic [ref=e414]:
+                      - generic [ref=e416]: B
+                      - emphasis [ref=e417]: 21人 · 47%
+                    - generic [ref=e418]:
+                      - generic [ref=e420]: C / D
+                      - emphasis [ref=e421]: 6人 · 14%
+            - generic [ref=e422]:
+              - article [ref=e423]:
+                - generic [ref=e424]:
+                  - generic [ref=e425]:
+                    - heading "部门目标与风险对比" [level=2] [ref=e426]
+                    - paragraph [ref=e427]: 目标进度、低进度关键结果与待校准人数
+                  - button "查看目标地图 ›" [ref=e428]
+                - table "部门绩效对比" [ref=e429]:
+                  - row "部门 目标达成 低进度KR 待校准" [ref=e430]:
+                    - generic [ref=e431]: 部门
+                    - generic [ref=e432]: 目标达成
+                    - generic [ref=e433]: 低进度KR
+                    - generic [ref=e434]: 待校准
+                  - row "新媒体中心 74% 6 2" [ref=e435] [cursor=pointer]:
+                    - generic [ref=e436]: 新媒体中心
+                    - strong [ref=e440]: 74%
+                    - emphasis [ref=e441]: "6"
+                    - emphasis [ref=e442]: "2"
+              - complementary [ref=e443]:
+                - article [ref=e444]:
+                  - generic [ref=e446]:
+                    - heading "本期考核漏斗" [level=2] [ref=e447]
+                    - paragraph [ref=e448]: 截至当前节点
+                  - generic [ref=e449]:
+                    - button "纳入考核 48" [ref=e450] [cursor=pointer]:
+                      - generic [ref=e451]: 纳入考核
+                      - generic [ref=e452]: "48"
+                    - button "完成自评 44" [ref=e454] [cursor=pointer]:
+                      - generic [ref=e455]: 完成自评
+                      - generic [ref=e456]: "44"
+                    - button "完成主管评价 33" [ref=e458] [cursor=pointer]:
+                      - generic [ref=e459]: 完成主管评价
+                      - generic [ref=e460]: "33"
+                    - button "完成校准 12" [ref=e462] [cursor=pointer]:
+                      - generic [ref=e463]: 完成校准
+                      - generic [ref=e464]: "12"
+                - article [ref=e466]:
+                  - generic [ref=e467]:
+                    - generic [ref=e468]:
+                      - heading "管理待办与风险" [level=2] [ref=e469]
+                      - paragraph [ref=e470]: 按影响优先级排序
+                    - generic [ref=e471]: "7"
+                  - button "2个目标未完成逐级对齐 需综合管理部补充上级目标 高" [ref=e472] [cursor=pointer]:
+                    - generic [ref=e474]:
+                      - generic [ref=e475]: 2个目标未完成逐级对齐
+                      - generic [ref=e476]: 需综合管理部补充上级目标
+                    - emphasis [ref=e477]: 高
+                  - button "2项绩效申诉待处理 影响本月绩效结果锁定 中" [ref=e478] [cursor=pointer]:
+                    - generic [ref=e480]:
+                      - generic [ref=e481]: 2项绩效申诉待处理
+                      - generic [ref=e482]: 影响本月绩效结果锁定
+                    - emphasis [ref=e483]: 中
+                  - button "3人评价证据不完整 截止 07-29 18:00 中" [ref=e484] [cursor=pointer]:
+                    - generic [ref=e486]:
+                      - generic [ref=e487]: 3人评价证据不完整
+                      - generic [ref=e488]: 截止 07-29 18:00
+                    - emphasis [ref=e489]: 中
+  - complementary [ref=e305]:
+    - generic [ref=e306]:
+      - generic [ref=e307]:
+        - text: 详情
+        - heading [level=2] [ref=e308]: 记录详情
+      - button [ref=e309] [cursor=pointer]: ×

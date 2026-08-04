@@ -1,0 +1,25 @@
+{
+  "date": "2026-07-22",
+  "scope": "homepage dashboard redesign",
+  "framework": "Vue 3 + Element Plus",
+  "audience": "all employees",
+  "primary_reader": "business owner and managers",
+  "tone": "calm business",
+  "macrostructure": "Workbench",
+  "theme": "Cobalt",
+  "enrichment": "real-data SVG payment trend",
+  "preserved": [
+    "dashboard route",
+    "RBAC data scope",
+    "existing metric groups",
+    "sidebar navigation",
+    "shortcut destinations"
+  ],
+  "constraints": [
+    "no invented metrics",
+    "no chart dependency",
+    "no Git operations",
+    "desktop-first with narrow-window fallback"
+  ]
+}
+

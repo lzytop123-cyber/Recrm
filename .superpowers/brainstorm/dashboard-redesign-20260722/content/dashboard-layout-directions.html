@@ -1,0 +1,85 @@
+<style>
+  .direction-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:24px; }
+  .direction { border:1px solid #d8dee8; border-radius:12px; overflow:hidden; background:#fff; cursor:pointer; transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .direction:hover { transform:translateY(-2px); box-shadow:0 12px 30px rgba(15,31,51,.1); }
+  .direction.selected { border-color:#1f5a48; box-shadow:0 0 0 3px rgba(31,90,72,.14); }
+  .direction-copy { padding:16px 16px 18px; }
+  .direction-copy h3 { margin:0 0 6px; font-size:16px; }
+  .direction-copy p { margin:0; font-size:13px; line-height:1.55; color:#637083; }
+  .screen { aspect-ratio:16/11; background:#eef1f5; padding:10px; color:#152131; font-family:Inter,"Microsoft YaHei",sans-serif; }
+  .screen-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .screen-title { font-size:9px; font-weight:800; }
+  .screen-meta { font-size:5px; color:#758095; }
+  .screen-chip { font-size:5px; padding:3px 5px; background:#e1e7ef; border-radius:999px; }
+  .panel { background:white; border:1px solid #dde3ea; border-radius:6px; }
+  .metric-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+  .metric-mini { padding:8px; min-height:42px; background:#fff; border:1px solid #dde3ea; border-radius:5px; }
+  .metric-mini b { display:block; font-size:14px; margin-top:6px; letter-spacing:-.04em; }
+  .metric-mini span { font-size:5px; color:#748094; }
+  .positive b { color:#177355; }
+  .warning b { color:#ad6718; }
+  .muted-block { height:44px; border-radius:4px; background:linear-gradient(90deg,#edf0f4,#f7f8fa); }
+  .label-mini { font-size:6px; font-weight:700; margin-bottom:6px; }
+  .option-a .body { display:grid; grid-template-columns:minmax(0,1fr) 30%; gap:7px; }
+  .option-a .left { display:grid; gap:7px; }
+  .option-a .hero-number { display:grid; grid-template-columns:1.2fr 1fr; gap:6px; padding:10px; }
+  .option-a .hero-number strong { font-size:24px; line-height:1; }
+  .option-a .rail { padding:9px; display:grid; align-content:start; gap:6px; }
+  .action { padding:6px; background:#f5f7f9; border-left:2px solid #b67828; font-size:6px; }
+  .option-b .primary-stat { display:flex; align-items:flex-end; justify-content:space-between; padding:14px; margin-bottom:7px; background:#0d2437; color:#fff; }
+  .option-b .primary-stat strong { font-size:30px; line-height:1; }
+  .option-b .primary-stat span { font-size:6px; color:#b8c6d2; }
+  .option-b .lower { display:grid; grid-template-columns:1.45fr .8fr; gap:7px; margin-top:7px; }
+  .option-b .lower > div { padding:9px; }
+  .bars { display:flex; align-items:flex-end; gap:4px; height:45px; }
+  .bars i { flex:1; background:#3c7a68; border-radius:2px 2px 0 0; }
+  .option-c .bento { display:grid; grid-template-columns:1.2fr .8fr .8fr; grid-template-rows:58px 58px 45px; gap:6px; }
+  .tile { padding:9px; background:#fff; border:1px solid #dde3ea; border-radius:6px; }
+  .tile.wide { grid-column:span 2; }
+  .tile.tall { grid-row:span 2; background:#102b3e; color:#fff; }
+  .tile strong { display:block; font-size:18px; margin-top:7px; }
+  .tile span { font-size:5px; color:#7b8797; }
+  .tile.tall span { color:#aebcc8; }
+  .recommend { display:inline-flex; margin-bottom:8px; padding:4px 7px; border-radius:999px; font-size:11px; font-weight:700; color:#174f40; background:#e5f1ec; }
+  @media (max-width:900px) { .direction-grid { grid-template-columns:1fr; } }
+</style>
+
+<h2>首页布局选哪一种？</h2>
+<p class="subtitle">共同目标：全体员工都能使用，老板进入首页后能在几秒内看懂经营状态。</p>
+
+<div class="direction-grid">
+  <div class="direction option-a" data-choice="a" onclick="toggleSelect(this)">
+    <div class="screen">
+      <div class="screen-top"><div><div class="screen-title">上午好，刘哲宇</div><div class="screen-meta">今天需要你关注 2 项经营事项</div></div><div class="screen-chip">公司视角</div></div>
+      <div class="body">
+        <div class="left">
+          <div class="panel hero-number"><div><span class="screen-meta">本月已回款</span><strong>¥25,000</strong></div><div class="muted-block"></div></div>
+          <div class="metric-row"><div class="metric-mini"><span>线索总数</span><b>5</b></div><div class="metric-mini positive"><span>已转化</span><b>2</b></div><div class="metric-mini"><span>履约合同</span><b>0</b></div><div class="metric-mini warning"><span>待审批</span><b>0</b></div></div>
+          <div class="panel" style="padding:9px"><div class="label-mini">业务概览</div><div class="muted-block"></div></div>
+        </div>
+        <div class="panel rail"><div class="label-mini">今日待办</div><div class="action">待分配线索 · 2</div><div class="action" style="border-color:#27715b">快速进入线索池</div><div class="action" style="border-color:#51667b">查看客户</div></div>
+      </div>
+    </div>
+    <div class="direction-copy"><span class="recommend">推荐</span><h3>A · 经营总览 + 待办侧栏</h3><p>老板先看核心指标与趋势，员工在右侧处理待办。信息层级最清楚，适合日常长期使用。</p></div>
+  </div>
+
+  <div class="direction option-b" data-choice="b" onclick="toggleSelect(this)">
+    <div class="screen">
+      <div class="screen-top"><div><div class="screen-title">经营驾驶舱</div><div class="screen-meta">2026年7月 · 公司视角</div></div><div class="screen-chip">刷新数据</div></div>
+      <div class="panel primary-stat"><div><span>本月已回款</span><strong>25,000</strong></div><div style="font-size:7px">合同确认 2 笔</div></div>
+      <div class="metric-row"><div class="metric-mini"><span>线索</span><b>5</b></div><div class="metric-mini positive"><span>转化</span><b>2</b></div><div class="metric-mini"><span>项目</span><b>2</b></div><div class="metric-mini warning"><span>待处理</span><b>2</b></div></div>
+      <div class="lower"><div class="panel"><div class="label-mini">经营趋势</div><div class="bars"><i style="height:28%"></i><i style="height:48%"></i><i style="height:42%"></i><i style="height:72%"></i><i style="height:62%"></i><i style="height:88%"></i></div></div><div class="panel"><div class="label-mini">风险提醒</div><div class="action">待分配 · 2</div><div class="action">逾期 · 0</div></div></div>
+    </div>
+    <div class="direction-copy"><h3>B · 单一核心指标驾驶舱</h3><p>用一个大数字建立视觉焦点，适合老板汇报和大屏展示；普通员工的操作入口相对弱一些。</p></div>
+  </div>
+
+  <div class="direction option-c" data-choice="c" onclick="toggleSelect(this)">
+    <div class="screen">
+      <div class="screen-top"><div><div class="screen-title">首页看板</div><div class="screen-meta">数据与工作入口</div></div><div class="screen-chip">刘哲宇</div></div>
+      <div class="bento"><div class="tile wide"><span>本月已回款</span><strong style="color:#177355">¥25,000</strong></div><div class="tile tall"><span>待关注</span><strong>2</strong><div style="font-size:6px;margin-top:12px;color:#d4dee6">待分配线索<br><br>查看全部事项</div></div><div class="tile"><span>线索总数</span><strong>5</strong></div><div class="tile"><span>已转化</span><strong>2</strong></div><div class="tile wide"><span>快捷入口</span><div style="display:flex;gap:5px;margin-top:10px"><div class="screen-chip">线索池</div><div class="screen-chip">客户</div><div class="screen-chip">项目</div></div></div></div>
+    </div>
+    <div class="direction-copy"><h3>C · 模块化 Bento 看板</h3><p>更活泼、空间利用率高，常用内容可灵活排布；指标较多时阅读顺序不如A稳定。</p></div>
+  </div>
+</div>
+
+<p style="margin-top:20px;color:#687587;font-size:13px">点击一个方案进行选择；也可以告诉我“以A为主，加入B的趋势图”这类组合意见。</p>

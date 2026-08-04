@@ -1,0 +1,37 @@
+<style>
+  .final-shell{max-width:1100px;margin:20px auto 28px;background:#eef2f6;border:1px solid #d7dee8;border-radius:16px;padding:18px;color:#122132;box-shadow:0 20px 50px rgba(16,35,54,.08)}
+  .final-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:14px}.final-head h3{margin:0;font-size:21px;letter-spacing:-.02em}.final-head p{margin:5px 0 0;color:#6d7a8c;font-size:12px}.head-actions{display:flex;gap:7px}.soft-pill{padding:7px 10px;border:1px solid #d5dde6;border-radius:999px;background:#fff;font-size:11px;color:#405066}
+  .dash-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px}.main-stack,.side-stack{display:grid;align-content:start;gap:12px}.surface{background:#fff;border:1px solid #dce3eb;border-radius:10px;padding:16px}.surface-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;font-size:12px;font-weight:750}.surface-title small{font-weight:500;color:#788598}
+  .money-strip{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:center}.money-strip span{display:block;font-size:11px;color:#748195}.money-strip strong{display:block;margin-top:7px;font-size:30px;line-height:1;color:#122132;letter-spacing:-.045em}.money-strip em{font-style:normal;color:#187052;font-size:11px;margin-top:7px;display:block}
+  .chart{display:flex;align-items:flex-end;gap:10px;height:72px;border-bottom:1px solid #e3e8ee;padding:0 8px}.chart i{flex:1;background:#b8c8d8;border-radius:3px 3px 0 0;position:relative}.chart i:nth-child(4),.chart i:nth-child(5),.chart i:nth-child(6){background:#2e6f8f}.chart i::after{content:attr(data-m);position:absolute;left:50%;bottom:-18px;transform:translateX(-50%);font-style:normal;font-size:9px;color:#8792a0}
+  .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.metric{padding:13px;background:#f7f9fb;border-radius:8px;border:1px solid transparent}.metric span{font-size:10px;color:#768397}.metric b{display:block;margin-top:7px;font-size:22px;letter-spacing:-.04em}.metric.good b{color:#177052}.metric.warn b{color:#a9671d}
+  .task{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid #e5e9ef}.task:last-child{border-bottom:0}.task b{font-size:12px}.task small{display:block;color:#818c9c;margin-top:3px}.task-count{min-width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:#fff0dc;color:#9c5b16;font-weight:800}
+  .quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.quick{padding:11px;border:1px solid #dce3eb;border-radius:8px;background:#fff;font-size:11px;text-align:left}.quick strong{display:block;margin-bottom:3px}.quick span{color:#8390a1;font-size:9px}
+  .trend-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.trend-option{border:1px solid #d9e0e8;border-radius:10px;padding:15px;cursor:pointer;background:#fff;transition:.15s}.trend-option:hover{transform:translateY(-1px)}.trend-option.selected{border-color:#245f80;box-shadow:0 0 0 3px rgba(36,95,128,.13)}.trend-option b{font-size:13px}.trend-option p{font-size:12px;line-height:1.5;color:#6e7b8c;margin:7px 0 0}.recommended{display:inline-flex;margin-bottom:8px;padding:3px 7px;border-radius:999px;background:#e3eef4;color:#245f80;font-size:10px;font-weight:700}
+  @media(max-width:800px){.dash-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:1fr 1fr}.trend-options{grid-template-columns:1fr}.money-strip{grid-template-columns:1fr}.final-head{flex-direction:column}}
+</style>
+
+<h2>A + B 组合后的首页</h2>
+<p class="subtitle">结构采用稳定双栏：左侧是老板关心的经营数据与趋势，右侧是全体员工可执行的待办和快捷入口。</p>
+
+<div class="final-shell">
+  <div class="final-head"><div><h3>上午好，刘哲宇</h3><p>这是公司当前的经营状态，今天有 2 项需要关注</p></div><div class="head-actions"><span class="soft-pill">公司视角</span><span class="soft-pill">刷新数据</span></div></div>
+  <div class="dash-grid">
+    <div class="main-stack">
+      <div class="surface money-strip"><div><span>本月已回款</span><strong>¥25,000</strong><em>已确认 2 笔</em></div><div><div class="surface-title"><span>经营趋势</span><small>近 6 个月 · 使用真实接口数据</small></div><div class="chart"><i data-m="2月" style="height:22%"></i><i data-m="3月" style="height:36%"></i><i data-m="4月" style="height:31%"></i><i data-m="5月" style="height:52%"></i><i data-m="6月" style="height:68%"></i><i data-m="7月" style="height:82%"></i></div></div></div>
+      <div class="metric-grid"><div class="metric"><span>线索总数</span><b>5</b></div><div class="metric good"><span>已转化</span><b>2</b></div><div class="metric"><span>履约中合同</span><b>0</b></div><div class="metric warn"><span>待审批合同</span><b>0</b></div></div>
+      <div class="surface"><div class="surface-title"><span>业务概览</span><small>销售 · 财务 · 交付</small></div><div class="metric-grid"><div class="metric"><span>项目总数</span><b>2</b></div><div class="metric"><span>处理中工单</span><b>0</b></div><div class="metric"><span>进行中 OKR</span><b>2</b></div><div class="metric"><span>已批工时</span><b>0</b></div></div></div>
+    </div>
+    <div class="side-stack">
+      <div class="surface"><div class="surface-title"><span>今日待办</span><small>2 项</small></div><div class="task"><div><b>待分配线索</b><small>进入线索池处理</small></div><span class="task-count">2</span></div><div class="task"><div><b>待审批合同</b><small>当前无需处理</small></div><span class="task-count" style="background:#edf2f6;color:#667588">0</span></div></div>
+      <div class="surface"><div class="surface-title"><span>快捷入口</span></div><div class="quick-grid"><div class="quick"><strong>线索池</strong><span>跟进销售机会</span></div><div class="quick"><strong>客户</strong><span>查看客户档案</span></div><div class="quick"><strong>项目</strong><span>跟踪交付进度</span></div><div class="quick"><strong>工时</strong><span>登记今日工时</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<h3>趋势图显示什么？</h3>
+<div class="trend-options">
+  <div class="trend-option" data-choice="revenue" onclick="toggleSelect(this)"><span class="recommended">推荐</span><br><b>近 6 个月回款</b><p>最直接体现经营结果，老板扫一眼就能判断现金回收趋势。</p></div>
+  <div class="trend-option" data-choice="sales" onclick="toggleSelect(this)"><b>线索新增与转化</b><p>更偏销售过程管理，适合关注获客效率和转化变化。</p></div>
+  <div class="trend-option" data-choice="switchable" onclick="toggleSelect(this)"><b>回款 / 销售可切换</b><p>信息更完整，但需要新增切换控件和两套后端趋势数据。</p></div>
+</div>

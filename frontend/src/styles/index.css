@@ -1,0 +1,74 @@
+@import './workbench.css';
+@import './overview.css';
+@import './sales.css';
+@import './projects.css';
+@import './tickets.css';
+@import './schedules.css';
+@import './performance.css';
+@import './assets.css';
+@import './knowledge.css';
+
+/* 全局样式：稳重经营台 + 响应式壳层 */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--crm-font-body);
+  color: var(--crm-ink);
+  background: var(--crm-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.brand-text,
+.page-title {
+  font-family: var(--crm-font-display);
+}
+
+.crm-stat-tile strong,
+.ov-kpi-value,
+.allocation-summary strong,
+.project-board-stat strong {
+  font-family: var(--crm-font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+button,
+a,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--crm-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

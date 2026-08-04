@@ -1,0 +1,759 @@
+<template>
+  <div class="crm-page org-page">
+    <template v-if="viewMode === 'list'">
+      <div class="page-head">
+        <div>
+          <h1>员工管理</h1>
+          <p>管理入职、档案、转岗、离职、劳动合同和飞书考勤事实。</p>
+        </div>
+        <div class="head-actions">
+          <el-button @click="viewMode = 'org'">组织架构</el-button>
+          <el-button v-if="canSyncOrg" :loading="syncingAttend" @click="onSyncAttendance">
+            同步飞书考勤
+          </el-button>
+          <el-button v-if="canSyncOrg" :loading="syncing" @click="onSyncFeishu">
+            同步飞书通讯录
+          </el-button>
+          <el-button v-if="canManageOrg" type="primary" @click="openEmployeeCreate">＋ 新增员工</el-button>
+        </div>
+      </div>
+
+      <div class="crm-stats" :style="{ '--crm-stats-cols': '4' }">
+        <button v-for="item in statCards" :key="item.label" type="button" class="crm-stat-tile is-static" disabled>
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <small v-if="item.note">{{ item.note }}</small>
+        </button>
+      </div>
+
+      <el-card>
+        <div class="toolbar">
+          <div class="filters">
+            <el-input
+              v-model="keyword"
+              clearable
+              placeholder="姓名/工号/手机"
+              style="width: 180px"
+              @keyup.enter="reloadEmployees"
+            />
+            <el-tree-select
+              v-model="selectedDeptId"
+              :data="deptTree"
+              check-strictly
+              clearable
+              placeholder="部门"
+              :props="{ label: 'name', value: 'id', children: 'children' }"
+              style="width: 180px"
+              @change="reloadEmployees"
+            />
+            <el-select
+              v-model="employmentFilter"
+              clearable
+              placeholder="用工状态"
+              style="width: 120px"
+              @change="reloadEmployees"
+            >
+              <el-option label="正式" value="正式" />
+              <el-option label="试用" value="试用" />
+              <el-option label="待入职" value="待入职" />
+              <el-option label="离职" value="离职" />
+            </el-select>
+            <el-select
+              v-model="activeFilter"
+              clearable
+              placeholder="账号状态"
+              style="width: 110px"
+              @change="reloadEmployees"
+            >
+              <el-option label="启用" :value="true" />
+              <el-option label="停用" :value="false" />
+            </el-select>
+            <el-button type="primary" @click="reloadEmployees">查询</el-button>
+          </div>
+        </div>
+
+        <el-table :data="employees" v-loading="empLoading" stripe @row-click="goDetail">
+          <el-table-column label="员工" min-width="160">
+            <template #default="{ row }">
+              <div class="emp-cell">
+                <span class="avatar">{{ (row.real_name || row.username || '?').slice(0, 1) }}</span>
+                <div>
+                  <b>{{ row.real_name || row.username }}</b>
+                  <small>{{ row.employee_no || row.username }}</small>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="department_name" label="部门" width="130" />
+          <el-table-column prop="job_title" label="岗位" width="140" />
+          <el-table-column prop="manager_name" label="直属负责人" width="110" />
+          <el-table-column label="入职日期" width="110">
+            <template #default="{ row }">{{ row.hire_date || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="劳动合同" width="110">
+            <template #default="{ row }">{{ row.contract_end || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="今日状态" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="todayTagType(row.today_status)">
+                {{ row.today_status || '—' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="用工" width="80">
+            <template #default="{ row }">
+              {{ row.employment_status || (row.is_active ? '正式' : '离职') }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="140" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click.stop="goDetail(row)">档案</el-button>
+              <el-button v-if="canManageOrg" link @click.stop="openEmployeeEdit(row)">编辑</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="pager">
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :total="total"
+            layout="total, prev, pager, next"
+            @current-change="loadEmployees"
+            @size-change="loadEmployees"
+          />
+        </div>
+      </el-card>
+    </template>
+
+    <template v-else>
+      <div class="page-head">
+        <div>
+          <h1>组织架构</h1>
+          <p>部门与在职人数来自飞书通讯录同步结果。</p>
+        </div>
+        <div class="head-actions">
+          <el-button @click="viewMode = 'list'">← 返回员工列表</el-button>
+          <el-button v-if="canManageOrg" type="primary" @click="openDeptCreate()">新建部门</el-button>
+        </div>
+      </div>
+
+      <div class="crm-stats" :style="{ '--crm-stats-cols': '3' }">
+        <button type="button" class="crm-stat-tile is-static" disabled>
+          <span>一级组织</span>
+          <strong>{{ topDepts.length }}</strong>
+        </button>
+        <button type="button" class="crm-stat-tile is-static" disabled>
+          <span>在职员工</span>
+          <strong>{{ stats.active_employees }}</strong>
+        </button>
+        <button type="button" class="crm-stat-tile is-static" disabled>
+          <span>部门总数</span>
+          <strong>{{ stats.departments }}</strong>
+        </button>
+      </div>
+
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <el-card>
+            <template #header>
+              <div class="card-header">
+                <span>部门树</span>
+                <el-tag size="small" type="success">飞书组织同步</el-tag>
+              </div>
+            </template>
+            <el-tree
+              :data="deptTree"
+              node-key="id"
+              :props="{ label: 'name', children: 'children' }"
+              highlight-current
+              default-expand-all
+              @node-click="onDeptClick"
+            >
+              <template #default="{ data }">
+                <div class="tree-node">
+                  <span>{{ data.name }} ({{ data.user_count || 0 }})</span>
+                  <span v-if="canManageOrg" class="tree-actions" @click.stop>
+                    <el-button link type="primary" size="small" @click="openDeptCreate(data.id)">子部门</el-button>
+                    <el-button link size="small" @click="openDeptEdit(data)">编辑</el-button>
+                    <el-button
+                      v-if="data.code !== 'ROOT'"
+                      link
+                      type="danger"
+                      size="small"
+                      @click="onDeleteDept(data)"
+                    >
+                      删
+                    </el-button>
+                  </span>
+                </div>
+              </template>
+            </el-tree>
+          </el-card>
+        </el-col>
+        <el-col :span="16">
+          <el-card>
+            <el-table :data="flatDepts" stripe>
+              <el-table-column prop="name" label="组织" min-width="160" />
+              <el-table-column prop="code" label="编码" width="140" />
+              <el-table-column prop="user_count" label="人数" width="80" />
+              <el-table-column prop="description" label="说明" min-width="180" />
+              <el-table-column label="操作" width="100">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="filterByDept(row.id)">查看员工</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </el-col>
+      </el-row>
+    </template>
+
+    <el-dialog v-model="deptVisible" :title="deptForm.id ? '编辑部门' : '新建部门'" width="420px" destroy-on-close>
+      <el-form label-width="80px">
+        <el-form-item label="名称">
+          <el-input v-model="deptForm.name" />
+        </el-form-item>
+        <el-form-item label="编码">
+          <el-input v-model="deptForm.code" :disabled="deptForm.code === 'ROOT' && !!deptForm.id" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="deptForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deptVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveDept">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="empVisible"
+      :title="empForm.id ? '编辑员工' : '新建员工'"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="100px">
+        <el-form-item v-if="!empForm.id" label="用户名">
+          <el-input v-model="empForm.username" />
+        </el-form-item>
+        <el-form-item v-if="!empForm.id" label="初始密码">
+          <el-input v-model="empForm.password" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="姓名">
+          <el-input v-model="empForm.real_name" />
+        </el-form-item>
+        <el-form-item label="手机">
+          <el-input v-model="empForm.phone" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="empForm.email" />
+        </el-form-item>
+        <el-form-item label="岗位">
+          <el-input v-model="empForm.job_title" />
+        </el-form-item>
+        <el-form-item label="工号">
+          <el-input v-model="empForm.employee_no" />
+        </el-form-item>
+        <el-form-item label="用工状态">
+          <el-select v-model="empForm.employment_status" clearable style="width: 100%">
+            <el-option label="正式" value="正式" />
+            <el-option label="试用" value="试用" />
+            <el-option label="待入职" value="待入职" />
+            <el-option label="离职" value="离职" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入职日期">
+          <el-date-picker v-model="empForm.hire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="合同到期">
+          <el-date-picker v-model="empForm.contract_end" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="档案状态">
+          <el-select v-model="empForm.archive_status" clearable style="width: 100%">
+            <el-option label="完整" value="完整" />
+            <el-option label="待补" value="待补" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="empForm.id" label="飞书 open_id">
+          <el-input v-model="empForm.feishu_open_id" placeholder="ou_xxx" clearable />
+        </el-form-item>
+        <el-form-item label="部门">
+          <el-tree-select
+            v-model="empForm.department_id"
+            :data="deptTree"
+            check-strictly
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="直属负责人">
+          <el-select v-model="empForm.manager_id" filterable clearable style="width: 100%">
+            <el-option
+              v-for="e in managerOptions"
+              :key="e.id"
+              :label="e.real_name || e.username"
+              :value="e.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="empForm.role_ids" multiple filterable style="width: 100%">
+            <el-option v-for="r in roles" :key="r.id" :label="r.name" :value="r.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="empVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveEmployee">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  createDepartment,
+  createEmployee,
+  deleteDepartment,
+  fetchDepartments,
+  fetchEmployees,
+  fetchOrgRoles,
+  fetchOrgStats,
+  syncFeishuAttendanceApi,
+  syncFeishuContactsApi,
+  updateDepartment,
+  updateEmployee,
+  type Department,
+  type Employee,
+  type OrgStats,
+  type RoleBrief,
+} from '@/api/org'
+import { useUserStore } from '@/stores/user'
+
+const router = useRouter()
+const userStore = useUserStore()
+const canManageOrg = computed(() => userStore.hasPermission('org:manage'))
+const canSyncOrg = computed(() => userStore.hasPermission('org:sync'))
+
+const viewMode = ref<'list' | 'org'>('list')
+const stats = reactive<OrgStats>({
+  departments: 0,
+  employees: 0,
+  active_employees: 0,
+  inactive_employees: 0,
+  pending_onboard: 0,
+  contract_expiring_30d: 0,
+  today_attendance_ok: 0,
+  today_attendance_total: 0,
+})
+const deptTree = ref<Department[]>([])
+const flatDepts = ref<Department[]>([])
+const employees = ref<Employee[]>([])
+const managerOptions = ref<Employee[]>([])
+const roles = ref<RoleBrief[]>([])
+const empLoading = ref(false)
+const syncing = ref(false)
+const syncingAttend = ref(false)
+const saving = ref(false)
+const keyword = ref('')
+const selectedDeptId = ref<number | undefined>()
+const activeFilter = ref<boolean | undefined>()
+const employmentFilter = ref<string | undefined>()
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
+const deptVisible = ref(false)
+const empVisible = ref(false)
+const deptForm = reactive({
+  id: 0,
+  name: '',
+  code: '',
+  description: '',
+  parent_id: undefined as number | undefined,
+})
+const empForm = reactive({
+  id: 0,
+  username: '',
+  password: '',
+  real_name: '',
+  phone: '',
+  email: '',
+  job_title: '',
+  employee_no: '',
+  employment_status: '' as string,
+  hire_date: '' as string,
+  contract_end: '' as string,
+  archive_status: '' as string,
+  feishu_open_id: '' as string,
+  department_id: undefined as number | undefined,
+  manager_id: undefined as number | undefined,
+  role_ids: [] as number[],
+})
+
+const statCards = computed(() => [
+  {
+    label: '在职员工',
+    value: String(stats.active_employees),
+    note: `停用 ${stats.inactive_employees}`,
+  },
+  {
+    label: '待入职',
+    value: String(stats.pending_onboard || 0),
+    note: '用工状态=待入职',
+  },
+  {
+    label: '合同即将到期',
+    value: String(stats.contract_expiring_30d || 0),
+    note: '30天内',
+  },
+  {
+    label: '今日出勤',
+    value: `${stats.today_attendance_ok || 0}/${stats.today_attendance_total || 0}`,
+    note: '飞书同步',
+  },
+])
+
+const topDepts = computed(() => {
+  const roots = deptTree.value
+  if (!roots.length) return []
+  const root = roots[0]
+  return root?.children?.length ? root.children : roots
+})
+
+function todayTagType(status?: string | null) {
+  if (!status) return 'info'
+  if (status === '正常') return 'success'
+  if (status === '休息日') return 'info'
+  if (['请假', '外出'].includes(status)) return 'warning'
+  return 'danger'
+}
+
+function flattenDepts(nodes: Department[], out: Department[] = []) {
+  for (const n of nodes) {
+    out.push(n)
+    if (n.children?.length) flattenDepts(n.children, out)
+  }
+  return out
+}
+
+async function loadStats() {
+  const { data } = await fetchOrgStats()
+  Object.assign(stats, data)
+}
+
+async function loadDepts() {
+  const { data } = await fetchDepartments()
+  deptTree.value = data || []
+  flatDepts.value = flattenDepts(data || [])
+}
+
+async function loadEmployees() {
+  empLoading.value = true
+  try {
+    const { data } = await fetchEmployees({
+      keyword: keyword.value || undefined,
+      department_id: selectedDeptId.value,
+      is_active: activeFilter.value,
+      employment_status: employmentFilter.value,
+      page: page.value,
+      page_size: pageSize.value,
+    })
+    employees.value = data.items || []
+    total.value = data.total || 0
+  } finally {
+    empLoading.value = false
+  }
+}
+
+async function loadManagerOptions() {
+  const { data } = await fetchEmployees({ is_active: true, page: 1, page_size: 100 })
+  managerOptions.value = data.items || []
+}
+
+function reloadEmployees() {
+  page.value = 1
+  loadEmployees()
+}
+
+function goDetail(row: Employee) {
+  router.push(`/org/employees/${row.id}`)
+}
+
+function filterByDept(id: number) {
+  selectedDeptId.value = id
+  viewMode.value = 'list'
+  reloadEmployees()
+}
+
+function onDeptClick(data: Department) {
+  selectedDeptId.value = data.id
+}
+
+function openDeptCreate(parentId?: number) {
+  Object.assign(deptForm, { id: 0, name: '', code: '', description: '', parent_id: parentId })
+  deptVisible.value = true
+}
+
+function openDeptEdit(data: Department) {
+  Object.assign(deptForm, {
+    id: data.id,
+    name: data.name,
+    code: data.code || '',
+    description: data.description || '',
+    parent_id: data.parent_id || undefined,
+  })
+  deptVisible.value = true
+}
+
+async function saveDept() {
+  saving.value = true
+  try {
+    if (deptForm.id) {
+      await updateDepartment(deptForm.id, {
+        name: deptForm.name,
+        code: deptForm.code || undefined,
+        description: deptForm.description,
+      })
+    } else {
+      await createDepartment({
+        name: deptForm.name,
+        code: deptForm.code || undefined,
+        description: deptForm.description,
+        parent_id: deptForm.parent_id,
+      })
+    }
+    deptVisible.value = false
+    ElMessage.success('已保存')
+    await loadDepts()
+    await loadStats()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onDeleteDept(data: Department) {
+  await ElMessageBox.confirm(`确认删除部门「${data.name}」？`, '删除部门')
+  await deleteDepartment(data.id)
+  ElMessage.success('已删除')
+  await loadDepts()
+  await loadStats()
+}
+
+function openEmployeeCreate() {
+  Object.assign(empForm, {
+    id: 0,
+    username: '',
+    password: '',
+    real_name: '',
+    phone: '',
+    email: '',
+    job_title: '',
+    employee_no: '',
+    employment_status: '正式',
+    hire_date: '',
+    contract_end: '',
+    archive_status: '完整',
+    feishu_open_id: '',
+    department_id: selectedDeptId.value,
+    manager_id: undefined,
+    role_ids: [],
+  })
+  empVisible.value = true
+}
+
+function openEmployeeEdit(row: Employee) {
+  Object.assign(empForm, {
+    id: row.id,
+    username: row.username,
+    password: '',
+    real_name: row.real_name || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    job_title: row.job_title || '',
+    employee_no: row.employee_no || '',
+    employment_status: row.employment_status || '',
+    hire_date: row.hire_date || '',
+    contract_end: row.contract_end || '',
+    archive_status: row.archive_status || '',
+    feishu_open_id: row.feishu_open_id || '',
+    department_id: row.department_id || undefined,
+    manager_id: row.manager_id || undefined,
+    role_ids: (row.roles || []).map((r) => r.id),
+  })
+  empVisible.value = true
+}
+
+async function saveEmployee() {
+  saving.value = true
+  try {
+    const payload: Record<string, unknown> = {
+      real_name: empForm.real_name || undefined,
+      phone: empForm.phone || undefined,
+      email: empForm.email || undefined,
+      job_title: empForm.job_title || undefined,
+      employee_no: empForm.employee_no || undefined,
+      employment_status: empForm.employment_status || undefined,
+      hire_date: empForm.hire_date || null,
+      contract_end: empForm.contract_end || null,
+      archive_status: empForm.archive_status || undefined,
+      department_id: empForm.department_id ?? null,
+      manager_id: empForm.manager_id ?? null,
+      role_ids: empForm.role_ids,
+    }
+    if (empForm.id) {
+      payload.feishu_open_id = empForm.feishu_open_id || null
+      await updateEmployee(empForm.id, payload)
+    } else {
+      if (!empForm.username || !empForm.password) {
+        ElMessage.warning('请填写用户名和初始密码')
+        return
+      }
+      await createEmployee({
+        ...payload,
+        username: empForm.username,
+        password: empForm.password,
+        is_active: true,
+      })
+    }
+    empVisible.value = false
+    ElMessage.success('已保存')
+    await loadEmployees()
+    await loadStats()
+    await loadManagerOptions()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onSyncFeishu() {
+  await ElMessageBox.confirm(
+    '将从飞书拉取部门与员工，按 open_id / 邮箱 / 手机匹配并更新本地组织数据。是否继续？',
+    '同步飞书通讯录',
+  )
+  syncing.value = true
+  try {
+    const { data } = await syncFeishuContactsApi()
+    const warn = data.warnings?.length ? `\n提示：${data.warnings.slice(0, 2).join('；')}` : ''
+    ElMessage.success(
+      `同步完成：新建员工 ${data.employees_created}，更新 ${data.employees_updated}，绑定 ${data.employees_bound}${warn}`,
+    )
+    await Promise.all([loadDepts(), loadEmployees(), loadStats(), loadManagerOptions()])
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || e?.message || '同步失败')
+  } finally {
+    syncing.value = false
+  }
+}
+
+async function onSyncAttendance() {
+  syncingAttend.value = true
+  try {
+    const { data } = await syncFeishuAttendanceApi()
+    ElMessage.success(`考勤同步：${data.users_synced} 人，写入 ${data.days_upserted} 条日事实`)
+    if (data.warnings?.length) {
+      ElMessage.warning(data.warnings.slice(0, 2).join('；'))
+    }
+    await Promise.all([loadEmployees(), loadStats()])
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || e?.message || '考勤同步失败')
+  } finally {
+    syncingAttend.value = false
+  }
+}
+
+onMounted(async () => {
+  const { data: roleData } = await fetchOrgRoles()
+  roles.value = roleData || []
+  await Promise.all([loadStats(), loadDepts(), loadEmployees(), loadManagerOptions()])
+})
+</script>
+
+<style scoped>
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.page-head p {
+  margin: 6px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tree-node {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding-right: 8px;
+}
+.tree-actions {
+  opacity: 0.85;
+}
+.emp-cell {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.emp-cell .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e8eef8;
+  color: #2f5bb8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.emp-cell small {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.crm-stat-tile small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 400;
+}
+</style>

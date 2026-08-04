@@ -1,0 +1,54 @@
+# ========== Python / Backend ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/.venv/
+backend/venv/
+venv/
+.env
+backend/.env
+*.db
+*.sqlite
+*.sqlite3
+backend/app.db
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# ========== Node / Frontend ==========
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+.npm
+.pnpm-store/
+
+# ========== IDE / OS ==========
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ========== Uploads ==========
+backend/uploads/
+
+# ========== Logs / Temp ==========
+*.log
+logs/
+tmp/
+temp/
+.coverage
+htmlcov/
+
+# ========== Secrets ==========
+*.pem
+*.key
+secrets/

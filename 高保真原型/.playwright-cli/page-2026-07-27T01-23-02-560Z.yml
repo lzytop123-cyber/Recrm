@@ -1,0 +1,212 @@
+- generic [active] [ref=e1]:
+  - link "跳到主要内容" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "主导航" [ref=e4]:
+      - generic [ref=e10]:
+        - strong [ref=e11]: 中泰旭鼎
+        - generic [ref=e12]: 经营管理系统
+      - navigation [ref=e13]:
+        - paragraph [ref=e14]: 经营
+        - button "⌂ 经营总览" [ref=e15] [cursor=pointer]:
+          - generic [ref=e16]: ⌂
+          - generic [ref=e17]: 经营总览
+        - button "◎ 销售中心 12" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: ◎
+          - generic [ref=e20]: 销售中心
+          - generic [ref=e21]: "12"
+        - button "▣ 项目交付" [ref=e22] [cursor=pointer]:
+          - generic [ref=e23]: ▣
+          - generic [ref=e24]: 项目交付
+        - button "↗ 协作工单 5" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: ↗
+          - generic [ref=e27]: 协作工单
+          - generic [ref=e28]: "5"
+        - button "□ 排期会议" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: □
+          - generic [ref=e31]: 排期会议
+        - paragraph [ref=e32]: 组织
+        - button "◇ 目标绩效" [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: ◇
+          - generic [ref=e35]: 目标绩效
+        - button "♙ 员工管理" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: ♙
+          - generic [ref=e38]: 员工管理
+        - button "▦ 固定资产 3" [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: ▦
+          - generic [ref=e41]: 固定资产
+          - generic [ref=e42]: "3"
+        - button "◫ AI知识库" [ref=e43] [cursor=pointer]:
+          - generic [ref=e44]: ◫
+          - generic [ref=e45]: AI知识库
+      - generic [ref=e46]:
+        - button "↻ 飞书同步正常 最近同步 09:42" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: ↻
+          - generic [ref=e49]:
+            - generic [ref=e50]: 飞书同步正常
+            - generic [ref=e51]: 最近同步 09:42
+        - button "打开账户菜单" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: 王
+          - generic [ref=e55]:
+            - generic [ref=e56]: 王晨
+            - generic [ref=e57]: 经营管理层
+          - generic [ref=e58]: •••
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic [ref=e62]: 经营中心
+          - generic [ref=e63]: /
+          - strong [ref=e64]: 固定资产
+        - generic [ref=e65]:
+          - button "⌕ 搜索客户、项目、员工 ⌘ K" [ref=e66] [cursor=pointer]:
+            - generic [ref=e67]: ⌕
+            - generic [ref=e68]: 搜索客户、项目、员工
+            - generic [ref=e69]: ⌘ K
+          - button "帮助" [ref=e70] [cursor=pointer]: "?"
+          - button "通知" [ref=e71] [cursor=pointer]:
+            - text: ♢
+            - generic [ref=e72]: "4"
+      - main [ref=e73]:
+        - generic [ref=e74]:
+          - generic [ref=e75]:
+            - heading "固定资产管理" [level=1] [ref=e76]
+            - paragraph [ref=e77]: 统一管理设备台账、借用归还、扫码盘点、维保、折旧与处置。
+          - generic [ref=e78]:
+            - generic [ref=e79]: 演示数据
+            - button "管理员视角⌄" [ref=e80] [cursor=pointer]
+            - button "＋ 设备入库" [ref=e81] [cursor=pointer]
+        - generic [ref=e82]:
+          - button "资产总览" [ref=e83] [cursor=pointer]
+          - button "资产台账" [ref=e84] [cursor=pointer]
+          - button "借用归还" [ref=e85] [cursor=pointer]
+          - button "盘点维保" [ref=e86] [cursor=pointer]
+          - button "折旧处置" [ref=e87] [cursor=pointer]
+          - button "报表分析" [ref=e88] [cursor=pointer]
+        - generic [ref=e89]:
+          - article [ref=e90]:
+            - generic [ref=e91]: 资
+            - generic [ref=e92]: 资产总数
+            - strong [ref=e93]: "126"
+            - emphasis [ref=e94]: 原值 ¥1,268,400
+          - article [ref=e95]:
+            - generic [ref=e96]: 用
+            - generic [ref=e97]: 当前可用
+            - strong [ref=e98]: "82"
+            - emphasis [ref=e99]: 可用率 65%
+          - article [ref=e100]:
+            - generic [ref=e101]: 借
+            - generic [ref=e102]: 借出 / 预占
+            - strong [ref=e103]: "27"
+            - emphasis [ref=e104]: 今日到期 4 件
+          - article [ref=e105]:
+            - generic [ref=e106]: 醒
+            - generic [ref=e107]: 待处理提醒
+            - strong [ref=e108]: "7"
+            - emphasis [ref=e109]: 维保 3 · 逾期 1
+        - generic [ref=e110]:
+          - article [ref=e111]:
+            - generic [ref=e112]:
+              - generic [ref=e113]:
+                - heading "器材使用态势" [level=2] [ref=e114]
+                - paragraph [ref=e115]: 新媒体部门 · 最近30天
+              - generic [ref=e116]: 利用率 74%
+            - generic [ref=e117]:
+              - generic [ref=e118]:
+                - generic [ref=e119]:
+                  - generic [ref=e120]: 相机
+                  - generic [ref=e121]: 8件
+                - strong [ref=e124]: 86%
+              - generic [ref=e125]:
+                - generic [ref=e126]:
+                  - generic [ref=e127]: 镜头
+                  - generic [ref=e128]: 14件
+                - strong [ref=e131]: 78%
+              - generic [ref=e132]:
+                - generic [ref=e133]:
+                  - generic [ref=e134]: 灯具
+                  - generic [ref=e135]: 18件
+                - strong [ref=e138]: 62%
+              - generic [ref=e139]:
+                - generic [ref=e140]:
+                  - generic [ref=e141]: 收音
+                  - generic [ref=e142]: 7件
+                - strong [ref=e145]: 58%
+              - generic [ref=e146]:
+                - generic [ref=e147]:
+                  - generic [ref=e148]: 稳定器
+                  - generic [ref=e149]: 6件
+                - strong [ref=e152]: 71%
+          - article [ref=e153]:
+            - generic [ref=e154]:
+              - generic [ref=e155]:
+                - heading "今日提醒" [level=2] [ref=e156]
+                - paragraph [ref=e157]: 按风险优先级排序
+              - button "查看全部" [ref=e158] [cursor=pointer]
+            - generic [ref=e159]:
+              - button "南光 Forza 300B II 维保到期 · 当前维修中 今天" [ref=e160] [cursor=pointer]:
+                - generic [ref=e162]:
+                  - generic [ref=e163]: 南光 Forza 300B II
+                  - generic [ref=e164]: 维保到期 · 当前维修中
+                - emphasis [ref=e165]: 今天
+              - button "产品功能直播器材 待归还验收 · 许嘉 2天" [ref=e166] [cursor=pointer]:
+                - generic [ref=e168]:
+                  - generic [ref=e169]: 产品功能直播器材
+                  - generic [ref=e170]: 待归还验收 · 许嘉
+                - emphasis [ref=e171]: 2天
+              - button "相机分类库存预警 可用 2 件 · 安全库存 3 件 关注" [ref=e172] [cursor=pointer]:
+                - generic [ref=e174]:
+                  - generic [ref=e175]: 相机分类库存预警
+                  - generic [ref=e176]: 可用 2 件 · 安全库存 3 件
+                - emphasis [ref=e177]: 关注
+        - article [ref=e178]:
+          - generic [ref=e179]:
+            - generic [ref=e180]:
+              - heading "最近借用与使用记录" [level=2] [ref=e181]
+              - paragraph [ref=e182]: 可追溯至人员、项目和拍摄档期
+            - button "移动端扫码" [ref=e183] [cursor=pointer]
+          - table [ref=e185]:
+            - rowgroup [ref=e186]:
+              - row [ref=e187]:
+                - columnheader "申请/用途" [ref=e188]
+                - columnheader "使用人" [ref=e189]
+                - columnheader "计划时间" [ref=e190]
+                - columnheader "器材" [ref=e191]
+                - columnheader "关联档期" [ref=e192]
+                - columnheader "状态" [ref=e193]
+            - rowgroup [ref=e194]:
+              - row [ref=e195] [cursor=pointer]:
+                - cell "星河制造案例访谈拍摄 JY-072701" [ref=e196]:
+                  - text: 星河制造案例访谈拍摄
+                  - generic [ref=e197]: JY-072701
+                - cell "林溪" [ref=e198]
+                - cell "07-29 09:00—18:00" [ref=e199]
+                - cell "3 件" [ref=e200]
+                - cell [ref=e201]:
+                  - button "PS-072904" [ref=e202]
+                - cell "待审批" [ref=e203]
+              - row [ref=e205] [cursor=pointer]:
+                - cell "产品功能直播 JY-072698" [ref=e206]:
+                  - text: 产品功能直播
+                  - generic [ref=e207]: JY-072698
+                - cell "许嘉" [ref=e208]
+                - cell "07-25 18:00—22:00" [ref=e209]
+                - cell "1 件" [ref=e210]
+                - cell [ref=e211]:
+                  - button "PS-072255" [ref=e212]
+                - cell "待归还验收" [ref=e213]
+              - row [ref=e215] [cursor=pointer]:
+                - cell "客户品牌短片 JY-072684" [ref=e216]:
+                  - text: 客户品牌短片
+                  - generic [ref=e217]: JY-072684
+                - cell "安然" [ref=e218]
+                - cell "07-30 10:00—17:00" [ref=e219]
+                - cell "2 件" [ref=e220]
+                - cell [ref=e221]:
+                  - button "PS-073002" [ref=e222]
+                - cell "已批准" [ref=e223]
+  - complementary [ref=e225]:
+    - generic [ref=e226]:
+      - generic [ref=e227]:
+        - text: 详情
+        - heading [level=2] [ref=e228]: 记录详情
+      - button [ref=e229] [cursor=pointer]: ×

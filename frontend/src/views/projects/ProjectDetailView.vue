@@ -1,0 +1,567 @@
+<template>
+  <div class="detail-page" v-loading="loading">
+    <div class="top-bar">
+      <el-button @click="$router.push('/projects')">返回列表</el-button>
+      <div class="actions" v-if="project">
+        <el-button
+          v-if="!['completed', 'terminated'].includes(project.status)"
+          type="primary"
+          @click="editVisible = true"
+        >
+          编辑
+        </el-button>
+        <el-button v-if="project.status === 'initiating'" type="warning" @click="onPlan">进入计划</el-button>
+        <el-button
+          v-if="['initiating', 'planning'].includes(project.status)"
+          type="success"
+          @click="onExecute"
+        >
+          进入执行
+        </el-button>
+        <el-button v-if="project.status === 'executing'" type="warning" @click="onAccepting">进入验收</el-button>
+        <el-button
+          v-if="project.status === 'accepting' && project.acceptance_approval_status !== 'pending'"
+          type="success"
+          @click="goAcceptanceWorkbench"
+        >
+          提交验收审批
+        </el-button>
+        <el-tag
+          v-if="project.acceptance_approval_status === 'pending'"
+          type="warning"
+          style="margin-right: 8px"
+        >
+          验收审批中
+        </el-tag>
+        <el-button
+          v-if="project.status === 'accepted'"
+          type="success"
+          @click="goAcceptanceWorkbench"
+        >
+          去结项
+        </el-button>
+        <el-button
+          v-if="!['completed', 'terminated'].includes(project.status)"
+          type="danger"
+          plain
+          @click="terminateVisible = true"
+        >
+          终止
+        </el-button>
+      </div>
+    </div>
+
+    <template v-if="project">
+      <el-card>
+        <template #header>
+          <div class="card-header">
+            <span>{{ project.project_no }} · {{ project.name }}</span>
+            <el-tag :type="statusTag(project.status)" size="small">
+              {{ PROJECT_STATUS_LABEL[project.status] || project.status }}
+            </el-tag>
+          </div>
+        </template>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="项目编号">{{ project.project_no }}</el-descriptions-item>
+          <el-descriptions-item label="项目名称">{{ project.name }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ typeLabel(project.project_type) }}</el-descriptions-item>
+          <el-descriptions-item label="客户">
+            <el-button
+              v-if="project.customer_id"
+              link
+              type="primary"
+              @click="$router.push(`/customers/${project.customer_id}`)"
+            >
+              {{ project.customer_name || `#${project.customer_id}` }}
+            </el-button>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="合同">
+            <el-button
+              v-if="project.contract_id"
+              link
+              type="primary"
+              @click="$router.push(`/contracts/${project.contract_id}`)"
+            >
+              {{ project.contract_no || `#${project.contract_id}` }}
+            </el-button>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="负责人">{{ project.manager_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="计划开始">{{ project.start_date || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="计划结束">{{ project.end_date || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="实际结束">{{ project.actual_end_date || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="进度" :span="3">
+            <el-progress :percentage="project.progress || 0" style="max-width: 360px" />
+          </el-descriptions-item>
+          <el-descriptions-item label="交付范围" :span="3">{{ project.scope_desc || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="project.terminate_reason" label="终止原因" :span="3">
+            {{ project.terminate_reason }}
+          </el-descriptions-item>
+          <el-descriptions-item label="备注" :span="3">{{ project.remark || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card
+        v-if="project.acceptance_result || project.acceptance_approval_status !== 'none'"
+        class="stack-gap"
+      >
+        <template #header>
+          <div class="card-header">
+            <span>内部验收申请</span>
+            <el-tag
+              v-if="project.acceptance_approval_status === 'pending'"
+              type="warning"
+              size="small"
+            >
+              审批中
+            </el-tag>
+            <el-tag
+              v-else-if="project.acceptance_approval_status === 'approved'"
+              type="success"
+              size="small"
+            >
+              已通过
+            </el-tag>
+            <el-tag
+              v-else-if="project.acceptance_approval_status === 'rejected'"
+              type="danger"
+              size="small"
+            >
+              已驳回
+            </el-tag>
+          </div>
+        </template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="验收结果">
+            {{ ACCEPTANCE_RESULT_LABEL[project.acceptance_result || ''] || project.acceptance_result || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="验收日期">{{ project.accepted_at || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="验收方式">{{ project.acceptance_method || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="验收负责人">
+            {{ project.acceptance_owner_name || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="提交人">
+            {{ project.acceptance_submitted_by_name || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="提交时间">
+            {{ formatDateTime(project.acceptance_submitted_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="结论与遗留安排" :span="2">
+            {{ project.acceptance_conclusion || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="遗留问题摘要" :span="2">
+            {{ project.leftover_summary || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="验收附件" :span="2">
+            <a
+              v-if="project.acceptance_attachment_path"
+              :href="`/uploads/${project.acceptance_attachment_path}`"
+              target="_blank"
+              rel="noopener"
+            >
+              {{ project.acceptance_attachment || '查看附件' }}
+            </a>
+            <span v-else>{{ project.acceptance_attachment || '—' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="project.acceptance_reject_reason"
+            label="驳回原因"
+            :span="2"
+          >
+            {{ project.acceptance_reject_reason }}
+          </el-descriptions-item>
+          <el-descriptions-item label="财务核对">
+            <template v-if="project.finance_check_status === 'pending'">审批中</template>
+            <template v-else-if="project.finance_check_passed">已通过</template>
+            <template v-else-if="project.finance_check_status === 'rejected'">已驳回</template>
+            <template v-else>未通过</template>
+          </el-descriptions-item>
+          <el-descriptions-item label="遗留关闭">
+            {{ project.leftover_summary ? (project.leftover_closed ? '已关闭' : '未关闭') : '无遗留' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card class="stack-gap">
+        <template #header>
+          <div class="card-header">
+            <span>里程碑</span>
+            <el-button
+              v-if="!['completed', 'terminated'].includes(project.status)"
+              size="small"
+              type="primary"
+              @click="openMilestone"
+            >
+              添加里程碑
+            </el-button>
+          </div>
+        </template>
+        <el-table :data="project.milestones || []" stripe>
+          <el-table-column prop="sort_order" label="序号" width="70" />
+          <el-table-column prop="name" label="名称" min-width="160" />
+          <el-table-column prop="deadline" label="截止日期" width="120" />
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">
+              <el-select
+                :model-value="row.status"
+                size="small"
+                style="width: 100px"
+                :disabled="['completed', 'terminated'].includes(project!.status)"
+                @change="(v: string) => onMilestoneStatus(row, v)"
+              >
+                <el-option
+                  v-for="(label, key) in MILESTONE_STATUS_LABEL"
+                  :key="key"
+                  :label="label"
+                  :value="key"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+        </el-table>
+        <el-empty v-if="!(project.milestones || []).length" description="暂无里程碑" :image-size="64" />
+      </el-card>
+
+      <el-card class="stack-gap">
+        <template #header>
+          <div class="card-header">
+            <span>关联排期</span>
+            <el-button size="small" @click="$router.push('/schedules')">打开排期会议</el-button>
+          </div>
+        </template>
+        <el-table :data="schedules" v-loading="schedulesLoading" stripe empty-text="暂无挂到本项目的排期">
+          <el-table-column prop="title" label="排期" min-width="160" show-overflow-tooltip />
+          <el-table-column label="时间" width="200">
+            <template #default="{ row }">{{ formatScheduleRange(row) }}</template>
+          </el-table-column>
+          <el-table-column prop="employee_name" label="人员" width="100" />
+          <el-table-column label="任务" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.task_no ? `${row.task_no} · ${row.task_title || ''}` : '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="scheduleTag(row)">
+                {{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+              <el-tag v-if="row.has_conflict" type="danger" size="small" style="margin-left: 4px">冲突</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="$router.push(`/schedules/${row.id}`)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </template>
+
+    <el-dialog v-model="editVisible" title="编辑项目" width="560px" destroy-on-close>
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="editForm.name" />
+        </el-form-item>
+        <el-form-item label="项目类型">
+          <el-select v-model="editForm.project_type" style="width: 100%">
+            <el-option
+              v-for="opt in PROJECT_TYPE_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="进度">
+          <el-slider v-model="editForm.progress" :max="100" show-input />
+        </el-form-item>
+        <el-form-item label="计划开始">
+          <el-date-picker v-model="editForm.start_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="计划结束">
+          <el-date-picker v-model="editForm.end_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="交付范围">
+          <el-input v-model="editForm.scope_desc" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="editForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onSaveEdit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="milestoneVisible" title="添加里程碑" width="480px">
+      <el-form :model="milestoneForm" label-width="90px">
+        <el-form-item label="名称" required>
+          <el-input v-model="milestoneForm.name" />
+        </el-form-item>
+        <el-form-item label="截止日期">
+          <el-date-picker v-model="milestoneForm.deadline" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="序号">
+          <el-input-number v-model="milestoneForm.sort_order" :min="0" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="milestoneForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="milestoneVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onAddMilestone">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="terminateVisible" title="终止项目" width="480px">
+      <el-input v-model="terminateReason" type="textarea" :rows="3" placeholder="请填写终止原因" />
+      <template #footer>
+        <el-button @click="terminateVisible = false">取消</el-button>
+        <el-button type="danger" :loading="saving" @click="onTerminate">确认终止</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ACCEPTANCE_RESULT_LABEL,
+  MILESTONE_STATUS_LABEL,
+  PROJECT_STATUS_LABEL,
+  PROJECT_TYPE_OPTIONS,
+  addMilestone,
+  fetchProjectDetail,
+  startProjectAccepting,
+  startProjectExecuting,
+  startProjectPlanning,
+  terminateProject,
+  updateMilestone,
+  updateProject,
+  type ProjectDetail,
+  type ProjectMilestone,
+} from '@/api/projects'
+import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
+
+const route = useRoute()
+const router = useRouter()
+const loading = ref(false)
+const saving = ref(false)
+const project = ref<ProjectDetail | null>(null)
+const schedules = ref<Schedule[]>([])
+const schedulesLoading = ref(false)
+const editVisible = ref(false)
+const milestoneVisible = ref(false)
+const terminateVisible = ref(false)
+const terminateReason = ref('')
+
+const editForm = reactive({
+  name: '',
+  project_type: 'other',
+  progress: 0,
+  start_date: '' as string | undefined,
+  end_date: '' as string | undefined,
+  scope_desc: '',
+  remark: '',
+})
+
+const milestoneForm = reactive({
+  name: '',
+  deadline: '',
+  sort_order: 0,
+  remark: '',
+})
+
+const projectId = computed(() => Number(route.params.id))
+
+function typeLabel(code: string) {
+  return PROJECT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
+}
+
+function formatDateTime(v?: string | null) {
+  if (!v) return '—'
+  return v.replace('T', ' ').slice(0, 16)
+}
+
+function statusTag(s: string) {
+  const map: Record<string, string> = {
+    initiating: 'info',
+    planning: '',
+    executing: 'warning',
+    accepting: 'warning',
+    accepted: 'success',
+    completed: 'success',
+    terminated: 'danger',
+  }
+  return map[s] || 'info'
+}
+
+function scheduleTag(row: Schedule) {
+  if (row.status === 'completed') return 'success'
+  if (row.status === 'cancelled') return 'info'
+  if (row.has_conflict || row.status === 'pending') return 'warning'
+  return ''
+}
+
+function formatScheduleRange(row: Schedule) {
+  const s = row.start_time ? new Date(row.start_time) : null
+  const e = row.end_time ? new Date(row.end_time) : null
+  if (!s || !e) return '—'
+  const d = s.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  const st = s.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const et = e.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${d} ${st}-${et}`
+}
+
+function fillEdit() {
+  if (!project.value) return
+  const p = project.value
+  editForm.name = p.name
+  editForm.project_type = p.project_type
+  editForm.progress = p.progress || 0
+  editForm.start_date = p.start_date || undefined
+  editForm.end_date = p.end_date || undefined
+  editForm.scope_desc = p.scope_desc || ''
+  editForm.remark = p.remark || ''
+}
+
+async function loadSchedules() {
+  if (!projectId.value) return
+  schedulesLoading.value = true
+  try {
+    const { data } = await fetchSchedules({
+      project_id: projectId.value,
+      page: 1,
+      page_size: 50,
+    })
+    schedules.value = data.items
+  } finally {
+    schedulesLoading.value = false
+  }
+}
+
+async function loadDetail() {
+  loading.value = true
+  try {
+    const { data } = await fetchProjectDetail(projectId.value)
+    project.value = data
+    fillEdit()
+    await loadSchedules()
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(editVisible, (v) => {
+  if (v) fillEdit()
+})
+
+async function onSaveEdit() {
+  if (!editForm.name.trim()) {
+    ElMessage.warning('项目名称不能为空')
+    return
+  }
+  saving.value = true
+  try {
+    await updateProject(projectId.value, {
+      name: editForm.name,
+      project_type: editForm.project_type,
+      progress: editForm.progress,
+      start_date: editForm.start_date || undefined,
+      end_date: editForm.end_date || undefined,
+      scope_desc: editForm.scope_desc || undefined,
+      remark: editForm.remark || undefined,
+    })
+    ElMessage.success('已保存')
+    editVisible.value = false
+    await loadDetail()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function runTransition(fn: () => Promise<unknown>, okMsg: string, confirmMsg: string) {
+  try {
+    await ElMessageBox.confirm(confirmMsg, '确认')
+    await fn()
+    ElMessage.success(okMsg)
+    await loadDetail()
+  } catch {
+    /* cancel */
+  }
+}
+
+function onPlan() {
+  return runTransition(() => startProjectPlanning(projectId.value), '已进入计划中', '确认进入计划中？')
+}
+function onExecute() {
+  return runTransition(() => startProjectExecuting(projectId.value), '已进入执行中', '确认进入执行中？')
+}
+function onAccepting() {
+  return runTransition(() => startProjectAccepting(projectId.value), '已进入验收中', '确认进入验收中？')
+}
+function goAcceptanceWorkbench() {
+  router.push({ path: '/projects', query: { tab: 'acceptance' } })
+}
+
+function openMilestone() {
+  milestoneForm.name = ''
+  milestoneForm.deadline = ''
+  milestoneForm.sort_order = (project.value?.milestones?.length || 0) + 1
+  milestoneForm.remark = ''
+  milestoneVisible.value = true
+}
+
+async function onAddMilestone() {
+  if (!milestoneForm.name.trim()) {
+    ElMessage.warning('请填写里程碑名称')
+    return
+  }
+  saving.value = true
+  try {
+    await addMilestone(projectId.value, {
+      name: milestoneForm.name,
+      deadline: milestoneForm.deadline || undefined,
+      sort_order: milestoneForm.sort_order,
+      remark: milestoneForm.remark || undefined,
+    })
+    ElMessage.success('已添加')
+    milestoneVisible.value = false
+    await loadDetail()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onMilestoneStatus(row: ProjectMilestone, status: string) {
+  await updateMilestone(projectId.value, row.id, { status })
+  ElMessage.success('里程碑已更新')
+  await loadDetail()
+}
+
+async function onTerminate() {
+  if (!terminateReason.value.trim()) {
+    ElMessage.warning('请填写终止原因')
+    return
+  }
+  saving.value = true
+  try {
+    await terminateProject(projectId.value, terminateReason.value.trim())
+    ElMessage.success('项目已终止')
+    terminateVisible.value = false
+    await loadDetail()
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(loadDetail)
+</script>
+
+

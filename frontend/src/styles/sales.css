@@ -1,0 +1,256 @@
+/* 销售中心：对齐高保真原型 lead-allocation / sales panels */
+
+.sales-center .page-demo-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--crm-primary-soft);
+  color: var(--crm-primary);
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.allocation-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.allocation-summary.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.allocation-summary article,
+.allocation-summary .overview-card {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.04);
+}
+
+.allocation-summary .overview-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.allocation-summary .overview-card:hover {
+  border-color: color-mix(in oklab, var(--crm-primary) 45%, var(--crm-border));
+}
+
+.allocation-summary .overview-card.active {
+  border-color: var(--crm-primary);
+  box-shadow: inset 0 0 0 1px var(--crm-primary);
+}
+
+.allocation-summary small,
+.allocation-summary span {
+  display: block;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+}
+
+.allocation-summary strong {
+  display: block;
+  font-size: 28px;
+  line-height: 1.1;
+  margin: 7px 0;
+  color: var(--crm-ink);
+}
+
+.management-only-note,
+.employee-pool-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in oklab, var(--crm-primary) 28%, var(--crm-border));
+  background: var(--crm-primary-soft);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.management-only-note > .note-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--crm-surface);
+  display: grid;
+  place-items: center;
+  color: var(--crm-primary);
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.management-only-note b,
+.management-only-note small,
+.employee-pool-note b,
+.employee-pool-note span {
+  display: block;
+}
+
+.management-only-note small,
+.employee-pool-note span {
+  color: var(--crm-ink-soft);
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.employee-pool-note {
+  justify-content: space-between;
+}
+
+.sales-quota-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--crm-border);
+  border-radius: 14px;
+  background: var(--crm-surface);
+}
+
+.sales-quota-strip .quota-item small {
+  display: block;
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+  margin-bottom: 4px;
+}
+
+.sales-quota-strip .quota-item b {
+  font-size: 18px;
+  color: var(--crm-ink);
+}
+
+.entity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.entity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--crm-primary-soft);
+  color: var(--crm-primary);
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.entity-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.entity-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.entity-text small {
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+}
+
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+}
+
+.allocation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.allocation-toolbar .filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.allocation-panel > .toolbar.allocation-toolbar {
+  margin-bottom: 14px;
+}
+
+.finance-subtabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.finance-subtabs .subtab-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  background: var(--crm-surface-soft);
+}
+
+.finance-subtabs .subtab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--crm-ink-soft);
+}
+
+.finance-subtabs .subtab.active {
+  background: var(--crm-surface);
+  color: var(--crm-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.08);
+}
+
+@media (max-width: 900px) {
+  .allocation-summary,
+  .sales-quota-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .allocation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .allocation-summary,
+  .allocation-summary.cols-3,
+  .sales-quota-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
