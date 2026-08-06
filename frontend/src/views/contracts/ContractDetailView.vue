@@ -21,6 +21,7 @@
         </el-button>
         <el-button
           v-if="contract.status === 'pending_approval' && canApproveContract"
+          v-perm="'contract:approve'"
           type="success"
           @click="onApprove"
         >
@@ -28,6 +29,7 @@
         </el-button>
         <el-button
           v-if="contract.status === 'pending_approval' && canApproveContract"
+          v-perm="'contract:approve'"
           @click="onReject"
         >
           驳回
@@ -48,7 +50,14 @@
           签署
         </el-button>
         <el-button v-if="contract.status === 'signed'" type="primary" @click="onActivate">进入执行</el-button>
-        <el-button v-if="contract.status === 'active'" type="success" @click="onComplete">完成</el-button>
+        <el-button
+          v-if="contract.status === 'active' && canCompleteContract"
+          v-perm.any="['contract:complete', 'contract:force_complete', 'contract:manage']"
+          type="success"
+          @click="onComplete"
+        >
+          完成
+        </el-button>
         <el-button
           v-if="canTerminate"
           type="danger"
@@ -310,12 +319,10 @@ const canWithdraw = computed(() => {
   return contract.value.owner_id === uid || contract.value.creator_id === uid
 })
 
-/** 与后端一致：admin / contract:manage / 财务 / 管理层可审批；销售仅能提交 */
-const canApproveContract = computed(() => {
-  if (userStore.hasPermission('contract:manage') || userStore.hasPermission('*')) return true
-  const roles = new Set((userStore.user?.roles || []).map((r) => r.code))
-  return roles.has('admin') || roles.has('finance') || roles.has('executive')
-})
+/** 与后端一致：contract:approve / contract:manage */
+const canApproveContract = computed(() =>
+  userStore.hasAnyPermission('contract:approve', 'contract:manage'),
+)
 
 /** 仅合同负责人可签署（线索分配到谁，起草后负责人即谁）；admin 可代签 */
 const canSignContract = computed(() => {
@@ -326,16 +333,14 @@ const canSignContract = computed(() => {
   return contract.value.owner_id === userStore.user?.id
 })
 
-/** 回款未收齐时特批完成：admin / 财务 / 管理层 / contract:manage / payment:manage */
-const canForceComplete = computed(() => {
-  if (userStore.hasPermission('contract:manage') || userStore.hasPermission('payment:manage')) {
-    return true
-  }
-  if (userStore.hasPermission('*')) return true
-  const roles = new Set((userStore.user?.roles || []).map((r) => r.code))
-  return roles.has('admin') || roles.has('finance') || roles.has('executive')
-})
+/** 回款已齐可完成 / 未齐特批：对应权限码 */
+const canCompleteContract = computed(() =>
+  userStore.hasAnyPermission('contract:complete', 'contract:force_complete', 'contract:manage'),
+)
 
+const canForceComplete = computed(() =>
+  userStore.hasAnyPermission('contract:force_complete', 'contract:manage'),
+)
 function typeLabel(code: string) {
   return CONTRACT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
 }

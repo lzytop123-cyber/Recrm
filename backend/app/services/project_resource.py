@@ -319,6 +319,7 @@ def seed_resource_needs(
 
 
 def ensure_needs_for_initiating(db: Session) -> None:
+    """批量补齐立项/计划中项目的资源需求。仅用于运维/迁移，勿在只读 GET 中调用。"""
     projects = (
         db.query(Project)
         .filter(Project.status.in_([PROJECT_STATUS_INITIATING, PROJECT_STATUS_PLANNING]))
@@ -329,9 +330,15 @@ def ensure_needs_for_initiating(db: Session) -> None:
     db.commit()
 
 
-def list_pending_resources(db: Session, user: User, *, only_pending: bool = True) -> list[dict]:
+def list_pending_resources(
+    db: Session,
+    user: User,
+    *,
+    only_pending: bool = True,
+    suggested_user_id: Optional[int] = None,
+) -> list[ProjectResourceNeed]:
+    """只读列出资源确认项。不会 seed / commit；缺口请在立项流转时 seed_resource_needs。"""
     _ = user
-    ensure_needs_for_initiating(db)
     q = (
         db.query(ProjectResourceNeed)
         .join(Project, Project.id == ProjectResourceNeed.project_id)
@@ -339,16 +346,11 @@ def list_pending_resources(db: Session, user: User, *, only_pending: bool = True
     )
     if only_pending:
         q = q.filter(ProjectResourceNeed.status == RESOURCE_NEED_PENDING)
+    if suggested_user_id is not None:
+        q = q.filter(ProjectResourceNeed.suggested_user_id == suggested_user_id)
     needs = q.order_by(ProjectResourceNeed.id.desc()).all()
-    out = []
-    dirty = False
-    for n in needs:
-        enrich_need(db, n)
-        dirty = True
-        out.append(n)
-    if dirty:
-        db.commit()
-    return [enrich_need(db, n) for n in out]
+    # enrich 可能改 schedule_status，但本接口不 commit，避免 GET 写库
+    return [enrich_need(db, n) for n in needs]
 
 
 def pending_count_for_project(db: Session, project_id: int) -> int:

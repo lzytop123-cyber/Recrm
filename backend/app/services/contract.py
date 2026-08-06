@@ -135,14 +135,17 @@ def _is_collection_complete(db: Session, contract: Contract) -> bool:
 
 
 def _can_force_complete(user: User) -> bool:
-    role_codes = {r.code for r in user.roles}
-    return (
-        "admin" in role_codes
-        or "finance" in role_codes
-        or "executive" in role_codes
-        or user_can(user, "contract:manage")
-        or user_can(user, "payment:manage")
-    )
+    """回款未齐特批完成：contract:force_complete / contract:manage / admin。"""
+    if user_can(user, "contract:force_complete") or user_can(user, "contract:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
+
+
+def _can_complete_contract(user: User) -> bool:
+    """正常完成合同（回款已齐）：contract:complete / contract:manage / admin。"""
+    if user_can(user, "contract:complete") or user_can(user, "contract:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
 
 
 def enrich_contract(db: Session, contract: Contract) -> Contract:
@@ -397,13 +400,16 @@ def submit_approval(db: Session, user: User, contract_id: int) -> Contract:
     return enrich_contract(db, contract)
 
 
+def can_approve_contract(user: User) -> bool:
+    """合同审批：优先权限码，兼容 admin。"""
+    if user_can(user, "contract:approve") or user_can(user, "contract:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
+
+
 def approve_contract(db: Session, user: User, contract_id: int) -> Contract:
-    if not user_can(user, "contract:manage") and "admin" not in {r.code for r in user.roles}:
-        # 财务/管理层有 view + 公司范围，骨架期也允许有 contract:manage 或 admin 审批
-        # 财务种子只有 view，给财务放行审批
-        role_codes = {r.code for r in user.roles}
-        if "finance" not in role_codes and "executive" not in role_codes:
-            raise HTTPException(status_code=403, detail="无权审批合同")
+    if not can_approve_contract(user):
+        raise HTTPException(status_code=403, detail="无权审批合同")
 
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
@@ -420,13 +426,7 @@ def approve_contract(db: Session, user: User, contract_id: int) -> Contract:
 
 
 def reject_contract(db: Session, user: User, contract_id: int, reason: Optional[str] = None) -> Contract:
-    role_codes = {r.code for r in user.roles}
-    if (
-        not user_can(user, "contract:manage")
-        and "admin" not in role_codes
-        and "finance" not in role_codes
-        and "executive" not in role_codes
-    ):
+    if not can_approve_contract(user):
         raise HTTPException(status_code=403, detail="无权驳回合同")
 
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
@@ -513,6 +513,8 @@ def complete_contract(
             db, user, contract, f"合同 {contract.contract_no} 特批完成：{reason}"
         )
     else:
+        if not _can_complete_contract(user):
+            raise HTTPException(status_code=403, detail="无权完成合同")
         _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已完成")
 
     contract.status = CONTRACT_STATUS_COMPLETED

@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    approval_rules,
     approvals,
     assets,
     auth,
@@ -11,6 +12,7 @@ from app.api.v1 import (
     finance,
     knowledge,
     leads,
+    notifications,
     okrs,
     opportunities,
     org,
@@ -18,16 +20,20 @@ from app.api.v1 import (
     performance,
     projects,
     schedules,
+    shooting_schedules,
     system,
     tickets,
     timesheets,
+    todos,
     uploads,
 )
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(todos.router)
 api_router.include_router(approvals.router)
+api_router.include_router(approval_rules.router)
 api_router.include_router(leads.router)
 api_router.include_router(customers.router)
 api_router.include_router(opportunities.router)
@@ -39,9 +45,11 @@ api_router.include_router(projects.router)
 api_router.include_router(okrs.router)
 api_router.include_router(performance.router)
 api_router.include_router(assets.router)
+api_router.include_router(shooting_schedules.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(timesheets.router)
 api_router.include_router(tickets.router)
 api_router.include_router(schedules.router)
 api_router.include_router(org.router)
 api_router.include_router(system.router)
+api_router.include_router(notifications.router)

@@ -101,7 +101,7 @@ export const TICKET_STATUS_LABEL: Record<string, string> = {
 }
 
 export const TICKET_TYPE_OPTIONS = [
-  { value: 'service', label: '项目交付工单' },
+  { value: 'service', label: '交付协作工单' },
   { value: 'collaboration', label: '普通跨部门协作' },
   { value: 'urgent', label: '紧急客户或生产问题' },
   { value: 'feedback', label: '反馈工单' },

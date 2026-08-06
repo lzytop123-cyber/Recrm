@@ -173,3 +173,53 @@ def test_force_complete_with_reason(
     assert ok.status_code == 200
     assert ok.json()["status"] == "completed"
     assert "特批完成" in (ok.json().get("remark") or "")
+
+
+def test_sales_cannot_force_complete_without_perm(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    from app.models.permission import Permission
+
+    role = Role(name="销售", code="sales", data_scope="department")
+    role.permissions.append(
+        Permission(name="完成合同", code="contract:complete", module="contract")
+    )
+    user = User(
+        username="sales_force",
+        password_hash=hash_password("secret123"),
+        real_name="销售甲",
+        is_active=True,
+    )
+    user.roles.append(role)
+    db_session.add_all([role, user])
+    db_session.commit()
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "sales_force", "password": "secret123"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    contract = _active_contract(db_session, user, amount=Decimal("300.00"))
+    db_session.add(
+        ReceivablePlan(
+            contract_id=contract.id,
+            sequence_no=1,
+            title="合同款",
+            amount=Decimal("300.00"),
+            due_date=date.today(),
+            currency="CNY",
+            status=RECEIVABLE_STATUS_UNPAID,
+            created_by=user.id,
+        )
+    )
+    db_session.commit()
+
+    denied = client.post(
+        f"/api/v1/contracts/{contract.id}/complete",
+        headers=headers,
+        json={"force": True, "force_reason": "销售自行特批"},
+    )
+    assert denied.status_code == 403

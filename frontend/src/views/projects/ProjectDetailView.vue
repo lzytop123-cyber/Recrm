@@ -34,7 +34,8 @@
           验收审批中
         </el-tag>
         <el-button
-          v-if="project.status === 'accepted'"
+          v-if="project.status === 'accepted' && canGoCloseout"
+          v-perm.any="['project:finance_submit', 'project:complete', 'project:manage']"
           type="success"
           @click="goAcceptanceWorkbench"
         >
@@ -55,10 +56,24 @@
       <el-card>
         <template #header>
           <div class="card-header">
-            <span>{{ project.project_no }} · {{ project.name }}</span>
-            <el-tag :type="statusTag(project.status)" size="small">
-              {{ PROJECT_STATUS_LABEL[project.status] || project.status }}
-            </el-tag>
+            <div class="title-block">
+              <span>{{ project.project_no }} · {{ project.name }}</span>
+              <p class="archive-hint">
+                项目档案页；日常立项 / 计划 / 任务 / 验收请在
+                <el-button link type="primary" @click="$router.push('/projects/delivery')">交付执行</el-button>
+                处理
+              </p>
+            </div>
+            <div class="header-meta">
+              <el-tag :type="statusTag(project.status)" size="small">
+                {{ PROJECT_STATUS_LABEL[project.status] || project.status }}
+              </el-tag>
+              <el-progress
+                :percentage="project.progress || 0"
+                :stroke-width="8"
+                style="width: 120px"
+              />
+            </div>
           </div>
         </template>
         <el-descriptions :column="3" border>
@@ -91,9 +106,6 @@
           <el-descriptions-item label="计划开始">{{ project.start_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="计划结束">{{ project.end_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实际结束">{{ project.actual_end_date || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="进度" :span="3">
-            <el-progress :percentage="project.progress || 0" style="max-width: 360px" />
-          </el-descriptions-item>
           <el-descriptions-item label="交付范围" :span="3">{{ project.scope_desc || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="project.terminate_reason" label="终止原因" :span="3">
             {{ project.terminate_reason }}
@@ -154,15 +166,20 @@
             {{ project.leftover_summary || '—' }}
           </el-descriptions-item>
           <el-descriptions-item label="验收附件" :span="2">
-            <a
-              v-if="project.acceptance_attachment_path"
-              :href="`/uploads/${project.acceptance_attachment_path}`"
-              target="_blank"
-              rel="noopener"
-            >
-              {{ project.acceptance_attachment || '查看附件' }}
-            </a>
-            <span v-else>{{ project.acceptance_attachment || '—' }}</span>
+            <div v-if="acceptanceFiles.length" class="attach-list">
+              <a
+                v-for="(file, idx) in acceptanceFiles"
+                :key="`${file.name}-${idx}`"
+                class="attach-item"
+                :href="file.href || undefined"
+                :target="file.href ? '_blank' : undefined"
+                :rel="file.href ? 'noopener' : undefined"
+                @click="!file.href && $event.preventDefault()"
+              >
+                {{ file.name }}
+              </a>
+            </div>
+            <span v-else>—</span>
           </el-descriptions-item>
           <el-descriptions-item
             v-if="project.acceptance_reject_reason"
@@ -183,17 +200,17 @@
         </el-descriptions>
       </el-card>
 
-      <el-card class="stack-gap">
+      <el-card v-if="(project.milestones || []).length" class="stack-gap">
         <template #header>
           <div class="card-header">
-            <span>里程碑</span>
+            <span>计划节点</span>
             <el-button
               v-if="!['completed', 'terminated'].includes(project.status)"
               size="small"
               type="primary"
               @click="openMilestone"
             >
-              添加里程碑
+              添加节点
             </el-button>
           </div>
         </template>
@@ -221,13 +238,25 @@
           </el-table-column>
           <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
         </el-table>
-        <el-empty v-if="!(project.milestones || []).length" description="暂无里程碑" :image-size="64" />
       </el-card>
 
-      <el-card class="stack-gap">
+      <el-card v-else-if="!['completed', 'terminated'].includes(project.status)" class="stack-gap">
+        <div class="empty-inline">
+          <span>本项目按任务推进，未使用计划节点。</span>
+          <el-button
+            link
+            type="primary"
+            @click="$router.push({ path: '/projects/delivery', query: { tab: 'execute', mode: 'plan', project_id: String(project.id) } })"
+          >
+            去交付执行补节点
+          </el-button>
+        </div>
+      </el-card>
+
+      <el-card v-if="schedules.length || schedulesLoading" class="stack-gap">
         <template #header>
           <div class="card-header">
-            <span>关联排期</span>
+            <span>人员档期</span>
             <el-button size="small" @click="$router.push('/schedules')">打开排期会议</el-button>
           </div>
         </template>
@@ -348,9 +377,14 @@ import {
   type ProjectMilestone,
 } from '@/api/projects'
 import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const canGoCloseout = computed(() =>
+  userStore.hasAnyPermission('project:finance_submit', 'project:complete', 'project:manage'),
+)
 const loading = ref(false)
 const saving = ref(false)
 const project = ref<ProjectDetail | null>(null)
@@ -379,6 +413,26 @@ const milestoneForm = reactive({
 })
 
 const projectId = computed(() => Number(route.params.id))
+
+const acceptanceFiles = computed(() => {
+  const p = project.value
+  if (!p) return [] as { name: string; href?: string }[]
+  const raw = (p.acceptance_attachment || '').trim()
+  const path = (p.acceptance_attachment_path || '').trim()
+  const names = raw
+    ? raw.split(/(?<=\.(?:jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|zip|rar|txt))\s*-\s*/i)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
+  if (!names.length && path) {
+    const leaf = path.split(/[/\\]/).pop() || '查看附件'
+    return [{ name: leaf, href: `/uploads/${path}` }]
+  }
+  return names.map((name, idx) => ({
+    name,
+    href: path && idx === 0 ? `/uploads/${path}` : undefined,
+  }))
+})
 
 function typeLabel(code: string) {
   return PROJECT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
@@ -507,7 +561,7 @@ function onAccepting() {
   return runTransition(() => startProjectAccepting(projectId.value), '已进入验收中', '确认进入验收中？')
 }
 function goAcceptanceWorkbench() {
-  router.push({ path: '/projects', query: { tab: 'acceptance' } })
+  router.push({ path: '/projects/delivery', query: { tab: 'acceptance' } })
 }
 
 function openMilestone() {
@@ -564,4 +618,51 @@ async function onTerminate() {
 onMounted(loadDetail)
 </script>
 
+<style scoped>
+.card-header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.title-block {
+  min-width: 0;
+}
+.archive-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--crm-ink-soft, #909399);
+  line-height: 1.4;
+}
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.attach-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attach-item {
+  color: var(--el-color-primary);
+  text-decoration: none;
+  line-height: 1.4;
+}
+.attach-item[href] {
+  cursor: pointer;
+}
+.attach-item:not([href]) {
+  color: var(--crm-ink, #303133);
+  cursor: default;
+}
+.empty-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 13px;
+}
+</style>
 

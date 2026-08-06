@@ -16,15 +16,12 @@ from app.models.contract import (
     CONTRACT_STATUS_COMPLETED,
     CONTRACT_STATUS_SIGNED,
 )
-from app.models.department import Department
-from app.models.okr import OKR_LEVEL_DEPARTMENT, OKR_STATUS_ACTIVE, OKR_STATUS_PENDING
 from app.models.opportunity import OPP_STAGE_NEGOTIATION, OPP_STAGE_PROPOSAL
 from app.models.schedule import SCHEDULE_TYPE_EXTERNAL
 from app.models.user import User
 from app.services import (
     contract as contract_service,
     lead as lead_service,
-    okr as okr_service,
     opportunity as opportunity_service,
     payment as payment_service,
     project as project_service,
@@ -365,43 +362,9 @@ def _build_today_schedules(db: Session, user: User) -> list[dict]:
 
 
 def _build_org_execution(db: Session, user: User) -> list[dict]:
-    if not user_can(user, "okr:view"):
-        return []
-    try:
-        _, items = okr_service.list_okrs(db, user, page=1, page_size=5000, enrich=False)
-    except Exception:
-        return []
-
-    dept_okrs = [
-        x
-        for x in items
-        if x.level == OKR_LEVEL_DEPARTMENT and x.status in {OKR_STATUS_PENDING, OKR_STATUS_ACTIVE}
-    ]
-    by_dept: dict[int, list[int]] = {}
-    for o in dept_okrs:
-        if not o.department_id:
-            continue
-        by_dept.setdefault(o.department_id, []).append(int(o.progress or 0))
-
-    if not by_dept:
-        # 无部门 OKR 时用公司/个人平均兜底展示
-        active = [x for x in items if x.status in {OKR_STATUS_PENDING, OKR_STATUS_ACTIVE}]
-        if not active:
-            return []
-        avg = int(round(sum(x.progress or 0 for x in active) / len(active)))
-        return [{"name": "全公司", "score": avg}]
-
-    dept_ids = list(by_dept.keys())
-    depts = {
-        d.id: d.name
-        for d in db.query(Department).filter(Department.id.in_(dept_ids)).all()
-    }
-    rows = []
-    for did, progresses in by_dept.items():
-        score = int(round(sum(progresses) / len(progresses)))
-        rows.append({"name": depts.get(did, f"部门#{did}"), "score": score})
-    rows.sort(key=lambda x: x["score"], reverse=True)
-    return rows[:6]
+    # 第二期目标绩效开放前：经营总览不展示组织目标条
+    _ = (db, user)
+    return []
 
 
 def _mom_delta(curr: Decimal, prev: Decimal) -> tuple[str, str]:
@@ -431,7 +394,7 @@ def build_dashboard(db: Session, user: User) -> dict:
         else {}
     )
     proj = _safe_stats(project_service.project_stats, db, user) if user_can(user, "project:view") else {}
-    okr = _safe_stats(okr_service.okr_stats, db, user) if user_can(user, "okr:view") else {}
+    # 第二期目标绩效开放前不拉 OKR 统计
     lead_s = _safe_stats(lead_service.lead_stats, db, user) if user_can(user, "lead:view") else {}
     contract_s = (
         _safe_stats(contract_service.contract_stats, db, user)
@@ -482,12 +445,6 @@ def build_dashboard(db: Session, user: User) -> dict:
     high_risk = int(proj.get("high_risk", 0) or 0)
     on_track = max(executing - high_risk, 0)
 
-    avg_progress = int(okr.get("avg_progress", 0) or 0)
-    active_okr = int(okr.get("active", 0) or 0)
-    risk_okr = int(okr.get("risk_count", 0) or 0)
-    normal_okr = max(active_okr - risk_okr, 0)
-    watch_okr = min(risk_okr, max(active_okr // 5, 0)) if active_okr else 0
-
     kpis: list[dict] = []
     if user_can(user, "payment:view") or user_can(user, "contract:view"):
         kpis.append(
@@ -532,21 +489,6 @@ def build_dashboard(db: Session, user: User) -> dict:
                 "delta_tone": "down" if high_risk else "up",
                 "accent": False,
                 "path": "/projects",
-            }
-        )
-    if user_can(user, "okr:view"):
-        kpis.append(
-            {
-                "key": "company_okr",
-                "label": "公司目标进度",
-                "value": active_okr,
-                "display": str(active_okr),
-                "icon": "◇",
-                "note": f"正常 {normal_okr} · 需关注 {watch_okr} · 已阻塞 {max(risk_okr - watch_okr, 0)}",
-                "delta": f"完成度 {avg_progress}%",
-                "delta_tone": "up" if avg_progress >= 60 else "down",
-                "accent": False,
-                "path": "/okrs",
             }
         )
 

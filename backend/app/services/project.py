@@ -73,11 +73,11 @@ from app.schemas.project import (
 _NEXT_NODE = {
     PROJECT_STATUS_INITIATING: "完成立项前确认并进入计划",
     PROJECT_STATUS_PLANNING: "制定基线并进入执行",
-    PROJECT_STATUS_EXECUTING: "推进里程碑与任务",
+    PROJECT_STATUS_EXECUTING: "推进任务与计划节点",
     PROJECT_STATUS_ACCEPTING: "组织内部验收",
     PROJECT_STATUS_ACCEPTED: "财务核对后结项",
-    PROJECT_STATUS_COMPLETED: "已结项",
-    PROJECT_STATUS_TERMINATED: "已终止",
+    PROJECT_STATUS_COMPLETED: "—",
+    PROJECT_STATUS_TERMINATED: "—",
 }
 
 
@@ -234,9 +234,22 @@ def assert_can_operate(user: User, project: Project) -> None:
         return
     if project.manager_id == user.id or project.creator_id == user.id:
         return
+    if user_can(user, "project:manage"):
+        return
     if "delivery_lead" in role_codes or "middle_manager" in role_codes or "executive" in role_codes:
         return
     raise HTTPException(status_code=403, detail="无权操作该项目")
+
+
+def _require_project_action(user: User, *codes: str) -> None:
+    """动作权限：任一码或 project:manage / admin。"""
+    if user_can(user, "project:manage"):
+        return
+    if any(user_can(user, c) for c in codes):
+        return
+    if "admin" in {r.code for r in user.roles}:
+        return
+    raise HTTPException(status_code=403, detail="无权执行该项目操作")
 
 
 def assert_can_update_task(
@@ -522,6 +535,7 @@ def accept_project(
         raise HTTPException(status_code=404, detail="项目不存在")
     assert_can_view(user, project)
     assert_can_operate(user, project)
+    _require_project_action(user, "project:accept_submit")
     if project.status not in {PROJECT_STATUS_ACCEPTING, PROJECT_STATUS_EXECUTING}:
         raise HTTPException(status_code=400, detail="当前状态不可验收")
     if project.acceptance_approval_status == ACCEPTANCE_APPROVAL_PENDING:
@@ -566,11 +580,9 @@ def accept_project(
 
 
 def can_approve_acceptance(user: User) -> bool:
-    role_codes = {r.code for r in user.roles}
-    return bool(
-        role_codes
-        & {"admin", "executive", "middle_manager", "delivery_lead", "dept_head"}
-    )
+    if user_can(user, "project:accept_approve") or user_can(user, "project:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
 
 
 def review_acceptance(
@@ -611,13 +623,11 @@ def review_acceptance(
 
 
 def can_review_finance_check(user: User) -> bool:
-    role_codes = {r.code for r in user.roles}
-    return (
-        "admin" in role_codes
-        or "finance" in role_codes
-        or user_can(user, "payment:confirm")
-        or user_can(user, "payment:manage")
-    )
+    if user_can(user, "project:finance_approve"):
+        return True
+    if user_can(user, "payment:confirm") or user_can(user, "payment:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
 
 
 def submit_finance_check(
@@ -629,6 +639,7 @@ def submit_finance_check(
         raise HTTPException(status_code=404, detail="项目不存在")
     assert_can_view(user, project)
     assert_can_operate(user, project)
+    _require_project_action(user, "project:finance_submit")
     if project.status != PROJECT_STATUS_ACCEPTED:
         raise HTTPException(status_code=400, detail="仅已验收项目可提交财务核对")
     if project.acceptance_approval_status != ACCEPTANCE_APPROVAL_APPROVED:
@@ -706,6 +717,9 @@ def complete_project(db: Session, user: User, project_id: int) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    assert_can_view(user, project)
+    assert_can_operate(user, project)
+    _require_project_action(user, "project:complete")
     if project.status != PROJECT_STATUS_ACCEPTED:
         raise HTTPException(status_code=400, detail="未内部验收通过不可结项")
     if project.acceptance_approval_status != ACCEPTANCE_APPROVAL_APPROVED:
@@ -750,7 +764,14 @@ def enrich_milestone(db: Session, ms: ProjectMilestone) -> ProjectMilestone:
     evidence_ready = evidence_status == EVIDENCE_STATUS_CONFIRMED
     ms.can_complete = evidence_ready and tasks_ready  # type: ignore[attr-defined]
     if ms.status == MILESTONE_STATUS_DONE:
-        ms.next_action = "已完成"  # type: ignore[attr-defined]
+        if evidence_ready:
+            ms.next_action = "已完成"  # type: ignore[attr-defined]
+        elif evidence_status == EVIDENCE_STATUS_PENDING:
+            ms.next_action = "节点已标完成，请确认证据"  # type: ignore[attr-defined]
+        elif not (ms.evidence or "").strip():
+            ms.next_action = "节点已标完成，请补交证据"  # type: ignore[attr-defined]
+        else:
+            ms.next_action = "已完成"  # type: ignore[attr-defined]
     elif not (ms.evidence or "").strip():
         ms.next_action = "提交完成证据"  # type: ignore[attr-defined]
     elif evidence_status == EVIDENCE_STATUS_REJECTED:
@@ -823,8 +844,9 @@ def assert_ready_for_acceptance(db: Session, project: Project) -> None:
     milestones = (
         db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project.id).all()
     )
+    # 无里程碑时允许直接验收（小项目可用任务+验收单）；有则必须全部完成且证据确认
     if not milestones:
-        raise HTTPException(status_code=400, detail="请先制定里程碑并完成后再验收")
+        return
     incomplete = [m for m in milestones if m.status != "done"]
     if incomplete:
         raise HTTPException(
@@ -1053,10 +1075,15 @@ def create_task(db: Session, user: User, payload: ProjectTaskCreate) -> ProjectT
     if not assignee:
         raise HTTPException(status_code=400, detail="责任人不存在")
 
-    milestone_count = (
-        db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project.id).count()
+    open_milestone_count = (
+        db.query(ProjectMilestone)
+        .filter(
+            ProjectMilestone.project_id == project.id,
+            ProjectMilestone.status != MILESTONE_STATUS_DONE,
+        )
+        .count()
     )
-    if milestone_count and not payload.milestone_id:
+    if open_milestone_count and not payload.milestone_id:
         raise HTTPException(status_code=400, detail="请选择所属里程碑")
 
     if payload.milestone_id:
@@ -1175,6 +1202,8 @@ def list_tasks(
                 ProjectTask.due_date.isnot(None),
                 ProjectTask.due_date < date.today(),
             )
+        elif status == "open":
+            q = q.filter(ProjectTask.status != TASK_STATUS_DONE)
         else:
             q = q.filter(ProjectTask.status == status)
     if keyword:

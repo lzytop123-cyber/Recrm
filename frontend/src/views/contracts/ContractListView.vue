@@ -57,12 +57,14 @@
         <div class="finance-actions">
           <el-button
             v-if="financeTab === 'receivables' && canManageReceivable"
+            v-perm.any="['contract:manage', 'payment:manage']"
             @click="openReceivableCreate"
           >
             ＋ 新建应收计划
           </el-button>
           <el-button
             v-if="financeTab === 'reconciliation' && canClaimReceipt"
+            v-perm.any="['payment:claim', 'payment:manage']"
             type="primary"
             @click="openClaim"
           >
@@ -240,6 +242,7 @@
             <template #default="{ row }">
               <el-button
                 v-if="row.status === 'pending_review' && canConfirmClaim"
+                v-perm.any="['payment:confirm', 'payment:manage']"
                 link
                 type="primary"
                 @click.stop="onConfirmClaim(row)"
@@ -248,6 +251,7 @@
               </el-button>
               <el-button
                 v-else-if="row.status === 'confirmed' && Number(row.available_amount) > 0 && canAllocate"
+                v-perm.any="['payment:allocate', 'payment:manage']"
                 link
                 type="success"
                 @click.stop="openAllocation(row)"
@@ -681,17 +685,17 @@ const props = withDefaults(
 const router = useRouter()
 const userStore = useUserStore()
 
-const canConfirmClaim = computed(() => {
-  return userStore.hasPermission('payment:confirm') || userStore.hasPermission('payment:manage')
-})
+const canConfirmClaim = computed(() =>
+  userStore.hasAnyPermission('payment:confirm', 'payment:manage'),
+)
 const canAllocate = computed(() =>
-  userStore.hasPermission('payment:allocate') || userStore.hasPermission('payment:manage'),
+  userStore.hasAnyPermission('payment:allocate', 'payment:manage'),
 )
 const canClaimReceipt = computed(() =>
-  userStore.hasPermission('payment:claim') || userStore.hasPermission('payment:manage'),
+  userStore.hasAnyPermission('payment:claim', 'payment:manage'),
 )
 const canManageReceivable = computed(() =>
-  userStore.hasPermission('contract:manage') || userStore.hasPermission('payment:manage'),
+  userStore.hasAnyPermission('contract:manage', 'payment:manage'),
 )
 const loading = ref(false)
 const saving = ref(false)

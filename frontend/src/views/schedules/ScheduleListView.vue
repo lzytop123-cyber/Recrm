@@ -1,8 +1,12 @@
 <template>
   <div class="crm-page schedule-workbench" v-loading="loading">
     <header class="sales-head">
+      <div class="sales-head-copy">
+        <h1>排期会议</h1>
+        <p>管人员日历档期与冲突；可挂到交付项目/任务，但不等于计划节点，也不影响项目进度。</p>
+      </div>
       <div class="sales-head-actions">
-        <el-button type="primary" @click="openCreate">＋ 新建排期</el-button>
+        <el-button type="primary" @click="openCreate()">＋ 新建排期</el-button>
       </div>
     </header>
 
@@ -206,7 +210,7 @@
           </div>
         </div>
         <div class="drawer-section">
-          <h4>关联业务</h4>
+          <h4>挂接交付（可选）</h4>
           <div class="drawer-grid">
             <div>
               <small>项目</small>
@@ -315,7 +319,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="关联项目">
+        <el-form-item label="挂到项目">
           <el-select
             v-model="form.project_id"
             clearable
@@ -323,6 +327,7 @@
             remote
             :remote-method="searchProjects"
             :loading="projectLoading"
+            placeholder="可选：挂到交付项目后，在交付执行里可见"
             style="width: 100%"
             @change="onProjectChange"
           >
@@ -334,12 +339,13 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联任务">
+        <el-form-item label="挂到任务">
           <el-select
             v-model="form.project_task_id"
             clearable
             filterable
             :disabled="!form.project_id"
+            placeholder="可选：先选项目后再选任务"
             style="width: 100%"
           >
             <el-option
@@ -389,6 +395,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -417,12 +424,13 @@ import { useUserStore } from '@/stores/user'
 type TabKey = 'week' | 'month' | 'instructor' | 'streamer'
 
 const tabs: { key: TabKey; label: string }[] = [
-  { key: 'week', label: '统一周视图' },
-  { key: 'month', label: '统一月视图' },
-  { key: 'instructor', label: '讲师排期' },
-  { key: 'streamer', label: '主播排期' },
+  { key: 'week', label: '周视图' },
+  { key: 'month', label: '月视图' },
+  { key: 'instructor', label: '讲师档期' },
+  { key: 'streamer', label: '主播档期' },
 ]
 
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const projectLoading = ref(false)
@@ -877,7 +885,7 @@ async function onProjectChange(pid?: number) {
   taskOptions.value = data.items
 }
 
-function openCreate() {
+async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.schedule_type = 'internal_training'
   form.resource_type = tab.value === 'streamer' ? 'streamer' : 'instructor'
@@ -893,6 +901,24 @@ function openCreate() {
   end.setHours(12)
   form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
   createVisible.value = true
+  if (presetProjectId) {
+    await searchProjects('')
+    const hit = projectOptions.value.find((p) => p.id === presetProjectId)
+    if (!hit) {
+      const { data } = await fetchProjects({ page: 1, page_size: 100 })
+      projectOptions.value = data.items
+    }
+    if (projectOptions.value.some((p) => p.id === presetProjectId)) {
+      form.project_id = presetProjectId
+      await onProjectChange(presetProjectId)
+    }
+  }
+}
+
+async function applyCreateQuery() {
+  if (String(route.query.create || '') !== '1') return
+  const pid = Number(route.query.project_id)
+  await openCreate(Number.isFinite(pid) && pid > 0 ? pid : undefined)
 }
 
 async function onCreate() {
@@ -1028,5 +1054,6 @@ onMounted(async () => {
   resources.value = data
   await searchProjects('')
   await reload()
+  await applyCreateQuery()
 })
 </script>

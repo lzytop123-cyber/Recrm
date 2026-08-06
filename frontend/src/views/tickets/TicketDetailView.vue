@@ -1,7 +1,7 @@
 <template>
   <div class="detail-page" v-loading="loading">
     <div class="top-bar">
-      <el-button @click="$router.push('/tickets')">返回工作台</el-button>
+      <el-button @click="$router.push('/tickets')">返回工单看板</el-button>
       <div class="actions" v-if="item">
         <el-button v-if="item.can_assign" type="primary" @click="openAssign">分派</el-button>
         <el-button v-if="item.can_accept" type="success" @click="onAccept">接单处理</el-button>
@@ -23,22 +23,27 @@
       type="info"
       :closable="false"
       show-icon
-      :title="item.next_actor_hint"
+      :title="`下一步：${item.next_actor_hint}`"
       style="margin-bottom: 12px"
     />
 
     <el-card v-if="item">
       <template #header>
         <div class="card-header">
-          <span>{{ item.ticket_no }} · {{ item.title }}</span>
-          <el-tag :type="statusTag(item.status)" size="small">
-            {{ TICKET_STATUS_LABEL[item.status] || item.status }}
-          </el-tag>
-          <el-tag v-if="item.is_overdue" type="danger" size="small">超时</el-tag>
-          <el-tag v-else-if="item.is_near_sla" type="warning" size="small">接近时限</el-tag>
-          <el-tag v-if="(item.escalated_level || 0) > 0" type="danger" effect="plain" size="small">
-            已升级 L{{ item.escalated_level }}
-          </el-tag>
+          <div class="title-block">
+            <span>{{ item.ticket_no }} · {{ item.title }}</span>
+            <p class="flow-hint">流程：分派 → 接单 → 处理 → 发起人确认关闭</p>
+          </div>
+          <div class="header-tags">
+            <el-tag :type="statusTag(item.status)" size="small">
+              {{ TICKET_STATUS_LABEL[item.status] || item.status }}
+            </el-tag>
+            <el-tag v-if="item.is_overdue" type="danger" size="small">超时</el-tag>
+            <el-tag v-else-if="item.is_near_sla" type="warning" size="small">接近时限</el-tag>
+            <el-tag v-if="(item.escalated_level || 0) > 0" type="danger" effect="plain" size="small">
+              已升级 L{{ item.escalated_level }}
+            </el-tag>
+          </div>
         </div>
       </template>
       <el-descriptions :column="3" border>
@@ -48,7 +53,7 @@
         <el-descriptions-item label="发起人">{{ item.creator_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理人">{{ item.assignee_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="承接部门">{{ item.department_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="关联项目">
+        <el-descriptions-item label="挂到项目">
           <el-button
             v-if="item.project_id"
             link
@@ -59,7 +64,7 @@
           </el-button>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item label="关联任务">
+        <el-descriptions-item label="挂到任务">
           <span v-if="item.task_id">{{ item.task_no }} · {{ item.task_title }}</span>
           <span v-else>-</span>
         </el-descriptions-item>
@@ -431,8 +436,25 @@ onMounted(loadDetail)
 }
 .card-header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.title-block {
+  min-width: 0;
+}
+.flow-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--crm-ink-soft, #909399);
+}
+.header-tags {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .records-card {

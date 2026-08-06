@@ -40,7 +40,7 @@
         <el-descriptions-item label="开始时间">{{ formatTime(item.start_time) }}</el-descriptions-item>
         <el-descriptions-item label="结束时间">{{ formatTime(item.end_time) }}</el-descriptions-item>
         <el-descriptions-item label="地点">{{ item.location || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="关联项目" :span="2">
+        <el-descriptions-item label="挂到项目" :span="2">
           <el-button
             v-if="item.project_id"
             link

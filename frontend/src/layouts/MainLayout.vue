@@ -66,13 +66,9 @@
               <span>个人资料</span>
               <small>账号信息与飞书绑定</small>
             </button>
-            <button
-              v-if="userStore.hasPermission('approval:center')"
-              type="button"
-              @click="onAccountAction('notifications')"
-            >
-              <span>审批中心</span>
-              <small>查看待我审批的事项</small>
+            <button type="button" @click="onAccountAction('notifications')">
+              <span>我的待办</span>
+              <small>审批 / 工单 / 线索 / 任务汇总</small>
             </button>
             <button type="button" @click="onAccountAction('permissions')">
               <span>权限与数据范围</span>
@@ -201,6 +197,7 @@ const activeMenu = computed(() => {
     '/opportunities',
     '/contracts',
     '/payments',
+    '/projects/delivery',
     '/projects',
     '/okrs',
     '/assets',
@@ -210,6 +207,7 @@ const activeMenu = computed(() => {
     '/org',
     '/system',
     '/approvals',
+    '/todos',
   ]
   for (const p of prefixes) {
     if (path === p || path.startsWith(`${p}/`)) return p
@@ -222,7 +220,6 @@ const salesCrumb = computed(() => {
   const tab = String(route.query.tab || '')
   if (tab === 'mine') return '我的线索'
   if (tab === 'customers') return '客户与商机'
-  if (tab === 'contracts') return '合同与回款'
   if (tab === 'pool') return '线索总览'
   return '线索总览'
 })
@@ -279,7 +276,7 @@ async function onAccountAction(action: 'profile' | 'notifications' | 'permission
     return
   }
   if (action === 'notifications') {
-    router.push('/approvals')
+    router.push('/todos')
     return
   }
   if (action === 'permissions') {

@@ -7,6 +7,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import { setupPermDirective } from './directives/perm'
 import '../../tokens.css'
 import './styles/index.css'
 
@@ -18,6 +19,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 }
 
 app.use(createPinia())
+setupPermDirective(app)
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')

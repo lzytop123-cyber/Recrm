@@ -32,6 +32,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '经营总览', permission: 'dashboard:view' },
       },
       {
+        path: 'todos',
+        name: 'MyTodos',
+        component: () => import('@/views/todos/MyTodosView.vue'),
+        meta: { title: '我的待办' },
+      },
+      {
         path: 'approvals',
         name: 'Approvals',
         component: () => import('@/views/approvals/ApprovalCenterView.vue'),
@@ -81,7 +87,9 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'contracts',
-        redirect: { path: '/sales', query: { tab: 'contracts' } },
+        name: 'Contracts',
+        component: () => import('@/views/contracts/ContractsWorkbenchView.vue'),
+        meta: { title: '合同回款', permission: 'contract:view' },
       },
       {
         path: 'contracts/:id',
@@ -102,10 +110,16 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '收款详情', permission: 'payment:view' },
       },
       {
+        path: 'projects/delivery',
+        name: 'ProjectDeliveryWork',
+        component: () => import('@/views/projects/ProjectDeliveryView.vue'),
+        meta: { title: '交付执行', permission: 'project:view' },
+      },
+      {
         path: 'projects',
         name: 'Projects',
         component: () => import('@/views/projects/ProjectDeliveryView.vue'),
-        meta: { title: '项目交付', permission: 'project:view' },
+        meta: { title: '项目台账', permission: 'project:view' },
       },
       {
         path: 'projects/:id',
@@ -117,14 +131,13 @@ const routes: RouteRecordRaw[] = [
         path: 'okrs',
         name: 'Okrs',
         component: () => import('@/views/okrs/OkrListView.vue'),
-        meta: { title: '目标绩效', permission: 'okr:view' },
+        meta: { title: '目标绩效', permission: 'okr:view', phase2: true },
       },
-      
       {
         path: 'okrs/:id',
         name: 'OkrDetail',
         component: () => import('@/views/okrs/OkrDetailView.vue'),
-        meta: { title: 'OKR详情', permission: 'okr:view' },
+        meta: { title: 'OKR详情', permission: 'okr:view', phase2: true },
       },
       {
         path: 'assets',
@@ -229,6 +242,13 @@ router.beforeEach(async (to, _from, next) => {
   const required = to.meta.permission as string | undefined
   if (required && !userStore.hasPermission(required)) {
     ElMessage.warning('无权访问该页面')
+    next({ path: userStore.homePath })
+    return
+  }
+
+  // 第二期模块：菜单已隐藏，直链访问也暂不开放
+  if (to.meta.phase2) {
+    ElMessage.info('目标绩效将在第二期开放')
     next({ path: userStore.homePath })
     return
   }

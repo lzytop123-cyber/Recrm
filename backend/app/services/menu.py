@@ -18,11 +18,13 @@ LEAD_ENTRY_ONLY_ROLE_CODES: Set[str] = {
 # 菜单定义：permission 为空表示登录即可见；有值则需具备对应权限（admin 角色放行）
 MENU_CATALOG: List[dict] = [
     {"path": "/dashboard", "title": "经营总览", "icon": "Odometer", "permission": "dashboard:view"},
+    {"path": "/todos", "title": "我的待办", "icon": "Bell", "permission": None},
     {"path": "/approvals", "title": "审批中心", "icon": "CircleCheck", "permission": "approval:center"},
     {"path": "/lead-entry", "title": "线索录入", "icon": "EditPen", "permission": "lead:view"},
     {"path": "/sales", "title": "销售中心", "icon": "Promotion", "permission": "lead:view"},
-    # {"path": "/payments", "title": "收款", "icon": "Wallet", "permission": "payment:view"},
-    {"path": "/projects", "title": "项目交付", "icon": "Briefcase", "permission": "project:view"},
+    {"path": "/contracts", "title": "合同回款", "icon": "Wallet", "permission": "contract:view"},
+    {"path": "/projects", "title": "项目台账", "icon": "Briefcase", "permission": "project:view"},
+    {"path": "/projects/delivery", "title": "交付执行", "icon": "Finished", "permission": "project:view"},
     {"path": "/tickets", "title": "协作工单", "icon": "Tickets", "permission": "ticket:view"},
     {"path": "/schedules", "title": "排期会议", "icon": "Calendar", "permission": "schedule:view"},
     {"path": "/okrs", "title": "目标绩效", "icon": "Flag", "permission": "okr:view"},
@@ -31,11 +33,16 @@ MENU_CATALOG: List[dict] = [
     {"path": "/system", "title": "系统管理", "icon": "Setting", "permission": "system:view"},
 ]
 
+# 第二期再开放：菜单隐藏，路由/API 仍保留便于以后打开
+PHASE2_HIDDEN_MENU_PATHS: Set[str] = {
+    "/okrs",
+}
+
 
 def is_lead_entry_only(user: User) -> bool:
     """无销售全链路权限的岗位：登录后走线索录入页。"""
     role_codes = {r.code for r in user.roles}
-    if role_codes & {"admin", "sales", "executive", "middle_manager"}:
+    if role_codes & {"admin", "sales", "executive", "middle_manager", "board"}:
         return False
     if role_codes & LEAD_ENTRY_ONLY_ROLE_CODES:
         return True
@@ -54,6 +61,8 @@ def build_menus_for_user(user: User) -> List[MenuItem]:
     menus: List[MenuItem] = []
     for item in MENU_CATALOG:
         path = item["path"]
+        if path in PHASE2_HIDDEN_MENU_PATHS:
+            continue
         # 仅录入岗：显示线索录入，不显示完整销售中心
         if entry_only:
             if path == "/sales":
@@ -61,9 +70,6 @@ def build_menus_for_user(user: User) -> List[MenuItem]:
         else:
             if path == "/lead-entry":
                 continue
-        # 审批中心仅系统管理员
-        if path == "/approvals" and not is_admin:
-            continue
         perm = item.get("permission")
         if perm is None or is_admin or perm in owned:
             menus.append(MenuItem(**item))

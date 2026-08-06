@@ -8,13 +8,29 @@ from app.api.deps import PermissionChecker
 from app.database import get_db
 from app.models.user import User
 from app.schemas.asset import (
+    AlertOut,
     AssetCreate,
     AssetOut,
+    AssetReportOut,
     AssetWorkbenchOut,
     BorrowCreate,
     BorrowOut,
     BorrowRejectRequest,
+    DepreciationRuleCreate,
+    DepreciationRuleOut,
+    DepreciationRunRequest,
+    DepreciationSnapshotOut,
+    DisposalOut,
+    DisposalRejectRequest,
+    DisposeRequest,
+    InventoryCreate,
+    InventoryDetailOut,
+    InventoryDifferenceOut,
+    InventoryLineOut,
     InventorySessionOut,
+    MaintenanceCreate,
+    MaintenanceOut,
+    MaintenanceRejectRequest,
     ScanRequest,
     ScanResultOut,
 )
@@ -140,6 +156,255 @@ def scan(
         inventory=InventorySessionOut.model_validate(data["inventory"])
         if data.get("inventory")
         else None,
+    )
+
+
+@router.get("/inventories", response_model=List[InventorySessionOut], summary="盘点列表")
+def list_inventories(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> List[InventorySessionOut]:
+    _ = current_user
+    return [InventorySessionOut.model_validate(x) for x in asset_service.list_inventories(db)]
+
+
+@router.post("/inventories", response_model=InventorySessionOut, summary="创建盘点")
+def create_inventory(
+    payload: InventoryCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> InventorySessionOut:
+    return InventorySessionOut.model_validate(
+        asset_service.create_inventory(db, current_user, payload)
+    )
+
+
+@router.get("/inventories/{inventory_id}", response_model=InventoryDetailOut, summary="盘点详情")
+def get_inventory(
+    inventory_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> InventoryDetailOut:
+    _ = current_user
+    inv = asset_service.get_inventory(db, inventory_id)
+    return InventoryDetailOut(
+        **InventorySessionOut.model_validate(inv).model_dump(),
+        lines=[InventoryLineOut.model_validate(x) for x in getattr(inv, "lines", [])],
+    )
+
+
+@router.post(
+    "/inventories/{inventory_id}/submit",
+    response_model=InventoryDetailOut,
+    summary="提交盘点",
+)
+def submit_inventory(
+    inventory_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> InventoryDetailOut:
+    inv = asset_service.submit_inventory(db, current_user, inventory_id)
+    return InventoryDetailOut(
+        **InventorySessionOut.model_validate(inv).model_dump(),
+        lines=[InventoryLineOut.model_validate(x) for x in getattr(inv, "lines", [])],
+    )
+
+
+@router.post(
+    "/inventories/{inventory_id}/difference",
+    response_model=InventoryDifferenceOut,
+    summary="盘点差异",
+)
+def inventory_difference(
+    inventory_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> InventoryDifferenceOut:
+    data = asset_service.inventory_difference(db, current_user, inventory_id)
+    return InventoryDifferenceOut(
+        missing=[InventoryLineOut.model_validate(x) for x in data["missing"]],
+        extra=[InventoryLineOut.model_validate(x) for x in data["extra"]],
+        anomaly=[InventoryLineOut.model_validate(x) for x in data["anomaly"]],
+        matched_count=data["matched_count"],
+    )
+
+
+@router.get("/maintenances", response_model=List[MaintenanceOut], summary="维保列表")
+def list_maintenances(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+    status: Optional[str] = None,
+) -> List[MaintenanceOut]:
+    _ = current_user
+    return [
+        MaintenanceOut.model_validate(x)
+        for x in asset_service.list_maintenances(db, status=status)
+    ]
+
+
+@router.post("/maintenances", response_model=MaintenanceOut, summary="新建维保")
+def create_maintenance(
+    payload: MaintenanceCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> MaintenanceOut:
+    return MaintenanceOut.model_validate(
+        asset_service.create_maintenance(db, current_user, payload)
+    )
+
+
+@router.post(
+    "/maintenances/{maintenance_id}/approve",
+    response_model=MaintenanceOut,
+    summary="批准维保",
+)
+def approve_maintenance(
+    maintenance_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> MaintenanceOut:
+    return MaintenanceOut.model_validate(
+        asset_service.approve_maintenance(db, current_user, maintenance_id)
+    )
+
+
+@router.post(
+    "/maintenances/{maintenance_id}/reject",
+    response_model=MaintenanceOut,
+    summary="驳回维保",
+)
+def reject_maintenance(
+    maintenance_id: int,
+    payload: MaintenanceRejectRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> MaintenanceOut:
+    return MaintenanceOut.model_validate(
+        asset_service.reject_maintenance(db, current_user, maintenance_id, payload)
+    )
+
+
+@router.get(
+    "/depreciation-rules",
+    response_model=List[DepreciationRuleOut],
+    summary="折旧规则列表",
+)
+def list_depreciation_rules(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> List[DepreciationRuleOut]:
+    _ = current_user
+    return [
+        DepreciationRuleOut.model_validate(x)
+        for x in asset_service.list_depreciation_rules(db)
+    ]
+
+
+@router.post(
+    "/depreciation-rules",
+    response_model=DepreciationRuleOut,
+    summary="创建折旧规则",
+)
+def create_depreciation_rule(
+    payload: DepreciationRuleCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> DepreciationRuleOut:
+    return DepreciationRuleOut.model_validate(
+        asset_service.create_depreciation_rule(db, current_user, payload)
+    )
+
+
+@router.post(
+    "/depreciation/run",
+    response_model=List[DepreciationSnapshotOut],
+    summary="运行折旧",
+)
+def run_depreciation(
+    payload: DepreciationRunRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> List[DepreciationSnapshotOut]:
+    return [
+        DepreciationSnapshotOut.model_validate(x)
+        for x in asset_service.run_depreciation(db, current_user, payload)
+    ]
+
+
+@router.get(
+    "/depreciation/snapshots",
+    response_model=List[DepreciationSnapshotOut],
+    summary="折旧快照",
+)
+def list_depreciation_snapshots(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+    period_label: Optional[str] = None,
+) -> List[DepreciationSnapshotOut]:
+    _ = current_user
+    return [
+        DepreciationSnapshotOut.model_validate(x)
+        for x in asset_service.list_depreciation_snapshots(db, period_label=period_label)
+    ]
+
+
+@router.post(
+    "/disposals/{disposal_id}/approve",
+    response_model=DisposalOut,
+    summary="批准处置",
+)
+def approve_disposal(
+    disposal_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> DisposalOut:
+    return DisposalOut.model_validate(
+        asset_service.approve_disposal(db, current_user, disposal_id)
+    )
+
+
+@router.post(
+    "/disposals/{disposal_id}/reject",
+    response_model=DisposalOut,
+    summary="驳回处置",
+)
+def reject_disposal(
+    disposal_id: int,
+    payload: DisposalRejectRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> DisposalOut:
+    return DisposalOut.model_validate(
+        asset_service.reject_disposal(db, current_user, disposal_id, payload)
+    )
+
+
+@router.get("/reports", response_model=AssetReportOut, summary="资产报表")
+def reports(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> AssetReportOut:
+    _ = current_user
+    return AssetReportOut(**asset_service.asset_reports(db))
+
+
+@router.get("/alerts", response_model=List[AlertOut], summary="资产告警")
+def alerts(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> List[AlertOut]:
+    return [AlertOut(**x) for x in asset_service.asset_alerts(db, current_user)]
+
+
+@router.post("/{asset_id}/dispose", response_model=DisposalOut, summary="申请处置")
+def dispose_asset(
+    asset_id: int,
+    payload: DisposeRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> DisposalOut:
+    return DisposalOut.model_validate(
+        asset_service.dispose_asset(db, current_user, asset_id, payload)
     )
 
 

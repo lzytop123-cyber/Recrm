@@ -1,26 +1,48 @@
 <template>
   <div class="crm-page ticket-workbench" v-loading="loading">
     <header class="sales-head">
+      <div class="sales-head-copy">
+        <h1>协作工单</h1>
+        <p>
+          跨部门请求：发起 → 分派/接单 → 处理 → 发起人确认关闭。
+          可挂到交付项目，但不等于计划节点或人员档期。
+        </p>
+      </div>
       <div class="sales-head-actions">
-        <el-button @click="slaVisible = true">工单时限规则</el-button>
-        <el-button type="primary" @click="openCreate">＋ 发起工单</el-button>
+        <el-button @click="slaVisible = true">时限规则</el-button>
+        <el-button type="primary" @click="openCreate()">＋ 发起工单</el-button>
       </div>
     </header>
 
     <section class="ticket-kpis">
-      <div>
+      <button
+        type="button"
+        class="ticket-kpi"
+        :class="{ active: focusFilter === 'near_sla' }"
+        @click="toggleFocus('near_sla')"
+      >
         <small>接近时限</small>
         <b>{{ stats?.near_sla ?? 0 }}</b>
-      </div>
-      <div>
+      </button>
+      <button
+        type="button"
+        class="ticket-kpi"
+        :class="{ active: focusFilter === 'overdue' }"
+        @click="toggleFocus('overdue')"
+      >
         <small>已逾期</small>
         <b class="danger">{{ stats?.overdue ?? 0 }}</b>
-      </div>
-      <div>
+      </button>
+      <button
+        type="button"
+        class="ticket-kpi"
+        :class="{ active: focusFilter === 'pending_confirm' }"
+        @click="toggleFocus('pending_confirm')"
+      >
         <small>待发起人确认</small>
         <b>{{ stats?.pending_confirm ?? 0 }}</b>
-      </div>
-      <div>
+      </button>
+      <div class="ticket-kpi ticket-kpi--static">
         <small>本月满意度</small>
         <b>{{ stats?.satisfaction_avg != null ? `${stats.satisfaction_avg} / 5` : '暂无' }}</b>
       </div>
@@ -78,8 +100,9 @@
           @keyup.enter="reload"
         />
         <el-button type="primary" @click="reload">查询</el-button>
+        <el-button v-if="focusFilter" @click="clearFocus">清除快捷筛选</el-button>
       </div>
-      <span class="ticket-chip">分类时限 · 50%与80%提醒 · 超时逐级升级</span>
+      <span class="ticket-chip">{{ focusHint }}</span>
     </div>
 
     <section class="ticket-board">
@@ -122,100 +145,110 @@
             </div>
             <div v-if="row.next_actor_hint" class="ticket-card-hint">{{ row.next_actor_hint }}</div>
           </button>
-          <div v-if="!col.items.length" class="ticket-empty">暂无工单</div>
+          <div v-if="!col.items.length" class="ticket-empty">{{ col.empty }}</div>
         </div>
       </article>
     </section>
 
-    <el-dialog v-model="createVisible" title="发起协作" width="640px" destroy-on-close>
+    <el-dialog v-model="createVisible" title="发起协作工单" width="640px" destroy-on-close class="claim-dialog">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="关联项目">
-          <el-select
-            v-model="form.project_id"
-            clearable
-            filterable
-            remote
-            :remote-method="searchProjects"
-            :loading="projectLoading"
-            placeholder="可选，不关联项目"
-            style="width: 100%"
-            @change="onProjectChange"
-          >
-            <el-option
-              v-for="p in projectOptions"
-              :key="p.id"
-              :label="`${p.project_no} · ${p.name}`"
-              :value="p.id"
+        <section class="form-block">
+          <h3><span>1</span>请求内容</h3>
+          <el-form-item label="工单标题" prop="title">
+            <el-input v-model="form.title" maxlength="200" placeholder="简述跨部门请求" />
+          </el-form-item>
+          <el-form-item label="承接部门" prop="department_id">
+            <el-select v-model="form.department_id" filterable placeholder="请选择" style="width: 100%">
+              <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="工单分类" prop="ticket_type">
+            <el-select v-model="form.ticket_type" style="width: 100%">
+              <el-option
+                v-for="opt in TICKET_TYPE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <div class="field-tip">分类决定完成时限与升级规则（详见「时限规则」）。</div>
+          </el-form-item>
+          <el-form-item label="优先级" prop="priority">
+            <el-select v-model="form.priority" style="width: 100%">
+              <el-option
+                v-for="opt in TICKET_PRIORITY_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="请求说明" prop="content">
+            <el-input
+              v-model="form.content"
+              type="textarea"
+              :rows="4"
+              placeholder="说明背景、期望结果与截止要求"
             />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="关联项目任务">
-          <el-select
-            v-model="form.task_id"
-            clearable
-            filterable
-            :disabled="!form.project_id"
-            :loading="taskLoading"
-            :placeholder="taskSelectPlaceholder"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="t in taskOptions"
-              :key="t.id"
-              :label="taskOptionLabel(t)"
-              :value="t.id"
-            />
-          </el-select>
-          <div class="field-tip">{{ taskFieldTip }}</div>
-        </el-form-item>
-        <el-form-item label="工单标题" prop="title">
-          <el-input v-model="form.title" maxlength="200" placeholder="简述跨部门请求" />
-        </el-form-item>
-        <el-form-item label="承接部门" prop="department_id">
-          <el-select v-model="form.department_id" filterable placeholder="请选择" style="width: 100%">
-            <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="工单分类" prop="ticket_type">
-          <el-select v-model="form.ticket_type" style="width: 100%">
-            <el-option
-              v-for="opt in TICKET_TYPE_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-          <div style="margin-top: 4px; font-size: 12px; color: var(--crm-ink-soft)">
-            分类决定响应、完成和升级规则。
-          </div>
-        </el-form-item>
-        <el-form-item label="优先级" prop="priority">
-          <el-select v-model="form.priority" style="width: 100%">
-            <el-option
-              v-for="opt in TICKET_PRIORITY_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="指定处理人">
-          <el-select
-            v-model="form.assignee_id"
-            clearable
-            filterable
-            placeholder="可选，稍后分派"
-            style="width: 100%"
-          >
-            <el-option v-for="u in assignees" :key="u.id" :label="u.name" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="请求说明" prop="content">
-          <el-input v-model="form.content" type="textarea" :rows="4" placeholder="说明背景、期望结果与截止要求" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" :rows="2" />
-        </el-form-item>
+          </el-form-item>
+        </section>
+        <section class="form-block">
+          <h3><span>2</span>分派与挂接（可选）</h3>
+          <el-form-item label="指定处理人">
+            <el-select
+              v-model="form.assignee_id"
+              clearable
+              filterable
+              placeholder="可不选，稍后由承接部门分派"
+              style="width: 100%"
+            >
+              <el-option v-for="u in assignees" :key="u.id" :label="u.name" :value="u.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="挂到项目">
+            <el-select
+              v-model="form.project_id"
+              clearable
+              filterable
+              remote
+              :remote-method="searchProjects"
+              :loading="projectLoading"
+              placeholder="输入编号/名称搜索；已完成项目也可挂"
+              style="width: 100%"
+              @visible-change="(open: boolean) => open && searchProjects('')"
+              @change="onProjectChange"
+            >
+              <el-option
+                v-for="p in projectOptions"
+                :key="p.id"
+                :label="projectOptionLabel(p)"
+                :value="p.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="挂到任务">
+            <el-select
+              v-model="form.task_id"
+              clearable
+              filterable
+              :disabled="!form.project_id"
+              :loading="taskLoading"
+              :placeholder="taskSelectPlaceholder"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="t in taskOptions"
+                :key="t.id"
+                :label="taskOptionLabel(t)"
+                :value="t.id"
+              />
+            </el-select>
+            <div class="field-tip">{{ taskFieldTip }}</div>
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="form.remark" type="textarea" :rows="2" />
+          </el-form-item>
+        </section>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -225,19 +258,17 @@
 
     <el-dialog v-model="slaVisible" title="工单时限规则" width="560px" destroy-on-close>
       <p style="margin: 0 0 12px; color: var(--crm-ink-soft); font-size: 13px">
-        系统根据工单分类计算响应和完成时限，并持续显示剩余时间。具体数值可由管理员配置。
+        按工单分类计算完成时限；等待发起人确认期间暂停计时。
       </p>
       <div class="sla-rules-list">
-        <div class="row"><span>项目交付工单</span><b>48 小时内完成 · 按项目计划对齐</b></div>
+        <div class="row"><span>交付协作工单</span><b>48 小时内完成</b></div>
         <div class="row"><span>普通跨部门协作</span><b>72 小时内完成</b></div>
         <div class="row"><span>紧急客户或生产问题</span><b>4 小时内完成</b></div>
         <div class="row"><span>反馈工单</span><b>24 小时内完成</b></div>
-        <div class="row"><span>已使用时限达到 50%</span><b>提醒当前处理人</b></div>
-        <div class="row"><span>已使用时限达到 80%</span><b>再次提醒处理人和负责人</b></div>
-        <div class="row"><span>超过处理时限</span><b>逐级通知承接部门及业务负责人</b></div>
-        <div class="row"><span>等待发起人验收期间</span><b>暂停处理计时</b></div>
-        <div class="row"><span>关闭后重开窗口</span><b>3 个工作日</b></div>
-        <div class="row"><span>满意度评价</span><b>关闭时 1–5 分</b></div>
+        <div class="row"><span>已使用时限 50% / 80%</span><b>提醒处理人（及负责人）</b></div>
+        <div class="row"><span>超过处理时限</span><b>逐级升级通知</b></div>
+        <div class="row"><span>等待发起人确认</span><b>暂停处理计时</b></div>
+        <div class="row"><span>关闭后重开</span><b>3 个工作日内</b></div>
       </div>
       <template #footer>
         <el-button type="primary" @click="slaVisible = false">我知道了</el-button>
@@ -248,7 +279,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import {
@@ -265,7 +296,10 @@ import {
 import { fetchProjects, fetchProjectTasks, TASK_STATUS_LABEL, type Project, type ProjectTask } from '@/api/projects'
 import { fetchDepartments, type Department } from '@/api/org'
 
+type FocusFilter = 'near_sla' | 'overdue' | 'pending_confirm'
+
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const projectLoading = ref(false)
@@ -278,6 +312,7 @@ const projectOptions = ref<Project[]>([])
 const taskOptions = ref<ProjectTask[]>([])
 const departments = ref<Department[]>([])
 const assignees = ref<AssigneeOption[]>([])
+const focusFilter = ref<FocusFilter | null>(null)
 
 const projectId = ref<number | undefined>()
 const departmentId = ref<number | undefined>()
@@ -305,38 +340,71 @@ const rules: FormRules = {
   content: [{ required: true, message: '请填写请求说明', trigger: 'blur' }],
 }
 
+const filteredItems = computed(() => {
+  const list = items.value
+  if (focusFilter.value === 'near_sla') {
+    return list.filter((t) => t.is_near_sla && !t.is_overdue)
+  }
+  if (focusFilter.value === 'overdue') {
+    return list.filter((t) => t.is_overdue)
+  }
+  if (focusFilter.value === 'pending_confirm') {
+    return list.filter((t) => t.status === 'pending_confirm')
+  }
+  return list
+})
+
+const focusHint = computed(() => {
+  if (focusFilter.value === 'near_sla') return '快捷筛选：接近时限'
+  if (focusFilter.value === 'overdue') return '快捷筛选：已逾期'
+  if (focusFilter.value === 'pending_confirm') return '快捷筛选：待发起人确认'
+  return '看板按处理阶段排列 · 点上方卡片可快捷筛选'
+})
+
 const boardColumns = computed(() => {
   const cols = [
     {
       key: 'receive',
       label: '待接收',
       color: '#8c8c8c',
+      empty: '暂无待分派/待接单',
       match: (s: string) => s === 'pending_assign' || s === 'pending_accept',
     },
     {
       key: 'processing',
       label: '处理中',
       color: '#1677ff',
+      empty: '暂无处理中工单',
       match: (s: string) => s === 'processing',
     },
     {
       key: 'confirm',
       label: '待确认',
       color: '#faad14',
+      empty: '暂无待发起人确认',
       match: (s: string) => s === 'pending_confirm',
     },
     {
       key: 'closed',
       label: '已关闭',
       color: '#52c41a',
+      empty: '暂无已关闭工单',
       match: (s: string) => s === 'completed' || s === 'closed',
     },
   ]
   return cols.map((col) => ({
     ...col,
-    items: items.value.filter((t) => col.match(t.status)),
+    items: filteredItems.value.filter((t) => col.match(t.status)),
   }))
 })
+
+function toggleFocus(key: FocusFilter) {
+  focusFilter.value = focusFilter.value === key ? null : key
+}
+
+function clearFocus() {
+  focusFilter.value = null
+}
 
 function typeLabel(v: string) {
   return TICKET_TYPE_OPTIONS.find((x) => x.value === v)?.label || v
@@ -374,12 +442,23 @@ async function searchProjects(q: string) {
   projectLoading.value = true
   try {
     const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 50 })
-    projectOptions.value = data.items.filter(
-      (p) => !['completed', 'terminated'].includes(p.status),
-    )
+    // 工单挂项目用于追溯：已完成也可挂；仅排除已终止
+    projectOptions.value = data.items.filter((p) => p.status !== 'terminated')
   } finally {
     projectLoading.value = false
   }
+}
+
+function projectOptionLabel(p: Project) {
+  const st =
+    p.status === 'completed'
+      ? '已完成'
+      : p.status === 'executing'
+        ? '执行中'
+        : p.status === 'accepted'
+          ? '已验收'
+          : ''
+  return st ? `${p.project_no} · ${p.name}（${st}）` : `${p.project_no} · ${p.name}`
 }
 
 const taskTotalForProject = ref(0)
@@ -395,18 +474,18 @@ const taskSelectPlaceholder = computed(() => {
   if (taskLoading.value) return '加载任务中…'
   if (taskTotalForProject.value === 0) return '该项目还没有任务'
   if (taskOptions.value.length === 0) return '暂无未完成任务可选'
-  return '可选，关联到具体任务'
+  return '可选，挂到具体任务'
 })
 
 const taskFieldTip = computed(() => {
-  if (!form.project_id) return '关联任务为可选项；不选也能提交工单。'
+  if (!form.project_id) return '挂到任务为可选项；不选也能提交工单。'
   if (taskTotalForProject.value === 0) {
-    return '该项目尚未创建任务。可先不关联任务直接提交，或到「项目交付 → 执行 → 任务工时」新建任务后再选。'
+    return '该项目尚未创建任务。可先不挂任务直接提交，或到「交付执行 → 任务工时」新建后再选。'
   }
   if (taskOptions.value.length === 0 && taskDoneForProject.value > 0) {
-    return `该项目任务均已完成（${taskDoneForProject.value} 条），不可再关联；可不选任务直接提交工单。`
+    return `该项目任务均已完成（${taskDoneForProject.value} 条），可不挂任务直接提交。`
   }
-  return '仅列出未完成任务；任务标题叫「完成任务」不代表状态已完成。'
+  return '仅列出未完成任务。'
 })
 
 async function loadTasksForProject(pid?: number) {
@@ -417,10 +496,10 @@ async function loadTasksForProject(pid?: number) {
   taskLoading.value = true
   try {
     const { data } = await fetchProjectTasks({ project_id: pid, page: 1, page_size: 100 })
-    const items = data.items || []
-    taskTotalForProject.value = items.length
-    taskDoneForProject.value = items.filter((t) => t.status === 'done').length
-    taskOptions.value = items.filter((t) => t.status !== 'done')
+    const list = data.items || []
+    taskTotalForProject.value = list.length
+    taskDoneForProject.value = list.filter((t) => t.status === 'done').length
+    taskOptions.value = list.filter((t) => t.status !== 'done')
   } finally {
     taskLoading.value = false
   }
@@ -457,19 +536,22 @@ async function reload() {
   await Promise.all([loadStats(), loadList()])
 }
 
-function openCreate() {
+async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.ticket_type = 'collaboration'
   form.priority = 'normal'
   form.content = ''
   form.assignee_id = undefined
   form.department_id = departments.value[0]?.id
-  form.project_id = projectId.value
+  form.project_id = presetProjectId || projectId.value
   form.task_id = undefined
   form.remark = ''
   taskOptions.value = []
-  if (form.project_id) loadTasksForProject(form.project_id)
   createVisible.value = true
+  if (form.project_id) {
+    await searchProjects('')
+    await loadTasksForProject(form.project_id)
+  }
 }
 
 async function onCreate() {
@@ -496,6 +578,12 @@ async function onCreate() {
   }
 }
 
+async function applyCreateQuery() {
+  if (String(route.query.create || '') !== '1') return
+  const pid = Number(route.query.project_id)
+  await openCreate(Number.isFinite(pid) && pid > 0 ? pid : undefined)
+}
+
 onMounted(async () => {
   const [{ data: depts }, { data: users }] = await Promise.all([
     fetchDepartments(),
@@ -505,6 +593,7 @@ onMounted(async () => {
   departments.value = depts
   assignees.value = users
   await reload()
+  await applyCreateQuery()
 })
 </script>
 
@@ -514,5 +603,26 @@ onMounted(async () => {
   color: var(--crm-ink-soft);
   font-size: 12px;
   line-height: 1.4;
+}
+.form-block {
+  margin-bottom: 8px;
+}
+.form-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.form-block h3 span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 12px;
 }
 </style>

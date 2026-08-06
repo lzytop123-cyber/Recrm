@@ -13,9 +13,6 @@
         <el-button v-else-if="tab === 'customers'" type="primary" @click="oppCreateTick++">
           ＋ 新建商机
         </el-button>
-        <el-button v-else-if="tab === 'contracts'" type="primary" @click="contractCreateTick++">
-          起草合同
-        </el-button>
       </div>
     </header>
 
@@ -42,15 +39,6 @@
       >
         客户与商机
       </button>
-      <button
-        v-if="canViewContracts"
-        type="button"
-        class="sales-tab"
-        :class="{ active: tab === 'contracts' }"
-        @click="setTab('contracts')"
-      >
-        合同与回款
-      </button>
     </div>
 
     <LeadListView
@@ -65,11 +53,6 @@
       :embedded="true"
       :open-create-signal="oppCreateTick"
     />
-    <ContractListView
-      v-else
-      :embedded="true"
-      :open-create-signal="contractCreateTick"
-    />
   </div>
 </template>
 
@@ -80,9 +63,8 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import LeadListView from '@/views/leads/LeadListView.vue'
 import OpportunityListView from '@/views/opportunities/OpportunityListView.vue'
-import ContractListView from '@/views/contracts/ContractListView.vue'
 
-type SalesTab = 'pool' | 'mine' | 'customers' | 'contracts'
+type SalesTab = 'pool' | 'mine' | 'customers'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,34 +75,41 @@ const canManagePool = computed(
 const canViewOpportunities = computed(
   () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
 )
-const canViewContracts = computed(
-  () => userStore.hasPermission('contract:view') || userStore.hasPermission('*'),
-)
 
 function normalizeTab(raw?: string | null): SalesTab {
   if (raw === 'pool' && canManagePool.value) return 'pool'
   if (raw === 'mine') return 'mine'
   if (raw === 'customers' && canViewOpportunities.value) return 'customers'
-  if (raw === 'contracts' && canViewContracts.value) return 'contracts'
   return canManagePool.value ? 'pool' : 'mine'
 }
 
 const leadCreateTick = ref(0)
 const oppCreateTick = ref(0)
-const contractCreateTick = ref(0)
 
 const tab = ref<SalesTab>(normalizeTab(route.query.tab as string))
 
 const headDesc = computed(() => {
   if (tab.value === 'pool') return '查看全公司线索状态，并对待分配线索执行批量或逐条分配。'
   if (tab.value === 'mine') return '查看分配给当前登录人的线索并持续跟进、转化或释放。'
-  if (tab.value === 'customers') return '维护客户档案与商机阶段，推进方案报价与赢单。'
-  return '合同台账、到款认领、财务复核与核销审批。'
+  return '维护客户档案与商机阶段，推进方案报价与赢单。'
 })
 
 watch(
-  () => [canManagePool.value, canViewOpportunities.value, canViewContracts.value],
+  () => route.query.tab,
+  (v) => {
+    if (v === 'contracts') {
+      router.replace({ path: '/contracts' })
+      return
+    }
+    tab.value = normalizeTab(v as string)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [canManagePool.value, canViewOpportunities.value],
   () => {
+    if (route.query.tab === 'contracts') return
     const next = normalizeTab(route.query.tab as string)
     if (next !== tab.value) tab.value = next
     if (!route.query.tab) {
@@ -138,13 +127,6 @@ function setTab(next: SalesTab) {
 function onImport() {
   ElMessage.info('批量录入将在下一迭代接入正式模板与校验流程')
 }
-
-watch(
-  () => route.query.tab,
-  (v) => {
-    tab.value = normalizeTab(v as string)
-  },
-)
 </script>
 
 <style scoped>

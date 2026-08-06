@@ -57,6 +57,16 @@ export const useUserStore = defineStore('user', () => {
     return perms.includes(code)
   }
 
+  /** 任一权限满足即可（用于 v-perm.any / 组合按钮） */
+  function hasAnyPermission(...codes: string[]) {
+    return codes.some((c) => hasPermission(c))
+  }
+
+  /** 全部权限均需满足 */
+  function hasAllPermissions(...codes: string[]) {
+    return codes.every((c) => hasPermission(c))
+  }
+
   const homePath = computed(() => user.value?.home_path || '/dashboard')
   const leadEntryOnly = computed(() => !!user.value?.lead_entry_only)
 
@@ -73,5 +83,7 @@ export const useUserStore = defineStore('user', () => {
     fetchProfile,
     logout,
     hasPermission,
+    hasAnyPermission,
+    hasAllPermissions,
   }
 })

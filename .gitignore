@@ -9,10 +9,12 @@ backend/venv/
 venv/
 .env
 backend/.env
+backend/.env.bak*
 *.db
 *.sqlite
 *.sqlite3
 backend/app.db
+backend/*.db.bak*
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/

@@ -300,7 +300,7 @@ def list_leads(
     pool:
       - mine: 我负责的
       - created: 我录入的（已分配后仍可回看；未分配仅管理层可见）
-      - public: 管理层线索池（待分配 + 已分配/跟进中，便于回看）
+      - public: 管理层线索总览（全状态：待分配/已分配/跟进/退回/转化/流失）
       - all: 按数据范围（非管理层不含未分配）
     """
     q = db.query(Lead)
@@ -321,7 +321,7 @@ def list_leads(
     elif pool == "public":
         if not is_manager:
             return 0, []
-        # 管理层线索池：待分配 + 已分配出去的（便于回看分配结果）
+        # 管理层线索总览：全状态（与「全部线索」卡片口径一致，含转化/流失）
         q = q.filter(
             Lead.status.in_(
                 [
@@ -329,6 +329,8 @@ def list_leads(
                     LEAD_STATUS_RETURNED,
                     LEAD_STATUS_ASSIGNED,
                     LEAD_STATUS_FOLLOWING,
+                    LEAD_STATUS_CONVERTED,
+                    LEAD_STATUS_LOST,
                 ]
             )
         )

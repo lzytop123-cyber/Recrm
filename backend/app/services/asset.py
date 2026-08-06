@@ -15,6 +15,7 @@ from app.models.asset import (
     ASSET_CATEGORIES,
     ASSET_STATUS_AVAILABLE,
     ASSET_STATUS_BORROWED,
+    ASSET_STATUS_DISPOSED,
     ASSET_STATUS_MAINTENANCE,
     ASSET_STATUS_PENDING_RETURN,
     ASSET_STATUS_RESERVED,
@@ -26,12 +27,33 @@ from app.models.asset import (
     BORROW_RETURNED,
     AssetBorrowItem,
     AssetBorrowRequest,
+    AssetDepreciationRule,
+    AssetDepreciationSnapshot,
+    AssetDisposal,
+    AssetInventoryLine,
     AssetInventorySession,
+    AssetMaintenance,
     FixedAsset,
+    ShootingSchedule,
+    ShootingScheduleAsset,
+    ShootingScheduleMember,
 )
 from app.models.department import Department
 from app.models.user import User
-from app.schemas.asset import AssetCreate, BorrowCreate, BorrowRejectRequest, ScanRequest
+from app.schemas.asset import (
+    AssetCreate,
+    BorrowCreate,
+    BorrowRejectRequest,
+    DepreciationRuleCreate,
+    DepreciationRunRequest,
+    DisposeRequest,
+    DisposalRejectRequest,
+    InventoryCreate,
+    MaintenanceCreate,
+    MaintenanceRejectRequest,
+    ScanRequest,
+    ShootingScheduleCreate,
+)
 
 
 def _now() -> datetime:
@@ -634,3 +656,538 @@ def get_workbench(db: Session, user: User) -> dict:
         "top_borrows": top_borrows,
         "can_manage": can_manage_assets(user),
     }
+
+
+# ---- inventory / maintenance / depreciation / disposal / reports ----
+
+
+def list_inventories(db: Session) -> list[AssetInventorySession]:
+    ensure_seed_data(db)
+    return db.query(AssetInventorySession).order_by(AssetInventorySession.id.desc()).all()
+
+
+def create_inventory(db: Session, user: User, payload: InventoryCreate) -> AssetInventorySession:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可创建盘点")
+    ensure_seed_data(db)
+    period = (payload.period_label or date.today().strftime("%Y-%m")).strip()
+    if db.query(AssetInventorySession).filter(AssetInventorySession.period_label == period).first():
+        raise HTTPException(status_code=400, detail="该期间盘点已存在")
+    total = db.query(FixedAsset).filter(FixedAsset.status != ASSET_STATUS_DISPOSED).count()
+    inv = AssetInventorySession(
+        period_label=period,
+        title=(payload.title or f"{period}器材盘点").strip(),
+        target_count=max(total, 1),
+        scanned_count=0,
+        matched_count=0,
+        anomaly_count=0,
+        status="in_progress",
+    )
+    db.add(inv)
+    db.commit()
+    db.refresh(inv)
+    return inv
+
+
+def get_inventory(db: Session, inventory_id: int) -> AssetInventorySession:
+    ensure_seed_data(db)
+    inv = db.query(AssetInventorySession).filter(AssetInventorySession.id == inventory_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="盘点不存在")
+    lines = (
+        db.query(AssetInventoryLine)
+        .filter(AssetInventoryLine.session_id == inv.id)
+        .order_by(AssetInventoryLine.id.asc())
+        .all()
+    )
+    inv.lines = lines  # type: ignore[attr-defined]
+    return inv
+
+
+def submit_inventory(db: Session, user: User, inventory_id: int) -> AssetInventorySession:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可提交盘点")
+    inv = db.query(AssetInventorySession).filter(AssetInventorySession.id == inventory_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="盘点不存在")
+    if inv.status != "in_progress":
+        raise HTTPException(status_code=400, detail="盘点已提交")
+    inv.status = "submitted"
+    db.commit()
+    db.refresh(inv)
+    return get_inventory(db, inv.id)
+
+
+def inventory_difference(db: Session, user: User, inventory_id: int) -> dict:
+    _ = user
+    inv = get_inventory(db, inventory_id)
+    lines: list[AssetInventoryLine] = list(getattr(inv, "lines", []) or [])
+    scanned_ids = {x.asset_id for x in lines if x.asset_id}
+    assets = (
+        db.query(FixedAsset)
+        .filter(FixedAsset.status != ASSET_STATUS_DISPOSED)
+        .all()
+    )
+    missing_rows = []
+    for a in assets:
+        if a.id not in scanned_ids:
+            row = AssetInventoryLine(
+                session_id=inv.id,
+                asset_id=a.id,
+                qr_code=a.qr_code,
+                result="missing",
+                scanned_at=_now(),
+            )
+            db.add(row)
+            db.flush()
+            missing_rows.append(row)
+            inv.anomaly_count = (inv.anomaly_count or 0) + 1
+    db.commit()
+    lines = (
+        db.query(AssetInventoryLine)
+        .filter(AssetInventoryLine.session_id == inv.id)
+        .order_by(AssetInventoryLine.id.asc())
+        .all()
+    )
+    return {
+        "missing": [x for x in lines if x.result == "missing"],
+        "extra": [x for x in lines if x.result == "extra"],
+        "anomaly": [x for x in lines if x.result == "anomaly"],
+        "matched_count": sum(1 for x in lines if x.result == "matched"),
+    }
+
+
+def list_maintenances(db: Session, *, status: Optional[str] = None) -> list[AssetMaintenance]:
+    ensure_seed_data(db)
+    q = db.query(AssetMaintenance).order_by(AssetMaintenance.id.desc())
+    if status:
+        q = q.filter(AssetMaintenance.status == status)
+    return [_enrich_maintenance(db, x) for x in q.all()]
+
+
+def _enrich_maintenance(db: Session, row: AssetMaintenance) -> AssetMaintenance:
+    asset = db.query(FixedAsset).filter(FixedAsset.id == row.asset_id).first()
+    row.asset_name = asset.name if asset else None  # type: ignore[attr-defined]
+    row.applicant_name = _user_name(db, row.applicant_id)  # type: ignore[attr-defined]
+    return row
+
+
+def create_maintenance(db: Session, user: User, payload: MaintenanceCreate) -> AssetMaintenance:
+    ensure_seed_data(db)
+    asset = db.query(FixedAsset).filter(FixedAsset.id == payload.asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    row = AssetMaintenance(
+        asset_id=payload.asset_id,
+        title=payload.title.strip(),
+        plan_date=payload.plan_date,
+        status="pending_approval",
+        applicant_id=user.id,
+        cost=payload.cost,
+        remark=payload.remark,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _enrich_maintenance(db, row)
+
+
+def approve_maintenance(db: Session, user: User, maintenance_id: int) -> AssetMaintenance:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可审批维保")
+    row = db.query(AssetMaintenance).filter(AssetMaintenance.id == maintenance_id).first()
+    if not row or row.status not in {"pending_approval", "planned"}:
+        raise HTTPException(status_code=400, detail="维保不存在或状态不可批准")
+    row.status = "approved"
+    row.approved_by = user.id
+    row.approved_at = _now()
+    asset = db.query(FixedAsset).filter(FixedAsset.id == row.asset_id).first()
+    if asset:
+        asset.status = ASSET_STATUS_MAINTENANCE
+        asset.current_use = row.title
+    db.commit()
+    db.refresh(row)
+    return _enrich_maintenance(db, row)
+
+
+def reject_maintenance(
+    db: Session, user: User, maintenance_id: int, payload: MaintenanceRejectRequest
+) -> AssetMaintenance:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可驳回维保")
+    row = db.query(AssetMaintenance).filter(AssetMaintenance.id == maintenance_id).first()
+    if not row or row.status not in {"pending_approval", "planned"}:
+        raise HTTPException(status_code=400, detail="维保不存在或状态不可驳回")
+    row.status = "rejected"
+    row.reject_reason = payload.reason.strip()
+    row.approved_by = user.id
+    row.approved_at = _now()
+    db.commit()
+    db.refresh(row)
+    return _enrich_maintenance(db, row)
+
+
+def list_depreciation_rules(db: Session) -> list[AssetDepreciationRule]:
+    return db.query(AssetDepreciationRule).order_by(AssetDepreciationRule.id.desc()).all()
+
+
+def create_depreciation_rule(
+    db: Session, user: User, payload: DepreciationRuleCreate
+) -> AssetDepreciationRule:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可创建折旧规则")
+    if payload.method != "straight_line":
+        raise HTTPException(status_code=400, detail="仅支持直线法")
+    row = AssetDepreciationRule(
+        name=payload.name.strip(),
+        version=payload.version.strip(),
+        status=payload.status,
+        method=payload.method,
+        useful_life_months=payload.useful_life_months,
+        residual_rate=payload.residual_rate,
+        effective_from=payload.effective_from or date.today(),
+        created_by=user.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def run_depreciation(db: Session, user: User, payload: DepreciationRunRequest) -> list[AssetDepreciationSnapshot]:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可运行折旧")
+    ensure_seed_data(db)
+    period = (payload.period_label or date.today().strftime("%Y-%m")).strip()
+    rule = (
+        db.query(AssetDepreciationRule)
+        .filter(AssetDepreciationRule.status == "published")
+        .order_by(AssetDepreciationRule.id.desc())
+        .first()
+    )
+    assets = db.query(FixedAsset).filter(FixedAsset.status != ASSET_STATUS_DISPOSED).all()
+    out: list[AssetDepreciationSnapshot] = []
+    for asset in assets:
+        months = _months_owned(asset.purchase_date)
+        value = asset.original_value or Decimal("0")
+        if rule:
+            life = max(1, rule.useful_life_months)
+            residual_rate = rule.residual_rate or Decimal("0.05")
+            monthly = (value * (Decimal("1") - residual_rate) / Decimal(life)).quantize(Decimal("0.01"))
+            acc = (monthly * months).quantize(Decimal("0.01"))
+            residual = (value * residual_rate).quantize(Decimal("0.01"))
+            net = max(residual, value - acc)
+            rule_id = rule.id
+        else:
+            monthly, acc, net = _depreciation(value, months)
+            rule_id = None
+        existing = (
+            db.query(AssetDepreciationSnapshot)
+            .filter(
+                AssetDepreciationSnapshot.period_label == period,
+                AssetDepreciationSnapshot.asset_id == asset.id,
+            )
+            .first()
+        )
+        if existing:
+            existing.rule_id = rule_id
+            existing.original_value = value
+            existing.monthly_amount = monthly
+            existing.accumulated = acc
+            existing.net_value = net
+            snap = existing
+        else:
+            snap = AssetDepreciationSnapshot(
+                period_label=period,
+                asset_id=asset.id,
+                rule_id=rule_id,
+                original_value=value,
+                monthly_amount=monthly,
+                accumulated=acc,
+                net_value=net,
+            )
+            db.add(snap)
+        out.append(snap)
+    db.commit()
+    for snap in out:
+        db.refresh(snap)
+        asset = db.query(FixedAsset).filter(FixedAsset.id == snap.asset_id).first()
+        snap.asset_name = asset.name if asset else None  # type: ignore[attr-defined]
+    return out
+
+
+def list_depreciation_snapshots(
+    db: Session, *, period_label: Optional[str] = None
+) -> list[AssetDepreciationSnapshot]:
+    q = db.query(AssetDepreciationSnapshot).order_by(AssetDepreciationSnapshot.id.desc())
+    if period_label:
+        q = q.filter(AssetDepreciationSnapshot.period_label == period_label)
+    rows = q.all()
+    for snap in rows:
+        asset = db.query(FixedAsset).filter(FixedAsset.id == snap.asset_id).first()
+        snap.asset_name = asset.name if asset else None  # type: ignore[attr-defined]
+    return rows
+
+
+def _enrich_disposal(db: Session, row: AssetDisposal) -> AssetDisposal:
+    asset = db.query(FixedAsset).filter(FixedAsset.id == row.asset_id).first()
+    row.asset_name = asset.name if asset else None  # type: ignore[attr-defined]
+    row.applicant_name = _user_name(db, row.applicant_id)  # type: ignore[attr-defined]
+    return row
+
+
+def dispose_asset(db: Session, user: User, asset_id: int, payload: DisposeRequest) -> AssetDisposal:
+    ensure_seed_data(db)
+    asset = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    if asset.status == ASSET_STATUS_DISPOSED:
+        raise HTTPException(status_code=400, detail="资产已处置")
+    pending = (
+        db.query(AssetDisposal)
+        .filter(AssetDisposal.asset_id == asset_id, AssetDisposal.status == "pending")
+        .first()
+    )
+    if pending:
+        raise HTTPException(status_code=400, detail="已有待审批处置单")
+    row = AssetDisposal(
+        asset_id=asset_id,
+        reason=payload.reason.strip(),
+        status="pending",
+        applicant_id=user.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _enrich_disposal(db, row)
+
+
+def approve_disposal(db: Session, user: User, disposal_id: int) -> AssetDisposal:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可审批处置")
+    row = db.query(AssetDisposal).filter(AssetDisposal.id == disposal_id).first()
+    if not row or row.status != "pending":
+        raise HTTPException(status_code=400, detail="处置单不存在或状态不可批准")
+    row.status = "done"
+    row.approved_by = user.id
+    row.approved_at = _now()
+    row.disposed_at = _now()
+    asset = db.query(FixedAsset).filter(FixedAsset.id == row.asset_id).first()
+    if asset:
+        asset.status = ASSET_STATUS_DISPOSED
+        asset.holder_id = None
+        asset.current_use = None
+        asset.schedule_ref = None
+    db.commit()
+    db.refresh(row)
+    return _enrich_disposal(db, row)
+
+
+def reject_disposal(
+    db: Session, user: User, disposal_id: int, payload: DisposalRejectRequest
+) -> AssetDisposal:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可驳回处置")
+    row = db.query(AssetDisposal).filter(AssetDisposal.id == disposal_id).first()
+    if not row or row.status != "pending":
+        raise HTTPException(status_code=400, detail="处置单不存在或状态不可驳回")
+    row.status = "rejected"
+    row.reject_reason = payload.reason.strip()
+    row.approved_by = user.id
+    row.approved_at = _now()
+    db.commit()
+    db.refresh(row)
+    return _enrich_disposal(db, row)
+
+
+def asset_reports(db: Session) -> dict:
+    ensure_seed_data(db)
+    assets = [enrich_asset(db, x) for x in db.query(FixedAsset).all()]
+    by_status: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    for a in assets:
+        by_status[a.status] = by_status.get(a.status, 0) + 1
+        by_category[a.category] = by_category.get(a.category, 0) + 1
+    return {
+        "total": len(assets),
+        "by_status": by_status,
+        "by_category": by_category,
+        "original_value_sum": sum((x.original_value or Decimal("0")) for x in assets),
+        "net_value_sum": sum((getattr(x, "net_value", None) or Decimal("0")) for x in assets),
+        "maintenance_open": db.query(AssetMaintenance)
+        .filter(AssetMaintenance.status.in_(["planned", "pending_approval", "approved", "in_progress"]))
+        .count(),
+        "disposal_pending": db.query(AssetDisposal).filter(AssetDisposal.status == "pending").count(),
+    }
+
+
+def asset_alerts(db: Session, user: User) -> list[dict]:
+    data = get_workbench(db, user)
+    return data["alerts"]
+
+
+# ---- shooting schedules ----
+
+
+def _enrich_shooting(db: Session, row: ShootingSchedule) -> ShootingSchedule:
+    row.owner_name = _user_name(db, row.owner_id)  # type: ignore[attr-defined]
+    asset_ids = [
+        x.asset_id
+        for x in db.query(ShootingScheduleAsset).filter(ShootingScheduleAsset.schedule_id == row.id).all()
+    ]
+    member_ids = [
+        x.user_id
+        for x in db.query(ShootingScheduleMember).filter(ShootingScheduleMember.schedule_id == row.id).all()
+    ]
+    row.asset_ids = asset_ids  # type: ignore[attr-defined]
+    row.member_ids = member_ids  # type: ignore[attr-defined]
+    row.conflicts = _shooting_conflicts(db, row, asset_ids, member_ids)  # type: ignore[attr-defined]
+    return row
+
+
+def _ranges_overlap(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and b_start < a_end
+
+
+def _shooting_conflicts(
+    db: Session,
+    schedule: ShootingSchedule,
+    asset_ids: list[int],
+    member_ids: list[int],
+) -> list[str]:
+    conflicts: list[str] = []
+    if not asset_ids and not member_ids:
+        return conflicts
+
+    other_schedules = (
+        db.query(ShootingSchedule)
+        .filter(
+            ShootingSchedule.id != schedule.id,
+            ShootingSchedule.status.in_(["draft", "confirmed"]),
+        )
+        .all()
+    )
+    for other in other_schedules:
+        if not _ranges_overlap(schedule.start_time, schedule.end_time, other.start_time, other.end_time):
+            continue
+        other_assets = {
+            x.asset_id
+            for x in db.query(ShootingScheduleAsset)
+            .filter(ShootingScheduleAsset.schedule_id == other.id)
+            .all()
+        }
+        other_members = {
+            x.user_id
+            for x in db.query(ShootingScheduleMember)
+            .filter(ShootingScheduleMember.schedule_id == other.id)
+            .all()
+        }
+        shared_assets = set(asset_ids) & other_assets
+        shared_members = set(member_ids) & other_members
+        if shared_assets:
+            conflicts.append(f"器材与拍摄排期#{other.id}冲突: {sorted(shared_assets)}")
+        if shared_members:
+            conflicts.append(f"人员与拍摄排期#{other.id}冲突: {sorted(shared_members)}")
+
+    if asset_ids:
+        borrows = (
+            db.query(AssetBorrowRequest)
+            .join(AssetBorrowItem, AssetBorrowItem.request_id == AssetBorrowRequest.id)
+            .filter(
+                AssetBorrowItem.asset_id.in_(asset_ids),
+                AssetBorrowRequest.status.in_(
+                    [BORROW_PENDING, BORROW_APPROVED, BORROW_IN_USE, BORROW_PENDING_RETURN]
+                ),
+            )
+            .all()
+        )
+        for br in borrows:
+            if _ranges_overlap(schedule.start_time, schedule.end_time, br.start_time, br.end_time):
+                conflicts.append(f"器材与借用单{br.request_no}时间重叠")
+    return conflicts
+
+
+def list_shooting_schedules(db: Session) -> list[ShootingSchedule]:
+    ensure_seed_data(db)
+    rows = db.query(ShootingSchedule).order_by(ShootingSchedule.id.desc()).all()
+    return [_enrich_shooting(db, x) for x in rows]
+
+
+def get_shooting_schedule(db: Session, schedule_id: int) -> ShootingSchedule:
+    ensure_seed_data(db)
+    row = db.query(ShootingSchedule).filter(ShootingSchedule.id == schedule_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="拍摄排期不存在")
+    return _enrich_shooting(db, row)
+
+
+def create_shooting_schedule(
+    db: Session, user: User, payload: ShootingScheduleCreate
+) -> ShootingSchedule:
+    ensure_seed_data(db)
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=400, detail="结束时间必须晚于开始时间")
+    if payload.asset_ids:
+        assets = db.query(FixedAsset).filter(FixedAsset.id.in_(payload.asset_ids)).all()
+        if len(assets) != len(set(payload.asset_ids)):
+            raise HTTPException(status_code=400, detail="存在无效器材")
+    if payload.member_ids:
+        members = db.query(User).filter(User.id.in_(payload.member_ids)).all()
+        if len(members) != len(set(payload.member_ids)):
+            raise HTTPException(status_code=400, detail="存在无效成员")
+
+    row = ShootingSchedule(
+        title=payload.title.strip(),
+        shoot_date=payload.shoot_date,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        location=(payload.location or "").strip() or None,
+        owner_id=user.id,
+        status="draft",
+        remark=payload.remark,
+    )
+    db.add(row)
+    db.flush()
+    for aid in payload.asset_ids:
+        db.add(ShootingScheduleAsset(schedule_id=row.id, asset_id=aid))
+    for uid in payload.member_ids:
+        db.add(ShootingScheduleMember(schedule_id=row.id, user_id=uid))
+
+    conflicts = _shooting_conflicts(db, row, payload.asset_ids, payload.member_ids)
+    if conflicts:
+        raise HTTPException(status_code=400, detail="; ".join(conflicts))
+
+    db.commit()
+    db.refresh(row)
+    return _enrich_shooting(db, row)
+
+
+def confirm_shooting_schedule(db: Session, user: User, schedule_id: int) -> ShootingSchedule:
+    row = db.query(ShootingSchedule).filter(ShootingSchedule.id == schedule_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="拍摄排期不存在")
+    if row.owner_id != user.id and not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="无权确认该排期")
+    if row.status not in {"draft"}:
+        raise HTTPException(status_code=400, detail="仅草稿可确认")
+    enriched = _enrich_shooting(db, row)
+    if getattr(enriched, "conflicts", None):
+        raise HTTPException(status_code=400, detail="; ".join(enriched.conflicts))  # type: ignore[attr-defined]
+    row.status = "confirmed"
+    db.commit()
+    db.refresh(row)
+    return _enrich_shooting(db, row)
+
+
+def cancel_shooting_schedule(db: Session, user: User, schedule_id: int) -> ShootingSchedule:
+    row = db.query(ShootingSchedule).filter(ShootingSchedule.id == schedule_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="拍摄排期不存在")
+    if row.owner_id != user.id and not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="无权取消该排期")
+    if row.status == "cancelled":
+        raise HTTPException(status_code=400, detail="排期已取消")
+    row.status = "cancelled"
+    db.commit()
+    db.refresh(row)
+    return _enrich_shooting(db, row)

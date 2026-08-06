@@ -1,11 +1,17 @@
 <template>
   <div class="crm-page project-delivery">
-    <header
-      v-if="tab === 'initiation' || tab === 'execute' || tab === 'acceptance'"
-      class="sales-head"
-    >
+    <header class="sales-head">
+      <div class="sales-head-copy">
+        <h1>{{ workbench === 'portfolio' ? '项目台账' : '交付执行' }}</h1>
+        <p>{{ workbenchDesc }}</p>
+      </div>
       <div class="sales-head-actions">
-        <el-button v-if="tab === 'initiation'" type="primary" @click="openInitiation">＋ 发起项目立项</el-button>
+        <el-button v-if="workbench === 'portfolio'" type="primary" @click="openInitiation">
+          ＋ 发起项目立项
+        </el-button>
+        <el-button v-else-if="tab === 'initiation'" type="primary" @click="openInitiation">
+          ＋ 发起项目立项
+        </el-button>
         <el-button
           v-else-if="tab === 'execute' && executeMode === 'plan' && canManagePlan"
           type="primary"
@@ -20,13 +26,20 @@
         >
           ＋ 新建项目任务
         </el-button>
-        <el-button v-else-if="tab === 'acceptance'" type="primary" @click="openAcceptance">＋ 发起内部验收</el-button>
+        <el-button
+          v-else-if="tab === 'acceptance' && canSubmitAcceptance"
+          v-perm.any="['project:accept_submit', 'project:manage']"
+          type="primary"
+          @click="openAcceptance"
+        >
+          ＋ 发起内部验收
+        </el-button>
       </div>
     </header>
 
-    <div class="project-tabs">
+    <div v-if="workbench === 'delivery'" class="project-tabs">
       <button
-        v-for="item in tabs"
+        v-for="item in visibleTabs"
         :key="item.key"
         type="button"
         class="project-tab"
@@ -127,8 +140,8 @@
                     <b>{{ row.progress || 0 }}%</b>
                   </span>
                   <span class="project-board-card-meta">
-                    <span>下一节点</span>
-                    <b>{{ row.next_node || '—' }}</b>
+                    <span>下一步</span>
+                    <b>{{ formatNextNode(row) }}</b>
                   </span>
                 </button>
                 <div v-if="!col.items.length" class="project-board-empty">当前筛选条件下无项目</div>
@@ -194,15 +207,19 @@
               {{ formatRange(row.start_date, row.end_date) }}
             </template>
           </el-table-column>
-          <el-table-column label="证据化进度" width="140">
+          <el-table-column label="进度" width="140">
             <template #default="{ row }">
               <el-progress :percentage="row.progress || 0" :stroke-width="10" />
             </template>
           </el-table-column>
-          <el-table-column prop="next_node" label="下一节点" min-width="140" show-overflow-tooltip />
+          <el-table-column label="下一步" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ formatNextNode(row) }}
+            </template>
+          </el-table-column>
         </el-table>
         <div class="table-footer">
-          <span>进度暂按里程碑完成度回写，完整证据化算法后续接入</span>
+          <span class="muted">点击行查看项目档案</span>
           <span>共 {{ listProjectTotal }} 个项目</span>
         </div>
       </section>
@@ -314,13 +331,18 @@
             </div>
           </div>
           <el-button type="primary" @click="advanceInitiating(row)">
-            {{ handoffReady(row) ? '进入计划' : '查看缺失项' }}
+            {{
+              !handoffReady(row)
+                ? '查看缺失项'
+                : row.status === 'initiating'
+                  ? '进入计划'
+                  : '去编计划'
+            }}
           </el-button>
         </article>
         <article v-if="!initiatingProjects.length" class="handoff-card">
           <h3>暂无待立项项目</h3>
-          <p class="sub">点击右上角发起项目立项，或从已生效合同创建交付项目。</p>
-          <el-button type="primary" @click="openInitiation">＋ 发起项目立项</el-button>
+          <p class="sub">点击右上角「发起项目立项」，或从已生效合同创建交付项目。</p>
         </article>
       </section>
 
@@ -411,17 +433,32 @@
       </div>
 
       <template v-if="planProject">
-      <section class="plan-summary">
+      <section
+        class="plan-summary"
+        :class="{
+          'plan-summary--slim': !milestones.length,
+          'plan-summary--compact': milestones.length > 0,
+        }"
+      >
         <article class="plan-title-card">
           <div class="plan-title-main">
             <el-tag size="small" type="info">{{ typeLabel(planProject.project_type) }}</el-tag>
             <h2>{{ planProject.name }}</h2>
             <p>
-              {{ planProject.project_no }} · 当前计划基线
-              {{ planBaselineLabel }}
+              {{ planProject.project_no }}
+              <template v-if="planBaselineLocked">
+                · 基线 {{ planProject.baseline_version || 'V1' }} 已生效
+                <span v-if="planBaselineMeta?.effectiveAt">（{{ planBaselineMeta.effectiveAt }}）</span>
+              </template>
+              <template v-else>· 基线尚未确认</template>
+            </p>
+            <p v-if="milestones.length" class="plan-title-meta">
+              节点 {{ planMilestoneDoneCount }} / {{ milestones.length }}
+              · 证据待确认 {{ planEvidencePendingCount }}
+              · 未挂任务 {{ planNodesWithoutTaskCount }}
             </p>
           </div>
-          <div class="plan-health-ring">
+          <div v-if="milestones.length" class="plan-health-ring">
             <svg viewBox="0 0 80 80" aria-hidden="true">
               <circle
                 cx="40"
@@ -440,48 +477,77 @@
                 stroke-width="8"
                 stroke-linecap="round"
                 :stroke-dasharray="planRingCirc"
-                :stroke-dashoffset="planRingOffset"
+                :stroke-dashoffset="planRingOffsetEffective"
                 transform="rotate(-90 40 40)"
               />
             </svg>
             <div>
-              <strong>{{ planProject.progress || 0 }}%</strong>
-              <small>证据化进度</small>
+              <strong>{{ planEffectiveProgress }}%</strong>
+              <small>有效进度</small>
             </div>
           </div>
+          <div v-else class="plan-next-chip">
+            <small>推荐下一步</small>
+            <strong>{{ planBaselineLocked ? '去任务工时拆任务' : '先确认计划基线' }}</strong>
+          </div>
         </article>
-        <article class="portfolio-mini">
-          <small>已完成里程碑</small>
-          <strong>{{ planProject.milestone_done || 0 }} / {{ planProject.milestone_total || 0 }}</strong>
-          <span>{{ milestoneOverdueCount ? `逾期${milestoneOverdueCount}项` : '计划表驱动' }}</span>
+        <article v-if="!milestones.length" class="portfolio-mini">
+          <small>推进方式</small>
+          <strong>任务驱动</strong>
+          <span>未使用计划节点</span>
         </article>
-        <article class="portfolio-mini">
-          <small>交付物</small>
-          <strong>{{ deliverableDone }} / {{ milestones.length || 0 }}</strong>
-          <span>{{ deliverablePending ? `待补齐${deliverablePending}项` : '必交成果已定义' }}</span>
-        </article>
-        <article class="portfolio-mini">
+        <article class="portfolio-mini plan-hours-card" @click="goToTasksWorkbench">
           <small>计划 / 实际工时</small>
           <strong>{{ formatHours(taskHours.planned) }} / {{ formatHours(taskHours.actual) }}h</strong>
-          <span>使用 {{ hoursUsage }}%</span>
+          <span>{{ taskHours.planned ? '在「任务工时」查看 →' : '尚未拆任务，点此去新建 →' }}</span>
         </article>
       </section>
 
       <section class="crm-panel plan-milestone-panel">
         <div class="card-head plan-panel-head">
           <div>
-            <b>里程碑计划与实际</b>
-            <span class="muted" style="margin-left: 8px">原基线和变更版本均保留</span>
+            <b>计划节点（可选）</b>
+            <span class="muted" style="margin-left: 8px">
+              复杂项目拆阶段；简单项目可跳过，直接用任务
+            </span>
           </div>
           <div class="plan-panel-actions">
-            <span v-if="planBaselineLocked" class="demo-chip">
-              基线 {{ planProject.baseline_version || 'V1' }} · {{ planBaselineMeta?.effectiveAt || '—' }}生效
-            </span>
-            <el-button v-if="canManagePlan" type="primary" @click="openMilestone">＋ 添加里程碑</el-button>
+            <el-button v-if="canManagePlan && milestones.length" type="primary" @click="openMilestone">
+              ＋ 添加节点
+            </el-button>
           </div>
         </div>
-        <el-table :data="milestones" v-loading="planLoading" stripe>
-          <el-table-column label="里程碑" min-width="160">
+
+        <div v-if="!milestones.length" class="plan-next-guide" v-loading="planLoading">
+          <h3>{{ planBaselineLocked ? '基线已锁定，可以开始执行' : '先确认基线，再决定怎么拆' }}</h3>
+          <p>
+            {{
+              planBaselineLocked
+                ? '当前未添加计划节点。简单项目建议直接拆任务；需要阶段验收时再补节点。'
+                : '确认基线后，计划范围生效。之后改范围请用右上角「申请基线变更」。'
+            }}
+          </p>
+          <div class="plan-next-actions">
+            <el-button
+              v-if="!planBaselineLocked && canManagePlan"
+              type="primary"
+              @click="onBaselineAction"
+            >
+              确定计划基线
+            </el-button>
+            <el-button
+              v-if="planBaselineLocked"
+              type="primary"
+              @click="goToTasksWorkbench"
+            >
+              去任务工时
+            </el-button>
+            <el-button v-if="canManagePlan" @click="openMilestone">＋ 添加节点</el-button>
+          </div>
+        </div>
+
+        <el-table v-else :data="milestones" v-loading="planLoading" stripe>
+          <el-table-column label="节点" min-width="160">
             <template #default="{ row }">
               <b>{{ row.name }}</b>
               <div v-if="row.role" class="muted">{{ row.role }}</div>
@@ -511,9 +577,11 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column label="下一步" min-width="160" show-overflow-tooltip>
+          <el-table-column label="下一步" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
-              <span :class="{ muted: row.status === 'done' }">{{ row.next_action || '—' }}</span>
+              <span :class="{ muted: row.status === 'done' && row.evidence_status === 'confirmed', 'text-warn': row.status === 'done' && row.evidence_status !== 'confirmed' }">
+                {{ row.next_action || '—' }}
+              </span>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="110" fixed="right">
@@ -530,109 +598,138 @@
             </template>
           </el-table-column>
         </el-table>
-      </section>
-
-      <section class="plan-bottom">
-        <article class="crm-panel plan-side-card">
-          <div class="card-head plan-panel-head">
-            <div>
-              <b>风险与问题</b>
-              <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
-                影响范围、责任人和处理期限可追溯
-              </span>
-            </div>
-            <button v-if="canManagePlan" type="button" class="text-link" @click="openRiskDialog">＋ 新增</button>
-          </div>
-          <div v-if="planRisks.length" class="plan-alert-list">
-            <div
-              v-for="item in planRisks"
-              :key="item.id"
-              class="plan-alert-row"
-              :class="{ danger: item.level === '高' }"
-            >
-              <span class="plan-alert-symbol">{{ item.level === '高' ? '!' : '↗' }}</span>
-              <span>
-                <b>{{ item.title }}</b>
-                <small>责任角色：{{ item.role }} · {{ item.response }}</small>
-              </span>
-              <span class="ms-status-pill" :class="item.level === '高' ? 'bad' : item.level === '中' ? 'warn' : ''">
-                {{ item.level }}
-              </span>
-            </div>
-          </div>
-          <div v-else class="plan-empty">
-            {{ canManagePlan ? '暂无风险记录，点击右上角新增' : '暂无风险记录' }}
-          </div>
-        </article>
-
-        <article class="crm-panel plan-side-card">
-          <div class="card-head plan-panel-head">
-            <div>
-              <b>变更控制</b>
-              <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
-                未批准变更不修改当前基线
-              </span>
-            </div>
-            <button v-if="canManagePlan" type="button" class="text-link" @click="openChangeDialog">＋ 申请变更</button>
-          </div>
-          <div class="plan-change-list">
-            <div v-for="item in planChanges" :key="item.id" class="plan-change-row">
-              <span>{{ item.code }} · {{ item.title }}</span>
-              <span class="change-row-right">
-                <span class="ms-status-pill" :class="changeTone(item.status)">{{ item.status }}</span>
-                <template v-if="canManagePlan && (item.status === '审批中' || item.status === '待确认')">
-                  <button type="button" class="text-link" @click="resolveChange(item, '已生效')">通过</button>
-                  <button type="button" class="text-link text-warn" @click="resolveChange(item, '已驳回')">驳回</button>
-                </template>
-              </span>
-            </div>
-            <div class="plan-change-row">
-              <span>当前有效基线</span>
-              <b>{{ planProject.baseline_version || 'V1' }}</b>
-            </div>
-            <div v-if="!planChanges.length" class="plan-empty" style="border: 0; padding-top: 0">
-              暂无变更申请
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section class="crm-panel" style="margin-top: 14px">
-        <div class="card-head plan-panel-head">
-          <div>
-            <b>关联排期</b>
-            <span class="muted" style="margin-left: 8px">挂到本项目的档期，可跳转详情</span>
-          </div>
-          <el-button size="small" @click="$router.push('/schedules')">打开排期会议</el-button>
+        <div v-if="milestones.length && planBaselineLocked" class="plan-table-footer">
+          <span v-if="planEvidencePendingCount" class="text-warn">
+            有 {{ planEvidencePendingCount }} 个节点证据待确认
+          </span>
+          <span v-else-if="planNodesWithoutTaskCount" class="muted">
+            有节点尚未拆任务，建议先建任务再推进
+          </span>
+          <span v-else class="muted">节点与证据正常</span>
+          <el-button type="primary" link @click="goToTasksWorkbench">去任务工时</el-button>
         </div>
-        <el-table
-          :data="planSchedules"
-          v-loading="planSchedulesLoading"
-          stripe
-          empty-text="暂无关联排期"
-        >
-          <el-table-column prop="title" label="排期" min-width="140" show-overflow-tooltip />
-          <el-table-column label="时间" width="180">
-            <template #default="{ row }">{{ formatScheduleRange(row) }}</template>
-          </el-table-column>
-          <el-table-column prop="employee_name" label="人员" width="90" />
-          <el-table-column label="状态" width="120">
-            <template #default="{ row }">
-              <el-tag size="small" :type="scheduleStatusTag(row)">
-                {{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}
-              </el-tag>
-              <el-tag v-if="row.has_conflict" type="danger" size="small" style="margin-left: 4px">
-                冲突
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="80" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="$router.push(`/schedules/${row.id}`)">详情</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
       </section>
+
+      <div
+        v-if="!showPlanExtras && !planExtrasOpen"
+        class="plan-extras-toggle"
+      >
+        <button type="button" class="text-link" @click="planExtrasOpen = true">
+          展开风险 / 变更记录 / 人员档期
+        </button>
+      </div>
+
+      <template v-if="showPlanExtras || planExtrasOpen">
+        <section class="plan-bottom">
+          <article class="crm-panel plan-side-card">
+            <div class="card-head plan-panel-head">
+              <div>
+                <b>风险与问题</b>
+                <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
+                  影响范围、责任人和处理期限可追溯
+                </span>
+              </div>
+              <button v-if="canManagePlan" type="button" class="text-link" @click="openRiskDialog">＋ 新增</button>
+            </div>
+            <div v-if="planRisks.length" class="plan-alert-list">
+              <div
+                v-for="item in planRisks"
+                :key="item.id"
+                class="plan-alert-row"
+                :class="{ danger: item.level === '高' }"
+              >
+                <span class="plan-alert-symbol">{{ item.level === '高' ? '!' : '↗' }}</span>
+                <span>
+                  <b>{{ item.title }}</b>
+                  <small>责任角色：{{ item.role }} · {{ item.response }}</small>
+                </span>
+                <span class="ms-status-pill" :class="item.level === '高' ? 'bad' : item.level === '中' ? 'warn' : ''">
+                  {{ item.level }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="plan-empty">
+              {{ canManagePlan ? '暂无风险记录，点击右上角新增' : '暂无风险记录' }}
+            </div>
+          </article>
+
+          <article class="crm-panel plan-side-card">
+            <div class="card-head plan-panel-head">
+              <div>
+                <b>变更记录</b>
+                <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
+                  改范围请用右上角「申请基线变更」
+                </span>
+              </div>
+              <button
+                v-if="canManagePlan && planBaselineLocked"
+                type="button"
+                class="text-link"
+                @click="openChangeDialog"
+              >
+                ＋ 申请变更
+              </button>
+            </div>
+            <div class="plan-change-list">
+              <div v-for="item in planChanges" :key="item.id" class="plan-change-row">
+                <span>{{ item.code }} · {{ item.title }}</span>
+                <span class="change-row-right">
+                  <span class="ms-status-pill" :class="changeTone(item.status)">{{ item.status }}</span>
+                  <template v-if="canManagePlan && (item.status === '审批中' || item.status === '待确认')">
+                    <button type="button" class="text-link" @click="resolveChange(item, '已生效')">通过</button>
+                    <button type="button" class="text-link text-warn" @click="resolveChange(item, '已驳回')">驳回</button>
+                  </template>
+                </span>
+              </div>
+              <div v-if="!planChanges.length" class="plan-empty" style="border: 0; padding-top: 0">
+                暂无变更申请
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="crm-panel" style="margin-top: 14px">
+          <div class="card-head plan-panel-head">
+            <div>
+              <b>人员档期</b>
+              <span class="muted" style="margin-left: 8px">
+                谁在何时被占用（日历）；与上方「计划节点」不同，不影响进度
+              </span>
+            </div>
+            <div class="plan-panel-actions">
+              <el-button size="small" type="primary" @click="goCreateScheduleForProject">＋ 挂本项目档期</el-button>
+              <el-button size="small" @click="$router.push('/schedules')">打开排期会议</el-button>
+            </div>
+          </div>
+          <el-table
+            :data="planSchedules"
+            v-loading="planSchedulesLoading"
+            stripe
+            empty-text="暂无人员档期。需要约人时，点右上角挂到本项目。"
+          >
+            <el-table-column prop="title" label="排期" min-width="140" show-overflow-tooltip />
+            <el-table-column label="时间" width="180">
+              <template #default="{ row }">{{ formatScheduleRange(row) }}</template>
+            </el-table-column>
+            <el-table-column prop="employee_name" label="人员" width="90" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag size="small" :type="scheduleStatusTag(row)">
+                  {{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}
+                </el-tag>
+                <el-tag v-if="row.has_conflict" type="danger" size="small" style="margin-left: 4px">
+                  冲突
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="$router.push(`/schedules/${row.id}`)">详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </template>
       </template>
 
       <div v-else class="plan-empty-block">请选择项目后查看计划基线</div>
@@ -710,7 +807,7 @@
               {{ formatHours(row.planned_hours) }} / {{ formatHours(row.actual_hours) }}h
             </template>
           </el-table-column>
-          <el-table-column label="关联排期" width="140">
+          <el-table-column label="人员档期" width="140">
             <template #default="{ row }">
               <el-button
                 v-if="(row.schedule_booked || 0) + (row.schedule_completed || 0) > 0"
@@ -811,7 +908,10 @@
                 已通过
               </template>
               <template v-else-if="row.finance_check_status === 'rejected'">已驳回</template>
-              <template v-else>未通过</template>
+              <template v-else-if="row.status === 'accepted' || row.status === 'completed'">
+                未提交
+              </template>
+              <template v-else>—</template>
             </template>
           </el-table-column>
           <el-table-column label="当前状态" width="100">
@@ -821,49 +921,73 @@
           </el-table-column>
           <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
+              <!-- 步骤：验收 → 财务核对 → 结项；只露出当前该做的一步 -->
               <el-button
                 v-if="
                   (row.status === 'executing' || row.status === 'accepting') &&
-                  row.acceptance_approval_status !== 'pending'
+                  row.acceptance_approval_status !== 'pending' &&
+                  canSubmitAcceptance
                 "
+                v-perm.any="['project:accept_submit', 'project:manage']"
                 link
                 type="primary"
                 @click="openAcceptance(row)"
               >
-                验收
+                发起验收
               </el-button>
-              <el-button
-                v-if="
-                  row.status === 'accepted' &&
-                  !row.finance_check_passed &&
-                  row.finance_check_status !== 'pending'
+              <span
+                v-else-if="
+                  (row.status === 'executing' || row.status === 'accepting') &&
+                  row.acceptance_approval_status === 'pending'
                 "
-                link
-                type="warning"
-                @click="onFinanceCheck(row)"
+                class="muted"
               >
-                提交财务核对
-              </el-button>
-              <el-button
-                v-if="row.status === 'accepted' && row.leftover_summary && !row.leftover_closed"
-                link
-                @click="onCloseLeftover(row)"
-              >
-                关闭遗留
-              </el-button>
-              <el-button
-                v-if="row.status === 'accepted'"
-                link
-                type="success"
-                @click="onComplete(row)"
-              >
-                结项
-              </el-button>
+                验收审批中
+              </span>
+              <template v-else-if="row.status === 'accepted'">
+                <el-button
+                  v-if="row.leftover_summary && !row.leftover_closed"
+                  link
+                  @click="onCloseLeftover(row)"
+                >
+                  关闭遗留
+                </el-button>
+                <el-button
+                  v-if="
+                    canSubmitFinanceCheck &&
+                    !row.finance_check_passed &&
+                    row.finance_check_status !== 'pending' &&
+                    row.finance_check_status !== 'approved'
+                  "
+                  v-perm.any="['project:finance_submit', 'project:manage']"
+                  link
+                  type="warning"
+                  @click="onFinanceCheck(row)"
+                >
+                  {{ row.finance_check_status === 'rejected' ? '重新提交财务核对' : '提交财务核对' }}
+                </el-button>
+                <span v-else-if="row.finance_check_status === 'pending'" class="muted">
+                  财务核对审批中
+                </span>
+                <el-button
+                  v-else-if="
+                    canCompleteProject &&
+                    (row.finance_check_passed || row.finance_check_status === 'approved')
+                  "
+                  v-perm.any="['project:complete', 'project:manage']"
+                  link
+                  type="success"
+                  @click="onComplete(row)"
+                >
+                  结项
+                </el-button>
+              </template>
+              <span v-else-if="row.status === 'completed'" class="muted">已结项</span>
             </template>
           </el-table-column>
         </el-table>
         <div class="table-footer">
-          <span>验收与财务核对均需审批中心通过后，才可结项</span>
+          <span>流程：内部验收通过 → 提交财务核对（审批中心）→ 结项</span>
         </div>
       </section>
     </template>
@@ -916,12 +1040,19 @@
           <el-form-item v-if="resourceForm.action === 'adjust'" label="计划投入（小时）">
             <el-input-number v-model="resourceForm.planned_hours" :min="1" :max="9999" style="width: 100%" />
           </el-form-item>
-          <el-form-item :label="resourceForm.action === 'reject' ? '拒绝说明' : '确认说明'" required>
+          <el-form-item
+            :label="resourceForm.action === 'reject' ? '拒绝说明' : '确认说明'"
+            :required="resourceForm.action === 'reject'"
+          >
             <el-input
               v-model="resourceForm.note"
               type="textarea"
               :rows="3"
-              placeholder="说明排期、替代资源或冲突原因"
+              :placeholder="
+                resourceForm.action === 'reject'
+                  ? '说明冲突原因，便于协调替代'
+                  : '可选：补充排期、可用性或注意事项'
+              "
             />
           </el-form-item>
         </el-form>
@@ -1117,35 +1248,49 @@
               v-model="baselineNote"
               type="textarea"
               :rows="3"
-              placeholder="以已确认需求范围、里程碑成果和客户验收口径作为执行基线。"
+              placeholder="以已确认需求范围与客户验收口径作为执行基线。"
             />
           </el-form-item>
         </el-form>
       </div>
       <div class="form-block">
-        <h3><span>2</span>里程碑完整性</h3>
+        <h3><span>2</span>计划节点（可选）</h3>
         <div class="plan-check-list">
           <div v-for="row in baselineMilestoneChecks" :key="row.name" class="plan-check-row">
             <span :class="{ ok: row.ok }">{{ row.ok ? '✓' : '⚠' }} {{ row.name }}</span>
             <b>{{ row.detail }}</b>
           </div>
-          <div v-if="!baselineMilestoneChecks.length" class="plan-empty">请先添加里程碑</div>
+          <div v-if="!baselineMilestoneChecks.length" class="plan-empty">
+            未添加也可确认基线；复杂项目建议补节点，便于跟踪进度与验收证据
+          </div>
         </div>
       </div>
       <div class="form-block">
         <h3><span>3</span>发布检查</h3>
         <div class="plan-check-list">
           <div class="plan-check-row">
-            <span :class="{ ok: baselineReleaseChecks.roles }">
-              {{ baselineReleaseChecks.roles ? '✓' : '⚠' }} 项目角色
+            <span :class="{ ok: baselineReleaseChecks.rolesOk, muted: !milestones.length }">
+              {{
+                !milestones.length
+                  ? 'ⓘ 项目角色'
+                  : baselineReleaseChecks.rolesOk
+                    ? '✓ 项目角色'
+                    : '⚠ 项目角色'
+              }}
             </span>
-            <b>{{ baselineReleaseChecks.roles ? '责任归属完整' : '请补齐责任角色' }}</b>
+            <b>{{
+              !milestones.length
+                ? '无计划节点，确认后按任务推进'
+                : baselineReleaseChecks.rolesOk
+                  ? '责任归属完整'
+                  : '请给节点补齐责任角色'
+            }}</b>
           </div>
           <div class="plan-check-row">
             <span :class="{ ok: baselineReleaseChecks.tasks }">
               {{ baselineReleaseChecks.tasks ? '✓' : 'ⓘ' }} 任务与工时
             </span>
-            <b>{{ baselineReleaseChecks.tasks ? '已从里程碑拆分' : '建议在任务工时中拆解' }}</b>
+            <b>{{ baselineReleaseChecks.tasks ? '已有计划工时' : '可确认后再在任务工时中拆解' }}</b>
           </div>
           <div class="plan-check-row">
             <span>ⓘ 生效后修改</span>
@@ -1292,23 +1437,30 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="所属里程碑" prop="milestone_id">
+        <el-form-item
+          label="所属节点"
+          prop="milestone_id"
+          :required="openTaskMilestones.length > 0"
+        >
           <el-select
             v-model="taskForm.milestone_id"
             filterable
             clearable
             style="width: 100%"
-            placeholder="请选择里程碑"
+            :placeholder="taskNodePlaceholder"
             :loading="taskMilestoneLoading"
           >
             <el-option
               v-for="m in taskMilestoneOptions"
               :key="m.id"
-              :label="m.name"
+              :label="m.status === 'done' ? `${m.name}（已完成）` : m.name"
               :value="m.id"
               :disabled="m.status === 'done'"
             />
           </el-select>
+          <div v-if="taskMilestoneOptions.length && !openTaskMilestones.length" class="muted" style="margin-top: 6px">
+            现有节点均已完成，不可再挂新任务；可不选节点直接创建，或回计划基线新增节点
+          </div>
         </el-form-item>
         <el-form-item label="任务名称" prop="title">
           <el-input v-model="taskForm.title" />
@@ -1457,7 +1609,7 @@
       <p class="muted" style="margin: 0 0 12px">
         「完成」指挂到本任务上、状态为已完成的排期场次；排期填的工时进项目工时单，不会自动加到本任务「实际工时」。
       </p>
-      <el-table :data="taskSchedules" v-loading="taskSchedulesLoading" stripe empty-text="暂无关联排期">
+      <el-table :data="taskSchedules" v-loading="taskSchedulesLoading" stripe empty-text="暂无挂到本任务的人员档期">
         <el-table-column prop="title" label="排期" min-width="120" show-overflow-tooltip />
         <el-table-column label="时间" width="150">
           <template #default="{ row }">{{ formatScheduleRange(row) }}</template>
@@ -1561,7 +1713,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1612,8 +1764,9 @@ import { uploadFile } from '@/api/uploads'
 type TabKey = 'portfolio' | 'initiation' | 'execute' | 'acceptance'
 type OverviewMode = 'list' | 'board' | 'department'
 type ExecuteMode = 'plan' | 'tasks'
+type Workbench = 'portfolio' | 'delivery'
 
-const tabs: { key: TabKey; label: string }[] = [
+const ALL_TABS: { key: TabKey; label: string }[] = [
   { key: 'portfolio', label: '项目台账' },
   { key: 'initiation', label: '交接与立项' },
   { key: 'execute', label: '执行' },
@@ -1637,6 +1790,30 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
+const canSubmitAcceptance = computed(() =>
+  userStore.hasAnyPermission('project:accept_submit', 'project:manage'),
+)
+const canSubmitFinanceCheck = computed(() =>
+  userStore.hasAnyPermission('project:finance_submit', 'project:manage'),
+)
+const canCompleteProject = computed(() =>
+  userStore.hasAnyPermission('project:complete', 'project:manage'),
+)
+
+const workbench = computed<Workbench>(() =>
+  route.path.startsWith('/projects/delivery') ? 'delivery' : 'portfolio',
+)
+const visibleTabs = computed(() =>
+  workbench.value === 'portfolio'
+    ? ALL_TABS.filter((t) => t.key === 'portfolio')
+    : ALL_TABS.filter((t) => t.key !== 'portfolio'),
+)
+const workbenchDesc = computed(() =>
+  workbench.value === 'portfolio'
+    ? '项目列表、看板与本部门负荷；查档案、看进度从这里进。'
+    : '立项交接、计划基线、任务工时与验收结项；日常干活从这里进。',
+)
+
 const tab = ref<TabKey>('portfolio')
 const overviewMode = ref<OverviewMode>('list')
 const executeMode = ref<ExecuteMode>('plan')
@@ -1647,7 +1824,7 @@ const projectTotal = ref(0)
 const stats = ref<ProjectStats | null>(null)
 const keyword = ref('')
 const statusFilter = ref<string | undefined>()
-type PortfolioStatKey = 'executing' | 'accepting' | 'high_risk' | 'initiating'
+type PortfolioStatKey = 'executing' | 'accepting' | 'accepted' | 'completed'
 const portfolioStat = ref<PortfolioStatKey | null>(null)
 const boardKeyword = keyword
 const boardType = ref<string | undefined>()
@@ -1674,7 +1851,7 @@ const taskSchedules = ref<Schedule[]>([])
 const taskScheduleTarget = ref<ProjectTask | null>(null)
 const taskScheduleTitle = computed(() => {
   const t = taskScheduleTarget.value
-  if (!t) return '关联排期'
+  if (!t) return '人员档期'
   return `${t.task_no || ''} · ${t.title}`.trim()
 })
 
@@ -1688,7 +1865,7 @@ const msVisible = ref(false)
 const baselineVisible = ref(false)
 const changeVisible = ref(false)
 const riskVisible = ref(false)
-const baselineNote = ref('以已确认需求范围、里程碑成果和客户验收口径作为执行基线。')
+const baselineNote = ref('以已确认需求范围与客户验收口径作为执行基线。')
 const planRisks = ref<PlanRiskItem[]>([])
 const planChanges = ref<PlanChangeItem[]>([])
 const planBaselineMeta = ref<PlanBaselineMeta | null>(null)
@@ -1733,6 +1910,14 @@ const evidenceMode = ref<'fill' | 'review'>('fill')
 const evidenceTarget = ref<ProjectMilestone | null>(null)
 const evidenceDraft = ref('')
 const taskMilestoneOptions = ref<ProjectMilestone[]>([])
+const openTaskMilestones = computed(() =>
+  taskMilestoneOptions.value.filter((m) => m.status !== 'done'),
+)
+const taskNodePlaceholder = computed(() => {
+  if (!taskMilestoneOptions.value.length) return '无节点时可直接建任务'
+  if (!openTaskMilestones.value.length) return '节点均已完成，可不选'
+  return '请选择计划节点'
+})
 const taskMilestoneLoading = ref(false)
 const completeVisible = ref(false)
 const completeTarget = ref<ProjectTask | null>(null)
@@ -1793,7 +1978,6 @@ const taskForm = reactive({
 })
 const taskRules: FormRules = {
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
-  milestone_id: [{ required: true, message: '请选择所属里程碑', trigger: 'change' }],
   title: [{ required: true, message: '请填写任务名称', trigger: 'blur' }],
   criteria: [{ required: true, message: '请填写完成标准', trigger: 'blur' }],
   due_date: [{ required: true, message: '请选择截止日期', trigger: 'change' }],
@@ -1820,22 +2004,15 @@ const acceptRules: FormRules = {
 }
 
 const portfolioStatCards = computed(() => [
-  { key: 'executing' as const, label: '执行中', note: '进行交付推进', count: stats.value?.executing ?? 0 },
-  { key: 'accepting' as const, label: '待验收', note: '进入内部验收', count: stats.value?.accepting ?? 0 },
-  { key: 'high_risk' as const, label: '高风险', note: '需关注健康度', count: stats.value?.high_risk ?? 0 },
-  { key: 'initiating' as const, label: '待立项', note: '商务交接中', count: stats.value?.initiating ?? 0 },
+  { key: 'executing' as const, label: '执行中', note: '交付推进中', count: stats.value?.executing ?? 0 },
+  { key: 'accepting' as const, label: '待验收', note: '内部验收中', count: stats.value?.accepting ?? 0 },
+  { key: 'accepted' as const, label: '待结项', note: '验收后收尾', count: stats.value?.accepted ?? 0 },
+  { key: 'completed' as const, label: '已完成', note: '已结项归档', count: stats.value?.completed ?? 0 },
 ])
 
-const listProjects = computed(() => {
-  if (portfolioStat.value === 'high_risk') {
-    return projects.value.filter((p) => p.health === 'risk')
-  }
-  return projects.value
-})
+const listProjects = computed(() => projects.value)
 
-const listProjectTotal = computed(() =>
-  portfolioStat.value === 'high_risk' ? listProjects.value.length : projectTotal.value,
-)
+const listProjectTotal = computed(() => projectTotal.value)
 
 const boardFiltered = computed(() => {
   const q = boardKeyword.value.trim().toLowerCase()
@@ -1881,6 +2058,26 @@ const milestoneOverdueCount = computed(
   () => milestones.value.filter((m) => isMilestoneOverdue(m)).length,
 )
 
+const planMilestoneDoneCount = computed(
+  () =>
+    milestones.value.filter(
+      (m) => m.status === 'done' && (m.evidence_status || 'none') === 'confirmed',
+    ).length,
+)
+
+const planEvidencePendingCount = computed(
+  () => milestones.value.filter((m) => (m.evidence_status || 'none') === 'pending').length,
+)
+
+const planNodesWithoutTaskCount = computed(
+  () => milestones.value.filter((m) => !(m.task_total || 0)).length,
+)
+
+const planEffectiveProgress = computed(() => {
+  if (!milestones.value.length) return planProject.value?.progress || 0
+  return Math.round((planMilestoneDoneCount.value * 100) / milestones.value.length)
+})
+
 const hoursUsage = computed(() => {
   const planned = Number(taskHours.value.planned || 0)
   const actual = Number(taskHours.value.actual || 0)
@@ -1893,8 +2090,19 @@ const planRingOffset = computed(() => {
   const p = Math.min(Math.max(Number(planProject.value?.progress || 0), 0), 100)
   return planRingCirc * (1 - p / 100)
 })
+const planRingOffsetEffective = computed(() => {
+  const p = Math.min(Math.max(Number(planEffectiveProgress.value || 0), 0), 100)
+  return planRingCirc * (1 - p / 100)
+})
 
 const planBaselineLocked = computed(() => !!planBaselineMeta.value?.locked)
+const planExtrasOpen = ref(false)
+const showPlanExtras = computed(
+  () =>
+    planRisks.value.length > 0 ||
+    planChanges.value.length > 0 ||
+    planSchedules.value.length > 0,
+)
 
 const planBaselineLabel = computed(() => {
   const ver = planProject.value?.baseline_version || 'V1'
@@ -1937,7 +2145,8 @@ const baselineMilestoneChecks = computed(() =>
 )
 
 const baselineReleaseChecks = computed(() => ({
-  roles: milestones.value.length > 0 && milestones.value.every((m) => !!m.role),
+  rolesOk:
+    milestones.value.length === 0 || milestones.value.every((m) => !!m.role),
   tasks: Number(taskHours.value.planned || 0) > 0,
 }))
 
@@ -2094,7 +2303,12 @@ const initGate = computed(() => {
 
 function setTab(next: TabKey) {
   tab.value = next
-  router.replace({ query: { ...route.query, tab: next } })
+  const path = next === 'portfolio' ? '/projects' : '/projects/delivery'
+  const query = { ...route.query, tab: next } as Record<string, string>
+  if (next === 'portfolio') {
+    // keep overview mode hints if present
+  }
+  router.replace({ path, query })
   if (next === 'execute') {
     if (executeMode.value === 'plan') ensurePlanProject()
     else {
@@ -2118,6 +2332,23 @@ function onExecuteModeChange(mode: string | number | boolean | undefined) {
   }
 }
 
+function goToTasksWorkbench() {
+  executeMode.value = 'tasks'
+  onExecuteModeChange('tasks')
+  const query: Record<string, string> = {
+    tab: 'execute',
+    mode: 'tasks',
+  }
+  if (planProjectId.value) query.project_id = String(planProjectId.value)
+  router.replace({ path: '/projects/delivery', query })
+}
+
+function goCreateScheduleForProject() {
+  const query: Record<string, string> = { create: '1' }
+  if (planProjectId.value) query.project_id = String(planProjectId.value)
+  router.push({ path: '/schedules', query })
+}
+
 async function loadDeptMonitor() {
   deptLoading.value = true
   try {
@@ -2134,20 +2365,25 @@ function goDetail(row: Project) {
   router.push(`/projects/${row.id}`)
 }
 
+function formatNextNode(row: Project) {
+  if (row.status === 'completed' || row.status === 'terminated') return '—'
+  return row.next_node || '—'
+}
+
 function onPortfolioStatClick(key: PortfolioStatKey) {
   if (portfolioStat.value === key) {
     portfolioStat.value = null
     statusFilter.value = undefined
   } else {
     portfolioStat.value = key
-    statusFilter.value = key === 'high_risk' ? undefined : key
+    statusFilter.value = key
   }
   loadProjects()
 }
 
 function onStatusFilterChange() {
   const s = statusFilter.value
-  if (s === 'executing' || s === 'accepting' || s === 'initiating') {
+  if (s === 'executing' || s === 'accepting' || s === 'accepted' || s === 'completed') {
     portfolioStat.value = s
   } else {
     portfolioStat.value = null
@@ -2196,6 +2432,7 @@ async function loadPlanDetail() {
   }
   planLoading.value = true
   planSchedulesLoading.value = true
+  planExtrasOpen.value = false
   try {
     const [{ data }, { data: t }, { data: schedules }] = await Promise.all([
       fetchProjectDetail(planProjectId.value),
@@ -2399,7 +2636,7 @@ async function onCreateProject() {
     return
   }
   if (!initGate.value.paymentOk) {
-    ElMessage.warning('合同须有确认到账后才能立项，请先到「合同与回款」完成到款认领与财务复核')
+    ElMessage.warning('合同须有确认到账后才能立项，请先到「合同回款」完成到款认领与财务复核')
     return
   }
   const roles = initForm.resource_roles
@@ -2434,6 +2671,19 @@ async function onCreateProject() {
   }
 }
 
+async function goToPlanWorkbench(projectId: number) {
+  executeMode.value = 'plan'
+  planProjectId.value = projectId
+  await router.push({
+    path: '/projects/delivery',
+    query: {
+      tab: 'execute',
+      mode: 'plan',
+      project_id: String(projectId),
+    },
+  })
+}
+
 async function advanceInitiating(row: Project) {
   if (!handoffReady(row)) {
     const missing: string[] = []
@@ -2445,8 +2695,8 @@ async function advanceInitiating(row: Project) {
   if (row.status === 'initiating') {
     try {
       await startProjectPlanning(row.id)
-      ElMessage.success('已进入计划中')
-      await reloadAll()
+      ElMessage.success('已进入计划编制，请完善计划基线')
+      await goToPlanWorkbench(row.id)
     } catch (e: any) {
       const detail = e?.response?.data?.detail
       if (typeof detail === 'string' && detail.includes('资源')) {
@@ -2454,9 +2704,13 @@ async function advanceInitiating(row: Project) {
         await loadResourceNeeds()
       }
     }
-  } else {
-    goDetail(row)
+    return
   }
+  if (['planning', 'executing'].includes(row.status)) {
+    await goToPlanWorkbench(row.id)
+    return
+  }
+  goDetail(row)
 }
 
 async function loadResourceNeeds() {
@@ -2485,8 +2739,8 @@ async function openResourceConfirm(row: ProjectResourceNeed) {
 
 async function onConfirmResource() {
   if (!resourceTarget.value) return
-  if (!resourceForm.note.trim()) {
-    ElMessage.warning('请填写说明')
+  if (resourceForm.action === 'reject' && !resourceForm.note.trim()) {
+    ElMessage.warning('请填写拒绝说明')
     return
   }
   if (resourceForm.action === 'adjust' && !resourceForm.confirmed_user_id) {
@@ -2531,7 +2785,7 @@ async function onBaselineAction() {
 function openBaselineDialog() {
   baselineNote.value =
     planBaselineMeta.value?.note ||
-    '以已确认需求范围、里程碑成果和客户验收口径作为执行基线。'
+    '以已确认需求范围与客户验收口径作为执行基线。'
   baselineVisible.value = true
 }
 
@@ -2565,13 +2819,20 @@ async function confirmBaseline() {
     ElMessage.warning('请填写基线说明')
     return
   }
-  if (!milestones.value.length) {
-    ElMessage.warning('请先添加里程碑再提交基线')
+  if (milestones.value.length && baselineMilestoneChecks.value.some((x) => !x.ok)) {
+    ElMessage.warning('已添加的计划节点不完整，请补齐责任角色、计划日期和必交成果，或先删除再确认')
     return
   }
-  if (baselineMilestoneChecks.value.some((x) => !x.ok)) {
-    ElMessage.warning('里程碑完整性未通过，请补齐责任角色、计划日期和必交成果')
-    return
+  if (!milestones.value.length) {
+    try {
+      await ElMessageBox.confirm(
+        '当前未添加计划节点。确认后可直接用任务推进；复杂项目建议稍后补节点以便验收留证。',
+        '无计划节点确认基线',
+        { type: 'info', confirmButtonText: '仍要确认', cancelButtonText: '返回补节点' },
+      )
+    } catch {
+      return
+    }
   }
   saving.value = true
   try {
@@ -2688,6 +2949,7 @@ const evidenceDialogTitle = computed(() => {
 })
 
 function milestonePrimaryActionLabel(row: ProjectMilestone) {
+  if (row.status === 'done' && canConfirmEvidence(row)) return '审核证据'
   if (row.status === 'done') return '查看证据'
   if (!row.evidence) return '提交证据'
   if (row.evidence_status === 'rejected') return '重提证据'
@@ -2912,8 +3174,8 @@ async function openTaskCreate() {
 async function onCreateTask() {
   const ok = await taskFormRef.value?.validate().catch(() => false)
   if (!ok || !taskForm.project_id) return
-  if (taskMilestoneOptions.value.length && !taskForm.milestone_id) {
-    ElMessage.warning('请选择所属里程碑')
+  if (openTaskMilestones.value.length && !taskForm.milestone_id) {
+    ElMessage.warning('请选择所属计划节点')
     return
   }
   saving.value = true
@@ -3002,12 +3264,8 @@ function openAcceptance(row?: Project) {
   }
   const done = target.milestone_done || 0
   const total = target.milestone_total || 0
-  if (!total) {
-    ElMessage.warning('请先制定里程碑并完成后再验收')
-    return
-  }
-  if (done < total) {
-    ElMessage.warning(`还有 ${total - done} 个里程碑未完成，不可发起验收`)
+  if (total > 0 && done < total) {
+    ElMessage.warning(`还有 ${total - done} 个计划节点未完成，不可发起验收`)
     return
   }
   acceptForm.project_id = target.id
@@ -3121,16 +3379,55 @@ async function reloadAll() {
 function normalizeTab(raw?: string | null): TabKey {
   if (raw === 'board' || raw === 'department') return 'portfolio'
   if (raw === 'plan' || raw === 'tasks') return 'execute'
-  if (tabs.some((t) => t.key === raw)) return raw as TabKey
-  return 'portfolio'
+  if (ALL_TABS.some((t) => t.key === raw)) return raw as TabKey
+  return workbench.value === 'delivery' ? 'initiation' : 'portfolio'
 }
 
-onMounted(async () => {
+function syncWorkbenchRoute() {
+  const raw = route.query.tab as string | undefined
+  const lifecycleTabs: TabKey[] = ['initiation', 'execute', 'acceptance']
+  if (workbench.value === 'portfolio') {
+    if (lifecycleTabs.includes(raw as TabKey) || raw === 'plan' || raw === 'tasks') {
+      router.replace({
+        path: '/projects/delivery',
+        query: { ...route.query, tab: normalizeTab(raw) },
+      })
+      return true
+    }
+  } else if (raw === 'portfolio' || raw === 'board' || raw === 'department') {
+    router.replace({
+      path: '/projects',
+      query: { ...route.query, tab: raw === 'portfolio' ? undefined : raw },
+    })
+    return true
+  }
+  return false
+}
+
+watch(
+  () =>
+    [
+      route.path,
+      String(route.query.tab || ''),
+      String(route.query.mode || ''),
+      String(route.query.project_id || ''),
+    ] as const,
+  async () => {
+    if (syncWorkbenchRoute()) return
+    await applyRouteTabAndLoad()
+  },
+  { immediate: true },
+)
+
+async function applyRouteTabAndLoad() {
   const raw = route.query.tab as string
+  const mode = String(route.query.mode || '')
   if (raw === 'board') overviewMode.value = 'board'
   if (raw === 'department') overviewMode.value = 'department'
-  if (raw === 'tasks') executeMode.value = 'tasks'
-  if (raw === 'plan') executeMode.value = 'plan'
+  if (raw === 'tasks' || mode === 'tasks') executeMode.value = 'tasks'
+  if (raw === 'plan' || mode === 'plan') executeMode.value = 'plan'
+  const pid = Number(route.query.project_id)
+  if (Number.isFinite(pid) && pid > 0) planProjectId.value = pid
   tab.value = normalizeTab(raw)
   await reloadAll()
   if (tab.value === 'execute') {
@@ -3142,15 +3439,7 @@ onMounted(async () => {
   }
   if (tab.value === 'portfolio' && overviewMode.value === 'department') await loadDeptMonitor()
   if (tab.value === 'initiation') await loadResourceNeeds()
-})
-
-watch(
-  () => route.query.tab,
-  (v) => {
-    const next = normalizeTab(v as string)
-    if (next !== tab.value) tab.value = next
-  },
-)
+}
 </script>
 
 <style scoped>

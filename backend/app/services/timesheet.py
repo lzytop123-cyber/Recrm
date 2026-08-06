@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, widest_data_scope
+from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
 from app.models.project import Project
 from app.models.timesheet import (
     TIMESHEET_STATUS_APPROVED,
@@ -67,13 +67,9 @@ def assert_can_view(user: User, ts: Timesheet) -> None:
 
 
 def can_approve(user: User) -> bool:
-    role_codes = {r.code for r in user.roles}
-    return bool(
-        "admin" in role_codes
-        or "middle_manager" in role_codes
-        or "executive" in role_codes
-        or "delivery_lead" in role_codes
-    )
+    if user_can(user, "timesheet:approve"):
+        return True
+    return "admin" in {r.code for r in user.roles}
 
 
 def create_timesheet(db: Session, user: User, payload: TimesheetCreate) -> Timesheet:

@@ -43,3 +43,30 @@ class ApprovalStatsOut(BaseModel):
     initiated: int = 0
     processed: int = 0
     cc: int = 0
+
+
+class ApprovalTimelineNode(BaseModel):
+    name: str
+    status: str
+    actor_name: Optional[str] = None
+    acted_at: Optional[datetime] = None
+    comment: Optional[str] = None
+
+
+class ApprovalDetailOut(ApprovalItemOut):
+    timeline: list[ApprovalTimelineNode] = Field(default_factory=list)
+    nodes: list[ApprovalTimelineNode] = Field(default_factory=list)
+    rule_version: Optional[int] = None
+
+
+class ApprovalActRequest(BaseModel):
+    comment: Optional[str] = None
+    reason: Optional[str] = None
+    target_user_id: Optional[int] = None
+
+
+class ApprovalActResult(BaseModel):
+    ok: bool = True
+    message: str = ""
+    approval_id: str
+    action: str

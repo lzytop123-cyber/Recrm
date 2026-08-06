@@ -165,3 +165,176 @@ class AssetWorkbenchOut(BaseModel):
     alerts: List[AlertOut]
     top_borrows: List[TopBorrowOut]
     can_manage: bool
+
+
+class InventoryCreate(BaseModel):
+    period_label: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=120)
+
+
+class InventoryLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    asset_id: Optional[int] = None
+    qr_code: Optional[str] = None
+    result: str
+    scanned_by: Optional[int] = None
+    scanned_at: Optional[datetime] = None
+    remark: Optional[str] = None
+
+
+class InventoryDetailOut(InventorySessionOut):
+    lines: List[InventoryLineOut] = []
+
+
+class InventoryDifferenceOut(BaseModel):
+    missing: List[InventoryLineOut] = []
+    extra: List[InventoryLineOut] = []
+    anomaly: List[InventoryLineOut] = []
+    matched_count: int = 0
+
+
+class MaintenanceCreate(BaseModel):
+    asset_id: int
+    title: str = Field(..., min_length=1, max_length=120)
+    plan_date: Optional[date] = None
+    cost: Optional[Decimal] = None
+    remark: Optional[str] = None
+
+
+class MaintenanceRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class MaintenanceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    asset_id: int
+    title: str
+    plan_date: Optional[date] = None
+    status: str
+    applicant_id: Optional[int] = None
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    reject_reason: Optional[str] = None
+    cost: Optional[Decimal] = None
+    remark: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    asset_name: Optional[str] = None
+    applicant_name: Optional[str] = None
+
+
+class DepreciationRuleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    version: str = Field(default="1", max_length=40)
+    status: str = Field(default="draft")
+    method: str = Field(default="straight_line")
+    useful_life_months: int = Field(default=60, ge=1)
+    residual_rate: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
+    effective_from: Optional[date] = None
+
+
+class DepreciationRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    version: str
+    status: str
+    method: str
+    useful_life_months: int
+    residual_rate: Decimal
+    effective_from: Optional[date] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DepreciationRunRequest(BaseModel):
+    period_label: Optional[str] = None
+
+
+class DepreciationSnapshotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    period_label: str
+    asset_id: int
+    rule_id: Optional[int] = None
+    original_value: Decimal
+    monthly_amount: Decimal
+    accumulated: Decimal
+    net_value: Decimal
+    created_at: datetime
+    asset_name: Optional[str] = None
+
+
+class DisposeRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class DisposalRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class DisposalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    asset_id: int
+    reason: str
+    status: str
+    applicant_id: int
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    reject_reason: Optional[str] = None
+    disposed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    asset_name: Optional[str] = None
+    applicant_name: Optional[str] = None
+
+
+class AssetReportOut(BaseModel):
+    total: int
+    by_status: dict
+    by_category: dict
+    original_value_sum: Decimal
+    net_value_sum: Decimal
+    maintenance_open: int
+    disposal_pending: int
+
+
+class ShootingScheduleCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    shoot_date: date
+    start_time: datetime
+    end_time: datetime
+    location: Optional[str] = None
+    asset_ids: List[int] = []
+    member_ids: List[int] = []
+    remark: Optional[str] = None
+
+
+class ShootingScheduleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    shoot_date: date
+    start_time: datetime
+    end_time: datetime
+    location: Optional[str] = None
+    owner_id: int
+    status: str
+    remark: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    owner_name: Optional[str] = None
+    asset_ids: List[int] = []
+    member_ids: List[int] = []
+    conflicts: List[str] = []

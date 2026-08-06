@@ -3,6 +3,7 @@ ORM 模型汇总导出，供 Alembic 与业务层统一导入。
 后续商机/项目/任务/OKR/工单/排期等模块在此追加。
 """
 from app.models.associations import role_permissions, user_roles
+from app.models.approval_rule import ApprovalRule
 from app.models.audit_log import AuditLog
 from app.models.contract import Contract
 from app.models.customer import Customer, CustomerFollowUp
@@ -15,8 +16,28 @@ from app.models.permission import Permission
 from app.models.project import Project, ProjectMilestone, ProjectResourceNeed, ProjectTask
 from app.models.okr import KeyResult, Okr
 from app.models.performance import PerformanceAppeal, PerformanceAssessment, PerformanceCycle
-from app.models.asset import AssetBorrowItem, AssetBorrowRequest, AssetInventorySession, FixedAsset
+from app.models.asset import (
+    AssetBorrowItem,
+    AssetBorrowRequest,
+    AssetDepreciationRule,
+    AssetDepreciationSnapshot,
+    AssetDisposal,
+    AssetInventoryLine,
+    AssetInventorySession,
+    AssetMaintenance,
+    FixedAsset,
+    ShootingSchedule,
+    ShootingScheduleAsset,
+    ShootingScheduleMember,
+)
 from app.models.knowledge import KnowledgeArticle, KnowledgeSource, KnowledgeSpace
+from app.models.platform import (
+    Delegation,
+    ExportJob,
+    Notification,
+    SystemConfig,
+    SystemDictionary,
+)
 from app.models.role import Role
 from app.models.schedule import Schedule
 from app.models.ticket import Ticket, TicketRecord
@@ -34,6 +55,7 @@ __all__ = [
     "SystemSyncState",
     "Role",
     "Permission",
+    "ApprovalRule",
     "Lead",
     "LeadFollowUp",
     "LeadLog",
@@ -60,6 +82,19 @@ __all__ = [
     "AssetBorrowRequest",
     "AssetBorrowItem",
     "AssetInventorySession",
+    "AssetInventoryLine",
+    "AssetMaintenance",
+    "AssetDepreciationRule",
+    "AssetDepreciationSnapshot",
+    "AssetDisposal",
+    "ShootingSchedule",
+    "ShootingScheduleAsset",
+    "ShootingScheduleMember",
+    "Notification",
+    "SystemConfig",
+    "SystemDictionary",
+    "Delegation",
+    "ExportJob",
     "KnowledgeSpace",
     "KnowledgeSource",
     "KnowledgeArticle",

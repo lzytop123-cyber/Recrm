@@ -1,6 +1,13 @@
 <template>
   <div class="crm-page approvals-page" v-loading="loading">
-    <div class="crm-stats" style="--crm-stats-cols: 4">
+    <header class="todo-head approvals-head">
+      <div class="todo-head-copy">
+        <h1>审批中心</h1>
+        <p>汇总待我审批、我发起与已处理事项；通过后回各自业务模块生效。</p>
+      </div>
+    </header>
+
+    <div class="crm-stats" style="--crm-stats-cols: 3">
       <button
         v-for="tab in tabs"
         :key="tab.key"
@@ -91,72 +98,112 @@
     </section>
 
     <el-drawer v-model="detailVisible" :title="detailTitle" size="480px" destroy-on-close>
-      <div v-loading="detailLoading">
-        <el-descriptions v-if="detailProject" :column="1" border>
-          <el-descriptions-item label="项目">
-            {{ detailProject.project_no }} · {{ detailProject.name }}
-          </el-descriptions-item>
-          <template v-if="detailRow?.type === 'project_acceptance'">
-            <el-descriptions-item label="验收结果">
-              {{ ACCEPTANCE_RESULT_LABEL[detailProject.acceptance_result || ''] || detailProject.acceptance_result || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="验收日期">{{ detailProject.accepted_at || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="验收方式">{{ detailProject.acceptance_method || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="验收负责人">
-              {{ detailProject.acceptance_owner_name || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="申请人">{{ detailRow?.applicant_name || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="结论与遗留安排">
-              {{ detailProject.acceptance_conclusion || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="遗留问题摘要">
-              {{ detailProject.leftover_summary || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="验收附件">
-              <a
-                v-if="detailProject.acceptance_attachment_path"
-                :href="`/uploads/${detailProject.acceptance_attachment_path}`"
-                target="_blank"
-                rel="noopener"
+      <div v-loading="detailLoading" class="approval-drawer">
+        <template v-if="detail">
+          <header class="drawer-hero">
+            <el-tag :type="statusTag(detail.status_label || '')" effect="light" size="small">
+              {{ detail.status_label || '—' }}
+            </el-tag>
+            <h2>{{ detailHeadline }}</h2>
+            <p class="drawer-meta">
+              {{ detail.applicant_name || '—' }}
+              <span v-if="detail.department_name"> · {{ detail.department_name }}</span>
+              <span> · {{ formatTime(detail.submitted_at) }}</span>
+            </p>
+            <p v-if="activeTab === 'pending' && detail.node" class="drawer-node">
+              待处理：{{ detail.node }}
+            </p>
+          </header>
+
+          <el-descriptions :column="1" border class="drawer-body">
+            <!-- 内部验收：只展示业务字段一次 -->
+            <template v-if="detail.type === 'project_acceptance'">
+              <el-descriptions-item label="项目">
+                {{
+                  detailProject
+                    ? `${detailProject.project_no} · ${detailProject.name}`
+                    : detail.source_id || detail.title
+                }}
+              </el-descriptions-item>
+              <el-descriptions-item label="验收结果">
+                {{
+                  ACCEPTANCE_RESULT_LABEL[acceptanceResultKey] ||
+                  acceptanceResultKey ||
+                  '—'
+                }}
+              </el-descriptions-item>
+              <el-descriptions-item label="验收日期">
+                {{ detailProject?.accepted_at || '—' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="结论 / 遗留">
+                {{ detailProject?.acceptance_conclusion || factValue('验收结论') || '—' }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="factValue('验收方式')" label="验收方式">
+                {{ factValue('验收方式') }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="factValue('附件')" label="附件">
+                {{ factValue('附件') }}
+              </el-descriptions-item>
+            </template>
+
+            <!-- 财务核对 -->
+            <template v-else-if="detail.type === 'project_finance'">
+              <el-descriptions-item label="项目">
+                {{
+                  detailProject
+                    ? `${detailProject.project_no} · ${detailProject.name}`
+                    : detail.source_id || detail.title
+                }}
+              </el-descriptions-item>
+              <el-descriptions-item label="核对结论">
+                <template v-if="detailProject?.finance_check_status === 'pending'">待核对</template>
+                <template v-else-if="detailProject?.finance_check_passed">已通过</template>
+                <template v-else-if="detailProject?.finance_check_status === 'rejected'">已驳回</template>
+                <template v-else>{{ detail.status_label || '—' }}</template>
+              </el-descriptions-item>
+            </template>
+
+            <!-- 其他类型：通用 facts，去掉与标题/状态重复的摘要 -->
+            <template v-else>
+              <el-descriptions-item v-if="detail.category" label="业务分类">
+                {{ detail.category }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                v-for="fact in detail.facts || []"
+                :key="fact.label"
+                :label="fact.label"
               >
-                {{ detailProject.acceptance_attachment || '查看附件' }}
-              </a>
-              <span v-else>{{ detailProject.acceptance_attachment || '—' }}</span>
-            </el-descriptions-item>
-          </template>
-          <template v-else-if="detailRow?.type === 'project_finance'">
-            <el-descriptions-item label="验收结果">
-              {{ ACCEPTANCE_RESULT_LABEL[detailProject.acceptance_result || ''] || detailProject.acceptance_result || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="财务核对状态">
-              <template v-if="detailProject.finance_check_status === 'pending'">审批中</template>
-              <template v-else-if="detailProject.finance_check_passed">已通过</template>
-              <template v-else-if="detailProject.finance_check_status === 'rejected'">已驳回</template>
-              <template v-else>未通过</template>
-            </el-descriptions-item>
-            <el-descriptions-item label="申请人">{{ detailRow?.applicant_name || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">
-              {{ formatTime(detailProject.finance_check_submitted_at) }}
-            </el-descriptions-item>
-          </template>
-        </el-descriptions>
+                {{ fact.value }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                v-if="!(detail.facts || []).length && detail.summary"
+                label="说明"
+              >
+                {{ detail.summary }}
+              </el-descriptions-item>
+            </template>
+          </el-descriptions>
+        </template>
         <el-empty v-else-if="!detailLoading" description="暂无详情" />
+
         <div class="drawer-actions">
-          <el-button @click="openDeepLink">打开项目详情</el-button>
-          <template v-if="activeTab === 'pending' && detailRow?.can_act">
+          <el-button @click="openDeepLink">打开项目 / 原单</el-button>
+          <template v-if="activeTab === 'pending' && detail?.can_act">
             <el-button
-              v-if="detailRow.actions.includes('approve')"
+              v-if="detail.actions.includes('approve')"
+              v-perm="'approval:center'"
               type="success"
-              :loading="actingId === detailRow.id"
-              @click="act(detailRow, true)"
+              :loading="actingId === detail.id"
+              @click="act(detail, true)"
             >
               通过
             </el-button>
             <el-button
-              v-if="detailRow.actions.includes('reject')"
+              v-if="detail.actions.includes('reject')"
+              v-perm="'approval:center'"
               type="danger"
-              :loading="actingId === detailRow.id"
-              @click="act(detailRow, false)"
+              :loading="actingId === detail.id"
+              @click="act(detail, false)"
             >
               驳回
             </el-button>
@@ -172,20 +219,18 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  approveApproval,
+  fetchApprovalDetail,
   fetchApprovalStats,
   fetchApprovals,
+  rejectApproval,
+  type ApprovalDetail,
   type ApprovalItem,
   type ApprovalStats,
 } from '@/api/approvals'
-import { approveContract, rejectContract } from '@/api/contracts'
-import { approveBorrow, rejectBorrow } from '@/api/assets'
-import { approveTimesheet, rejectTimesheet } from '@/api/timesheets'
-import { reviewAllocation, reviewReceipt } from '@/api/finance'
 import {
   ACCEPTANCE_RESULT_LABEL,
   fetchProjectDetail,
-  reviewProjectAcceptance,
-  reviewProjectFinanceCheck,
   type Project,
 } from '@/api/projects'
 
@@ -195,10 +240,10 @@ const tabs = [
   { key: 'pending', label: '待我审批', statKey: 'pending' as const },
   { key: 'initiated', label: '我发起的', statKey: 'initiated' as const },
   { key: 'processed', label: '已处理', statKey: 'processed' as const },
-  { key: 'cc', label: '抄送我的', statKey: 'cc' as const },
 ]
 
-const categories = ['全部业务', '销售合同', '固定资产', '项目交付', '目标绩效']
+/** 与后端 category 对齐；目标绩效二期隐藏 */
+const categories = ['全部业务', '销售合同', '到款复核', '收款核销', '固定资产', '项目交付']
 
 const loading = ref(false)
 const actingId = ref<string | null>(null)
@@ -218,19 +263,35 @@ const stats = reactive<ApprovalStats>({
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
-const detailRow = ref<ApprovalItem | null>(null)
+const detail = ref<ApprovalDetail | null>(null)
 const detailProject = ref<Project | null>(null)
 
 const detailTitle = computed(() => {
-  if (!detailRow.value) return '审批详情'
-  if (detailRow.value.type === 'project_acceptance') return '内部验收申请'
-  if (detailRow.value.type === 'project_finance') return '财务核对申请'
-  return detailRow.value.title
+  if (!detail.value) return '审批详情'
+  if (detail.value.type === 'project_acceptance') return '内部验收'
+  if (detail.value.type === 'project_finance') return '财务核对'
+  return detail.value.category || '审批详情'
 })
+
+const detailHeadline = computed(() => {
+  if (!detail.value) return ''
+  if (detailProject.value) return detailProject.value.name
+  return detail.value.title || '—'
+})
+
+const acceptanceResultKey = computed(() => {
+  return detailProject.value?.acceptance_result || factValue('验收结果') || ''
+})
+
+function factValue(label: string): string {
+  const hit = (detail.value?.facts || []).find((f) => f.label === label)
+  return hit?.value || ''
+}
 
 function statusTag(label: string) {
   if (label.includes('待')) return 'warning'
-  if (label.includes('已')) return 'success'
+  if (label.includes('驳回') || label.includes('拒绝')) return 'danger'
+  if (label.includes('通过') || label.includes('已')) return 'success'
   return 'info'
 }
 
@@ -245,23 +306,32 @@ function entityId(row: ApprovalItem): number {
 }
 
 async function openItem(row: ApprovalItem) {
-  if (row.type === 'project_acceptance' || row.type === 'project_finance') {
-    detailRow.value = row
-    detailProject.value = null
-    detailVisible.value = true
-    detailLoading.value = true
-    try {
-      const id = entityId(row)
-      const { data } = await fetchProjectDetail(id)
-      detailProject.value = data
-    } catch {
-      ElMessage.error('加载详情失败')
-    } finally {
-      detailLoading.value = false
+  detail.value = row
+  detailProject.value = null
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const { data } = await fetchApprovalDetail(row.id)
+    detail.value = data
+    if (data.type === 'project_acceptance' || data.type === 'project_finance') {
+      const id = entityId(data)
+      if (id) {
+        const { data: project } = await fetchProjectDetail(id)
+        detailProject.value = project
+      }
     }
-    return
+  } catch {
+    // 详情接口失败时仍展示列表行上的 facts
+    detail.value = row
+  } finally {
+    detailLoading.value = false
   }
-  const link = row.deep_link || '/'
+}
+
+function openDeepLink() {
+  if (!detail.value) return
+  const link = detail.value.deep_link || '/'
+  detailVisible.value = false
   if (link.includes('?')) {
     const [path, qs] = link.split('?')
     const query: Record<string, string> = {}
@@ -274,20 +344,13 @@ async function openItem(row: ApprovalItem) {
   router.push(link)
 }
 
-function openDeepLink() {
-  if (!detailRow.value) return
-  const link = detailRow.value.deep_link || '/'
-  detailVisible.value = false
-  router.push(link)
-}
-
 async function act(row: ApprovalItem, approve: boolean) {
   if (!approve) {
     try {
       const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回审批', {
         confirmButtonText: '确认驳回',
         cancelButtonText: '取消',
-        inputPlaceholder: '驳回原因',
+        inputPlaceholder: '驳回原因（必填）',
         inputValidator: (v) => (!!v && v.trim().length > 0) || '请填写原因',
       })
       await runAction(row, false, value.trim())
@@ -296,39 +359,35 @@ async function act(row: ApprovalItem, approve: boolean) {
     }
     return
   }
-  await runAction(row, true)
+
+  const needStrongConfirm = row.type === 'contract' || row.category === '销售合同'
+  try {
+    const { value } = await ElMessageBox.prompt(
+      needStrongConfirm
+        ? `确认通过「${row.title}」？可填写通过意见（可选）。`
+        : `确认通过「${row.title}」？意见可选填。`,
+      '通过审批',
+      {
+        confirmButtonText: '确认通过',
+        cancelButtonText: '取消',
+        inputPlaceholder: '通过意见（可选）',
+        inputValue: '',
+        distinguishCancelAndClose: true,
+      },
+    )
+    await runAction(row, true, (value || '').trim())
+  } catch {
+    /* cancel */
+  }
 }
 
-async function runAction(row: ApprovalItem, approve: boolean, reason = '') {
-  const id = entityId(row)
-  if (!id) {
-    ElMessage.error('缺少业务单号')
-    return
-  }
+async function runAction(row: ApprovalItem, approve: boolean, remark = '') {
   actingId.value = row.id
   try {
-    if (row.type === 'contract') {
-      if (approve) await approveContract(id)
-      else await rejectContract(id, reason)
-    } else if (row.type === 'asset_borrow') {
-      if (approve) await approveBorrow(id)
-      else await rejectBorrow(id, reason)
-    } else if (row.type === 'timesheet') {
-      if (approve) await approveTimesheet(id)
-      else await rejectTimesheet(id, reason)
-    } else if (row.type === 'receipt') {
-      const version = Number(row.meta?.version ?? 1)
-      await reviewReceipt(id, approve, version, reason || undefined)
-    } else if (row.type === 'allocation') {
-      const version = Number(row.meta?.version ?? 1)
-      await reviewAllocation(id, approve, version, reason || undefined)
-    } else if (row.type === 'project_acceptance') {
-      await reviewProjectAcceptance(id, approve, reason || undefined)
-    } else if (row.type === 'project_finance') {
-      await reviewProjectFinanceCheck(id, approve, reason || undefined)
+    if (approve) {
+      await approveApproval(row.id, remark ? { comment: remark } : {})
     } else {
-      openItem(row)
-      return
+      await rejectApproval(row.id, { reason: remark, comment: remark })
     }
     ElMessage.success(approve ? '已通过' : '已驳回')
     detailVisible.value = false
@@ -353,7 +412,7 @@ async function loadList() {
       page: page.value,
       page_size: pageSize.value,
     })
-    items.value = data.items
+    items.value = (data.items || []).filter((x) => x.category !== '目标绩效')
     total.value = data.total
   } finally {
     loading.value = false
@@ -375,6 +434,20 @@ onMounted(reload)
 </script>
 
 <style scoped>
+.approvals-head {
+  margin-bottom: 16px;
+}
+.approvals-head h1 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--crm-ink);
+}
+.approvals-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--crm-ink-soft);
+  max-width: 42em;
+}
 .approvals-page .crm-stat-tile.active {
   border-color: var(--el-color-primary);
   box-shadow: inset 0 0 0 1px var(--el-color-primary);
@@ -396,6 +469,33 @@ onMounted(reload)
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+.approval-drawer {
+  min-height: 120px;
+}
+.drawer-hero {
+  margin-bottom: 16px;
+}
+.drawer-hero h2 {
+  margin: 10px 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--crm-ink);
+  line-height: 1.35;
+}
+.drawer-meta,
+.drawer-node {
+  margin: 0;
+  font-size: 13px;
+  color: var(--crm-ink-soft);
+  line-height: 1.5;
+}
+.drawer-node {
+  margin-top: 6px;
+  color: var(--el-color-warning-dark-2, #b88230);
+}
+.drawer-body {
+  margin-top: 4px;
 }
 .drawer-actions {
   display: flex;

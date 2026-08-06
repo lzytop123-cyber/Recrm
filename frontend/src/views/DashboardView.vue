@@ -216,11 +216,11 @@
         <div v-else class="ov-empty-note">今日暂无排期</div>
       </article>
 
-      <article class="ov-card ov-card-pad ov-reveal">
+      <article v-if="false" class="ov-card ov-card-pad ov-reveal">
         <div class="ov-card-head">
           <div>
             <h2>组织执行</h2>
-            <p>部门目标与员工任务汇总</p>
+            <p>部门目标与员工任务汇总（第二期开放）</p>
           </div>
           <button type="button" class="ov-text-link" @click="go('/okrs')">查看目标</button>
         </div>

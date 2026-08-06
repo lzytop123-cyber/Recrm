@@ -29,6 +29,18 @@ export interface ApprovalItem {
   meta: Record<string, unknown>
 }
 
+export interface ApprovalDetail extends ApprovalItem {
+  timeline?: Array<{
+    name: string
+    status: string
+    actor_name?: string | null
+    acted_at?: string | null
+    comment?: string | null
+  }>
+  nodes?: ApprovalDetail['timeline']
+  rule_version?: number | null
+}
+
 export interface ApprovalStats {
   pending: number
   initiated: number
@@ -48,4 +60,19 @@ export function fetchApprovals(params: {
   page_size?: number
 }) {
   return request.get<{ total: number; items: ApprovalItem[] }>('/approvals', { params })
+}
+
+export function fetchApprovalDetail(approvalId: string) {
+  return request.get<ApprovalDetail>(`/approvals/${encodeURIComponent(approvalId)}`)
+}
+
+export function approveApproval(approvalId: string, payload?: { comment?: string }) {
+  return request.post(`/approvals/${encodeURIComponent(approvalId)}/approve`, payload || {})
+}
+
+export function rejectApproval(
+  approvalId: string,
+  payload: { reason?: string; comment?: string },
+) {
+  return request.post(`/approvals/${encodeURIComponent(approvalId)}/reject`, payload)
 }
