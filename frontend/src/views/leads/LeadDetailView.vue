@@ -34,7 +34,8 @@
             <el-tag v-if="lead.is_protected" type="warning" size="small">保护中</el-tag>
           </div>
         </template>
-        <el-descriptions :column="3" border>
+        <SalesJourneyBar class="journey-in-card" :lead-id="lead.id" hide-self-lead />
+        <el-descriptions :column="3" border class="stack-gap-sm">
           <el-descriptions-item label="联系人">{{ lead.name }}</el-descriptions-item>
           <el-descriptions-item label="公司">{{ lead.company_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="电话">{{ lead.phone || '-' }}</el-descriptions-item>
@@ -46,6 +47,15 @@
           <el-descriptions-item label="保护截止">{{ formatTime(lead.protect_until) }}</el-descriptions-item>
           <el-descriptions-item label="需求" :span="3">{{ lead.need_desc || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">{{ lead.remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="lead.converted_opportunity_id" label="转化商机">
+            <el-button
+              link
+              type="primary"
+              @click="$router.push(`/opportunities/${lead.converted_opportunity_id}`)"
+            >
+              #{{ lead.converted_opportunity_id }}
+            </el-button>
+          </el-descriptions-item>
           <el-descriptions-item v-if="lead.converted_customer_id" label="转化客户">
             <el-button link type="primary" @click="$router.push(`/customers/${lead.converted_customer_id}`)">
               #{{ lead.converted_customer_id }}
@@ -242,6 +252,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { fetchEmployees, type Employee } from '@/api/org'
+import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   LEAD_RETURN_REASON_OPTIONS,
   LEAD_SOURCE_OPTIONS,
@@ -485,6 +496,12 @@ onMounted(load)
 </script>
 
 <style scoped>
+.journey-in-card {
+  margin: 12px 0;
+}
+.stack-gap-sm {
+  margin-top: 12px;
+}
 .fu-item p {
   margin: 6px 0 0;
 }

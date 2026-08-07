@@ -26,8 +26,10 @@ from app.schemas.lead import (
     LeadStatsOut,
     LeadTransferRequest,
     LeadUpdate,
+    SalesJourneyOut,
 )
 from app.services import lead as lead_service
+from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/leads", tags=["线索池"])
 
@@ -124,6 +126,16 @@ def get_lead(
 ) -> LeadDetailOut:
     lead = lead_service.get_lead_detail(db, current_user, lead_id)
     return LeadDetailOut.model_validate(lead)
+
+
+@router.get("/{lead_id}/journey", response_model=SalesJourneyOut, summary="销售旅程")
+def get_lead_journey(
+    lead_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["lead:view"]))],
+) -> SalesJourneyOut:
+    lead = lead_service.get_lead_detail(db, current_user, lead_id)
+    return SalesJourneyOut(**sales_journey_service.build_sales_journey(db, lead=lead))
 
 
 @router.patch("/{lead_id}", response_model=LeadOut, summary="编辑线索")

@@ -43,7 +43,6 @@ from app.models.payment import (
 )
 from app.models.user import User
 from app.schemas.contract import (
-    ContractCompleteRequest,
     ContractCreate,
     ContractSignRequest,
     ContractTerminateRequest,
@@ -132,13 +131,6 @@ def _is_collection_complete(db: Session, contract: Contract) -> bool:
         .scalar()
     )
     return Decimal(str(paid or 0)) >= Decimal(str(contract.amount))
-
-
-def _can_force_complete(user: User) -> bool:
-    """回款未齐特批完成：contract:force_complete / contract:manage / admin。"""
-    if user_can(user, "contract:force_complete") or user_can(user, "contract:manage"):
-        return True
-    return "admin" in {r.code for r in user.roles}
 
 
 def _can_complete_contract(user: User) -> bool:
@@ -482,13 +474,7 @@ def activate_contract(db: Session, user: User, contract_id: int) -> Contract:
     return enrich_contract(db, contract)
 
 
-def complete_contract(
-    db: Session,
-    user: User,
-    contract_id: int,
-    payload: Optional[ContractCompleteRequest] = None,
-) -> Contract:
-    payload = payload or ContractCompleteRequest()
+def complete_contract(db: Session, user: User, contract_id: int) -> Contract:
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(status_code=404, detail="合同不存在")
@@ -496,26 +482,14 @@ def complete_contract(
     if contract.status != CONTRACT_STATUS_ACTIVE:
         raise HTTPException(status_code=400, detail="仅执行中合同可完成")
 
-    collected = _is_collection_complete(db, contract)
-    if not collected:
-        if not payload.force:
-            raise HTTPException(
-                status_code=409,
-                detail="回款尚未收齐，不能完成；如需特批请勾选特批并填写原因",
-            )
-        if not _can_force_complete(user):
-            raise HTTPException(status_code=403, detail="无权特批完成合同")
-        reason = (payload.force_reason or "").strip()
-        if not reason:
-            raise HTTPException(status_code=400, detail="特批完成须填写原因")
-        contract.remark = ((contract.remark or "") + f"\n[特批完成] {reason}").strip()
-        _log_opp_contract_milestone(
-            db, user, contract, f"合同 {contract.contract_no} 特批完成：{reason}"
+    if not _is_collection_complete(db, contract):
+        raise HTTPException(
+            status_code=409,
+            detail="回款尚未收齐，不能完成；请先完成到款核销",
         )
-    else:
-        if not _can_complete_contract(user):
-            raise HTTPException(status_code=403, detail="无权完成合同")
-        _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已完成")
+    if not _can_complete_contract(user):
+        raise HTTPException(status_code=403, detail="无权完成合同")
+    _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已完成")
 
     contract.status = CONTRACT_STATUS_COMPLETED
     db.commit()

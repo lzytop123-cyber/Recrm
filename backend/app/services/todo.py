@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,16 @@ from app.services import ticket as ticket_service
 logger = logging.getLogger(__name__)
 
 _LIMIT = 25
-_FAR_FUTURE = datetime(9999, 12, 31)
+_FAR_FUTURE = datetime(9999, 12, 31, tzinfo=timezone.utc)
+
+
+def _sort_due_at(value: datetime | None) -> datetime:
+    """Normalize due_at for sorting across naive/aware values (Postgres vs SQLite)."""
+    if value is None:
+        return _FAR_FUTURE
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _has(user: User, code: str) -> bool:
@@ -180,9 +189,11 @@ def list_my_todos(db: Session, user: User) -> TodoListOut:
                             f"/projects/delivery?tab=execute&mode=tasks"
                             f"&project_id={task.project_id}"
                         ),
-                        due_at=datetime.combine(task.due_date, datetime.min.time())
-                        if task.due_date
-                        else None,
+                        due_at=(
+                            datetime.combine(task.due_date, datetime.min.time(), tzinfo=timezone.utc)
+                            if task.due_date
+                            else None
+                        ),
                     )
                 )
         except Exception:
@@ -243,7 +254,7 @@ def list_my_todos(db: Session, user: User) -> TodoListOut:
             logger.exception("todo source failed: schedule user_id=%s", user.id)
             partial_errors.append("schedule")
 
-    items.sort(key=lambda x: (_urgency_rank(x.urgency), x.due_at or _FAR_FUTURE))
+    items.sort(key=lambda x: (_urgency_rank(x.urgency), _sort_due_at(x.due_at)))
 
     counts = TodoCounts(
         approval=sum(1 for x in items if x.category == "approval"),

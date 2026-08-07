@@ -52,7 +52,7 @@ def resource_options(
 def resource_load(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
-    resource_type: str = Query(..., description="instructor/streamer/other"),
+    resource_type: str = Query(..., description="instructor/streamer/shooting_edit/other"),
     date_from: datetime = Query(...),
     date_to: datetime = Query(...),
 ) -> ResourceLoadListOut:

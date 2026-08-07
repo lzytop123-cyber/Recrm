@@ -1,15 +1,12 @@
 <template>
-  <div class="crm-page project-delivery">
+  <div class="crm-page project-delivery crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
         <h1>{{ workbench === 'portfolio' ? '项目台账' : '交付执行' }}</h1>
         <p>{{ workbenchDesc }}</p>
       </div>
       <div class="sales-head-actions">
-        <el-button v-if="workbench === 'portfolio'" type="primary" @click="openInitiation">
-          ＋ 发起项目立项
-        </el-button>
-        <el-button v-else-if="tab === 'initiation'" type="primary" @click="openInitiation">
+        <el-button v-if="workbench === 'delivery' && tab === 'initiation'" type="primary" @click="openInitiation">
           ＋ 发起项目立项
         </el-button>
         <el-button
@@ -50,109 +47,17 @@
       </button>
     </div>
 
-    <!-- 项目台账：列表 / 看板 / 本部门 -->
+    <div class="crm-fit-body" :class="{ 'is-scroll': tab !== 'portfolio' || overviewMode === 'board' }">
+    <!-- 项目台账：同一批项目，列表 / 看板两种查看方式 -->
     <template v-if="tab === 'portfolio'">
       <div class="submode-bar">
         <el-radio-group v-model="overviewMode" size="small" @change="onOverviewModeChange">
           <el-radio-button value="list">列表</el-radio-button>
           <el-radio-button value="board">看板</el-radio-button>
-          <el-radio-button value="department">本部门</el-radio-button>
         </el-radio-group>
+        <span class="muted" style="margin-left: 12px">同一批项目 · 点击进入档案</span>
       </div>
 
-      <template v-if="overviewMode === 'board'">
-      <div class="project-board-shell">
-        <section class="project-board-summary">
-          <article class="project-board-stat">
-            <small>本期项目</small>
-            <strong>{{ stats?.total ?? 0 }}</strong>
-            <span>覆盖三类主营业务</span>
-          </article>
-          <article class="project-board-stat">
-            <small>执行中</small>
-            <strong>{{ stats?.executing ?? 0 }}</strong>
-            <span>交付推进中</span>
-          </article>
-          <article class="project-board-stat">
-            <small>进度偏差</small>
-            <strong style="color: oklch(0.5 0.16 25)">{{ boardDeviation }}</strong>
-            <span>健康度需关注或高风险</span>
-          </article>
-          <article class="project-board-stat">
-            <small>待内部验收</small>
-            <strong>{{ stats?.accepting ?? 0 }}</strong>
-            <span>组织验收闭环</span>
-          </article>
-          <article class="project-board-stat">
-            <small>待负责人介入</small>
-            <strong style="color: oklch(0.5 0.12 70)">{{ (stats?.high_risk ?? 0) + (stats?.leftover ?? 0) }}</strong>
-            <span>风险或遗留异常</span>
-          </article>
-        </section>
-
-        <div class="project-board-toolbar">
-          <div class="filters">
-            <el-input
-              v-model="keyword"
-              placeholder="搜索项目、编号、负责人"
-              clearable
-              style="width: 250px"
-            />
-            <el-select v-model="boardType" clearable placeholder="全部业务" style="width: 160px">
-              <el-option v-for="opt in PROJECT_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-            </el-select>
-          </div>
-          <div class="board-legend">
-            <span><i style="background: oklch(0.5 0.16 25)"></i>高风险</span>
-            <span><i style="background: oklch(0.55 0.12 70)"></i>需关注</span>
-            <span><i style="background: var(--crm-success)"></i>正常</span>
-          </div>
-        </div>
-
-        <div class="project-kanban-scroll">
-          <section class="project-kanban">
-            <article v-for="col in boardColumns" :key="col.key" class="project-kanban-column">
-              <div class="project-kanban-head">
-                <span>
-                  <i :style="{ background: col.color }"></i>
-                  <b>{{ col.label }}</b>
-                </span>
-                <em>{{ col.items.length }} 项</em>
-              </div>
-              <div class="project-board-cards">
-                <button
-                  v-for="row in col.items"
-                  :key="row.id"
-                  type="button"
-                  class="project-board-card"
-                  @click="goDetail(row)"
-                >
-                  <span class="project-board-card-top">
-                    <small>{{ row.project_no }}</small>
-                    <span class="health-pill" :class="row.health || 'normal'">
-                      {{ HEALTH_LABEL[row.health || 'normal'] }}
-                    </span>
-                  </span>
-                  <h3>{{ row.name }}</h3>
-                  <small>{{ typeLabel(row.project_type) }} · 负责人 {{ row.manager_name || '—' }}</small>
-                  <span class="project-board-card-progress">
-                    <span class="bar"><i :style="{ width: `${row.progress || 0}%` }"></i></span>
-                    <b>{{ row.progress || 0 }}%</b>
-                  </span>
-                  <span class="project-board-card-meta">
-                    <span>下一步</span>
-                    <b>{{ formatNextNode(row) }}</b>
-                  </span>
-                </button>
-                <div v-if="!col.items.length" class="project-board-empty">当前筛选条件下无项目</div>
-              </div>
-            </article>
-          </section>
-        </div>
-      </div>
-      </template>
-
-      <template v-else-if="overviewMode === 'list'">
       <section class="portfolio-hero">
         <button
           v-for="item in portfolioStatCards"
@@ -168,7 +73,7 @@
         </button>
       </section>
 
-      <section class="crm-panel">
+      <section class="crm-panel" :class="{ 'crm-fit-panel': overviewMode === 'list' }">
         <div class="toolbar">
           <div class="filters">
             <el-input
@@ -186,108 +91,113 @@
               style="width: 140px"
               @change="onStatusFilterChange"
             >
-              <el-option v-for="(label, key) in PROJECT_STATUS_LABEL" :key="key" :label="label" :value="key" />
+              <el-option
+                v-for="(label, key) in PROJECT_STATUS_LABEL"
+                :key="key"
+                :label="label"
+                :value="key"
+              />
+            </el-select>
+            <el-select v-model="portfolioType" clearable placeholder="交付类型" style="width: 150px">
+              <el-option
+                v-for="opt in PROJECT_TYPE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
             </el-select>
             <el-button @click="loadProjects">查询</el-button>
           </div>
+          <div v-if="overviewMode === 'board'" class="board-legend">
+            <span><i style="background: oklch(0.5 0.16 25)"></i>高风险</span>
+            <span><i style="background: oklch(0.55 0.12 70)"></i>需关注</span>
+            <span><i style="background: var(--crm-success)"></i>正常</span>
+          </div>
         </div>
-        <el-table :data="listProjects" v-loading="loading" stripe @row-click="goDetail">
-          <el-table-column label="项目" min-width="200">
-            <template #default="{ row }">
-              <b>{{ row.name }}</b>
-              <div class="muted">{{ row.project_no }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="交付类型" width="120">
-            <template #default="{ row }">{{ typeLabel(row.project_type) }}</template>
-          </el-table-column>
-          <el-table-column prop="manager_name" label="项目负责人" width="110" />
-          <el-table-column label="基线周期" width="160">
-            <template #default="{ row }">
-              {{ formatRange(row.start_date, row.end_date) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="进度" width="140">
-            <template #default="{ row }">
-              <el-progress :percentage="row.progress || 0" :stroke-width="10" />
-            </template>
-          </el-table-column>
-          <el-table-column label="下一步" min-width="140" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ formatNextNode(row) }}
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="table-footer">
-          <span class="muted">点击行查看项目档案</span>
-          <span>共 {{ listProjectTotal }} 个项目</span>
-        </div>
-      </section>
-      </template>
 
-      <template v-else>
-      <section class="department-head" v-loading="deptLoading">
-        <article class="dept-focus">
-          <div>
-            <el-tag size="small" type="info">部门负责人视角</el-tag>
-            <h2>{{ deptMonitor?.department_name || '本部门' }} · 本周执行监控</h2>
-            <p>从任务、工时、工单异常下钻到具体责任记录。</p>
+        <template v-if="overviewMode === 'list'">
+          <div class="crm-table-wrap is-fit">
+            <el-table :data="listProjects" v-loading="loading" stripe height="100%" @row-click="goDetail">
+              <el-table-column label="项目" min-width="200">
+                <template #default="{ row }">
+                  <b>{{ row.name }}</b>
+                  <div class="muted">{{ row.project_no }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="交付类型" width="120">
+                <template #default="{ row }">{{ typeLabel(row.project_type) }}</template>
+              </el-table-column>
+              <el-table-column prop="manager_name" label="项目负责人" width="110" />
+              <el-table-column label="基线周期" width="160">
+                <template #default="{ row }">
+                  {{ formatRange(row.start_date, row.end_date) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="进度" width="140">
+                <template #default="{ row }">
+                  <el-progress :percentage="row.progress || 0" :stroke-width="10" />
+                </template>
+              </el-table-column>
+              <el-table-column label="下一步" min-width="140" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ formatNextNode(row) }}
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
-          <div class="dept-score">
-            <strong>{{ deptMonitor?.health_score ?? 0 }}</strong>
-            <small>执行健康分</small>
+          <div class="table-footer">
+            <span class="muted">点击行查看项目档案</span>
+            <span>共 {{ listProjectTotal }} 个项目</span>
           </div>
-        </article>
-        <article class="portfolio-mini">
-          <small>任务按期率</small>
-          <strong>{{ formatRate(deptMonitor?.on_time_rate) }}%</strong>
-          <span>逾期 {{ deptMonitor?.overdue_tasks ?? 0 }} 项</span>
-        </article>
-        <article class="portfolio-mini">
-          <small>工时填报完整率</small>
-          <strong>{{ formatRate(deptMonitor?.hours_complete_rate) }}%</strong>
-          <span>缺失 {{ deptMonitor?.missing_hours ?? 0 }} 项</span>
-        </article>
-        <article class="portfolio-mini">
-          <small>待处理异常</small>
-          <strong>{{ (deptMonitor?.overdue_tasks ?? 0) + (deptMonitor?.missing_hours ?? 0) }}</strong>
-          <span>逾期与缺报合计</span>
-        </article>
-      </section>
+        </template>
 
-      <section class="crm-panel">
-        <div class="card-head" style="margin-bottom: 12px">
-          <div>
-            <b>员工执行情况</b>
-            <p class="muted" style="margin: 4px 0 0">仅展示本部门授权数据</p>
+        <template v-else>
+          <div class="project-kanban-scroll" v-loading="loading">
+            <section class="project-kanban">
+              <article v-for="col in boardColumns" :key="col.key" class="project-kanban-column">
+                <div class="project-kanban-head">
+                  <span>
+                    <i :style="{ background: col.color }"></i>
+                    <b>{{ col.label }}</b>
+                  </span>
+                  <em>{{ col.items.length }} 项</em>
+                </div>
+                <div class="project-board-cards">
+                  <button
+                    v-for="row in col.items"
+                    :key="row.id"
+                    type="button"
+                    class="project-board-card"
+                    @click="goDetail(row)"
+                  >
+                    <span class="project-board-card-top">
+                      <small>{{ row.project_no }}</small>
+                      <span class="health-pill" :class="row.health || 'normal'">
+                        {{ HEALTH_LABEL[row.health || 'normal'] }}
+                      </span>
+                    </span>
+                    <h3>{{ row.name }}</h3>
+                    <small>{{ typeLabel(row.project_type) }} · 负责人 {{ row.manager_name || '—' }}</small>
+                    <span class="project-board-card-progress">
+                      <span class="bar"><i :style="{ width: `${row.progress || 0}%` }"></i></span>
+                      <b>{{ row.progress || 0 }}%</b>
+                    </span>
+                    <span class="project-board-card-meta">
+                      <span>下一步</span>
+                      <b>{{ formatNextNode(row) }}</b>
+                    </span>
+                  </button>
+                  <div v-if="!col.items.length" class="project-board-empty">当前筛选条件下无项目</div>
+                </div>
+              </article>
+            </section>
           </div>
-        </div>
-        <el-table :data="deptMonitor?.members || []" stripe>
-          <el-table-column prop="name" label="员工" width="120" />
-          <el-table-column prop="planned_tasks" label="计划任务" width="100" />
-          <el-table-column prop="done_tasks" label="完成" width="80" />
-          <el-table-column prop="overdue_tasks" label="逾期" width="80">
-            <template #default="{ row }">
-              <span :style="{ color: row.overdue_tasks > 0 ? 'oklch(0.5 0.16 25)' : undefined }">
-                {{ row.overdue_tasks }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="计划 / 实际工时" width="140">
-            <template #default="{ row }">
-              {{ formatHours(row.planned_hours) }} / {{ formatHours(row.actual_hours) }}h
-            </template>
-          </el-table-column>
-          <el-table-column label="工时完整" width="100">
-            <template #default="{ row }">{{ formatRate(row.hours_complete_rate) }}%</template>
-          </el-table-column>
-          <el-table-column prop="open_tickets" label="待处理工单" width="110" />
-        </el-table>
-        <div v-if="!(deptMonitor?.members || []).length" class="placeholder-panel" style="margin-top: 12px">
-          暂无本部门任务数据。可在「执行 → 任务工时」中创建并指派责任人后查看汇总。
-        </div>
+          <div class="table-footer">
+            <span class="muted">点击卡片查看项目档案</span>
+            <span>共 {{ listProjectTotal }} 个项目</span>
+          </div>
+        </template>
       </section>
-      </template>
     </template>
 
     <!-- 交接与立项 -->
@@ -751,11 +661,21 @@
           <small>计划 / 实际工时</small>
           <b>{{ formatHours(taskStats?.planned_hours) }} / {{ formatHours(taskStats?.actual_hours) }}h</b>
         </div>
-        <div>
+        <div
+          class="kpi-clickable"
+          :title="taskProjectFilter ? '查看本项目关联工单' : '先点所属项目聚焦，再看关联工单'"
+          @click="focusLinkedTickets"
+        >
           <small>关联工单</small>
-          <b>{{ taskStats?.linked_tickets ?? 0 }}</b>
+          <b>{{ linkedTicketDisplayCount }}</b>
         </div>
       </section>
+
+      <p class="task-logic-hint">
+        <b>任务</b>管项目进度与工时；
+        <b>协作工单</b>管跨部门协助（状态独立，关工单不会自动完成任务）。
+        点「所属项目」可聚焦到单项目，再看下方关联工单。
+      </p>
 
       <section class="crm-panel">
         <div class="toolbar">
@@ -781,7 +701,7 @@
               style="margin-right: 8px"
               @close="clearTaskProjectFilter"
             >
-              仅看当前项目
+              仅看：{{ taskProjectFilterName || '当前项目' }}
             </el-tag>
             <el-button @click="loadTasks">查询</el-button>
           </div>
@@ -793,7 +713,13 @@
               <div class="muted">{{ row.task_no }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="project_name" label="所属项目" min-width="140" show-overflow-tooltip />
+          <el-table-column label="所属项目" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button link type="primary" @click="filterTasksByProject(row)">
+                {{ row.project_name || '—' }}
+              </el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="所属里程碑" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">{{ row.milestone_name || '—' }}</template>
           </el-table-column>
@@ -820,6 +746,19 @@
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
+          <el-table-column label="协作工单" width="130">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.ticket_id"
+                link
+                type="primary"
+                @click="$router.push(`/tickets/${row.ticket_id}`)"
+              >
+                {{ row.ticket_no || `工单#${row.ticket_id}` }}
+              </el-button>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <el-tag
@@ -840,6 +779,81 @@
               >
                 完成
               </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+
+      <section
+        v-if="taskProjectFilter"
+        ref="linkedTicketsPanelRef"
+        class="crm-panel"
+        style="margin-top: 14px"
+      >
+        <div class="toolbar">
+          <div class="filters">
+            <strong>本项目关联工单</strong>
+            <span class="muted" style="margin-left: 8px">
+              只看挂到「{{ taskProjectFilterName || '当前项目' }}」的协作；未挂任务的工单也会列出
+            </span>
+          </div>
+          <div class="filters">
+            <el-button
+              type="primary"
+              @click="
+                $router.push({
+                  path: '/tickets',
+                  query: { create: '1', project_id: String(taskProjectFilter) },
+                })
+              "
+            >
+              发起协作
+            </el-button>
+            <el-button
+              @click="
+                $router.push({
+                  path: '/tickets',
+                  query: { project_id: String(taskProjectFilter) },
+                })
+              "
+            >
+              打开工单台
+            </el-button>
+          </div>
+        </div>
+        <el-table
+          :data="linkedTickets"
+          v-loading="linkedTicketsLoading"
+          stripe
+          empty-text="本项目暂无关联工单"
+        >
+          <el-table-column prop="ticket_no" label="编号" width="140" />
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="ticketStatusTag(row)">
+                {{ TICKET_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="assignee_name" label="处理人" width="100">
+            <template #default="{ row }">{{ row.assignee_name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="关联任务" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.task_no ? `${row.task_no} · ${row.task_title || ''}` : '仅挂项目' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="SLA" width="100">
+            <template #default="{ row }">
+              <el-tag v-if="row.is_overdue" type="danger" size="small">已逾期</el-tag>
+              <el-tag v-else-if="row.is_near_sla" type="warning" size="small">接近时限</el-tag>
+              <span v-else class="muted">正常</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="$router.push(`/tickets/${row.id}`)">详情</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -872,7 +886,9 @@
         <el-table :data="acceptanceRows" v-loading="loading" stripe>
           <el-table-column label="项目" min-width="180">
             <template #default="{ row }">
-              <b>{{ row.name }}</b>
+              <el-button link type="primary" @click="goDetail(row)">
+                <b>{{ row.name }}</b>
+              </el-button>
               <div class="muted">{{ row.project_no }}</div>
             </template>
           </el-table-column>
@@ -895,10 +911,16 @@
               </template>
             </template>
           </el-table-column>
-          <el-table-column label="遗留问题" min-width="120" show-overflow-tooltip>
+          <el-table-column label="遗留问题" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.leftover_summary || '—' }}
-              <span v-if="row.leftover_summary && row.leftover_closed">（已关闭）</span>
+              <template v-if="row.leftover_summary">
+                <el-button link type="primary" @click="openLeftover(row)">
+                  查看遗留
+                </el-button>
+                <span v-if="row.leftover_closed" class="muted">（已关闭）</span>
+                <span v-else class="leftover-open-hint">未关闭</span>
+              </template>
+              <template v-else>—</template>
             </template>
           </el-table-column>
           <el-table-column label="财务核对" width="110">
@@ -948,7 +970,8 @@
                 <el-button
                   v-if="row.leftover_summary && !row.leftover_closed"
                   link
-                  @click="onCloseLeftover(row)"
+                  type="warning"
+                  @click="openLeftover(row, true)"
                 >
                   关闭遗留
                 </el-button>
@@ -987,70 +1010,119 @@
           </el-table-column>
         </el-table>
         <div class="table-footer">
-          <span>流程：内部验收通过 → 提交财务核对（审批中心）→ 结项</span>
+          <span>流程：内部验收通过 → 关闭遗留（如有）→ 提交财务核对（审批中心）→ 结项。点「查看遗留」可看具体事项。</span>
         </div>
       </section>
     </template>
 
+    </div>
+
     <!-- 资源确认弹窗 -->
     <el-dialog
       v-model="resourceVisible"
-      :title="resourceTarget ? `确认${resourceTarget.role_name}投入` : '部门资源确认'"
+      title="确认资源投入"
       width="560px"
       destroy-on-close
+      class="claim-dialog resource-confirm-dialog"
     >
       <template v-if="resourceTarget">
-        <div class="handoff-meta" style="margin-bottom: 14px">
-          <div>
-            <small>涉及部门</small>
-            <b>{{ resourceTarget.department_name }}</b>
+        <p class="dialog-flow-hint">
+          核对立项建议后选择处理方式：直接确认、调整后确认，或退回协调。
+        </p>
+
+        <div class="resource-summary">
+          <div class="resource-summary-main">
+            <small>需求角色</small>
+            <b>{{ resourceTarget.role_name }}</b>
+            <span class="resource-summary-project">
+              {{ resourceTarget.project_name || resourceTarget.project_no || '—' }}
+            </span>
           </div>
-          <div>
-            <small>建议成员</small>
-            <b>{{ resourceTarget.suggested_user_name || '待指定' }}</b>
-          </div>
-          <div>
-            <small>计划投入</small>
-            <b>{{ formatHours(resourceTarget.planned_hours) }}h</b>
+          <div class="resource-summary-grid">
+            <div>
+              <small>涉及部门</small>
+              <b>{{ resourceTarget.department_name }}</b>
+            </div>
+            <div>
+              <small>建议成员</small>
+              <b>{{ resourceTarget.suggested_user_name || '待指定' }}</b>
+            </div>
+            <div>
+              <small>计划投入</small>
+              <b>{{ formatHours(resourceTarget.planned_hours) }}h</b>
+            </div>
           </div>
         </div>
-        <el-radio-group v-model="resourceForm.action" style="display: flex; flex-direction: column; gap: 8px">
-          <el-radio value="accept" border>确认投入 — 按建议成员与投入量确认</el-radio>
-          <el-radio value="adjust" border>调整后确认 — 更换成员或调整投入</el-radio>
-          <el-radio value="reject" border>暂不接受 — 说明冲突并退回协调</el-radio>
-        </el-radio-group>
-        <el-form label-position="top" style="margin-top: 14px">
-          <el-form-item v-if="resourceForm.action === 'adjust'" label="确认成员">
-            <el-select
-              v-model="resourceForm.confirmed_user_id"
-              filterable
-              remote
-              :remote-method="searchEmployees"
-              :loading="empLoading"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="e in employees"
-                :key="e.id"
-                :label="e.real_name || e.username"
-                :value="e.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-if="resourceForm.action === 'adjust'" label="计划投入（小时）">
-            <el-input-number v-model="resourceForm.planned_hours" :min="1" :max="9999" style="width: 100%" />
-          </el-form-item>
+
+        <div class="resource-action-list" role="radiogroup" aria-label="处理方式">
+          <button
+            v-for="opt in resourceActionOptions"
+            :key="opt.value"
+            type="button"
+            class="resource-action-card"
+            :class="{
+              active: resourceForm.action === opt.value,
+              danger: opt.value === 'reject' && resourceForm.action === opt.value,
+            }"
+            role="radio"
+            :aria-checked="resourceForm.action === opt.value"
+            @click="resourceForm.action = opt.value"
+          >
+            <span class="resource-action-radio" aria-hidden="true" />
+            <span class="resource-action-copy">
+              <strong>{{ opt.title }}</strong>
+              <small>{{ opt.desc }}</small>
+            </span>
+          </button>
+        </div>
+
+        <el-form
+          class="resource-detail-form"
+          :class="{ soft: resourceForm.action !== 'accept' }"
+          label-position="top"
+        >
+          <template v-if="resourceForm.action === 'adjust'">
+            <div class="resource-adjust-row">
+              <el-form-item label="确认成员" required>
+                <el-select
+                  v-model="resourceForm.confirmed_user_id"
+                  filterable
+                  remote
+                  :remote-method="searchEmployees"
+                  :loading="empLoading"
+                  placeholder="搜索并选择成员"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="e in employees"
+                    :key="e.id"
+                    :label="e.real_name || e.username"
+                    :value="e.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="计划投入（小时）" required>
+                <el-input-number
+                  v-model="resourceForm.planned_hours"
+                  :min="1"
+                  :max="9999"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </div>
+          </template>
           <el-form-item
-            :label="resourceForm.action === 'reject' ? '拒绝说明' : '确认说明'"
+            :label="resourceForm.action === 'reject' ? '拒绝说明' : '补充说明'"
             :required="resourceForm.action === 'reject'"
           >
             <el-input
               v-model="resourceForm.note"
               type="textarea"
-              :rows="3"
+              :rows="resourceForm.action === 'reject' ? 3 : 2"
               :placeholder="
                 resourceForm.action === 'reject'
-                  ? '说明冲突原因，便于协调替代'
+                  ? '必填：说明冲突原因，便于协调替代'
                   : '可选：补充排期、可用性或注意事项'
               "
             />
@@ -1059,16 +1131,34 @@
       </template>
       <template #footer>
         <el-button @click="resourceVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="onConfirmResource">提交</el-button>
+        <el-button
+          :type="resourceForm.action === 'reject' ? 'danger' : 'primary'"
+          :loading="saving"
+          @click="onConfirmResource"
+        >
+          {{ resourceSubmitLabel }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 立项弹窗 -->
-    <el-dialog v-model="initVisible" title="发起项目立项" width="680px" destroy-on-close class="claim-dialog">
-      <p class="dialog-eyebrow">商务交接</p>
-      <el-form ref="initFormRef" :model="initForm" :rules="initRules" label-position="top">
+    <el-dialog
+      v-model="initVisible"
+      title="发起项目立项"
+      width="680px"
+      destroy-on-close
+      class="claim-dialog init-dialog"
+    >
+      <p class="dialog-flow-hint">选合同 → 填目标 → 指定部门对接人</p>
+      <el-form
+        ref="initFormRef"
+        class="init-dialog-form"
+        :model="initForm"
+        :rules="initRules"
+        label-position="top"
+      >
         <section class="form-block">
-          <h3><span>1</span>客户合同与类型</h3>
+          <h3><span>1</span>合同与门槛</h3>
           <el-form-item label="客户合同" prop="contract_id">
             <el-select
               v-model="initForm.contract_id"
@@ -1093,18 +1183,26 @@
               <el-option v-for="opt in PROJECT_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
           </el-form-item>
+          <el-form-item label="立项门槛">
+            <div class="handoff-checks init-gate-checks">
+              <span :class="{ failed: !initGate.contractOk }">
+                {{ initGate.contractOk ? '✓' : '⚠' }} 合同已签署
+              </span>
+              <span :class="{ failed: !initGate.paymentOk }">
+                {{ initGate.paymentOk ? '✓' : '⚠' }} 已确认到账
+              </span>
+            </div>
+            <div class="sub" style="margin-top: 4px">须已签署合同，且「到款核销」中至少一笔已确认到账。</div>
+          </el-form-item>
         </section>
         <section class="form-block">
-          <h3><span>2</span>目标与范围</h3>
+          <h3><span>2</span>项目信息</h3>
           <el-form-item label="项目名称 / 目标" prop="name">
             <el-input v-model="initForm.name" placeholder="项目目标简述" />
           </el-form-item>
           <el-form-item label="交付范围摘要" prop="scope_desc">
-            <el-input v-model="initForm.scope_desc" type="textarea" :rows="3" />
+            <el-input v-model="initForm.scope_desc" type="textarea" :rows="2" />
           </el-form-item>
-        </section>
-        <section class="form-block">
-          <h3><span>3</span>负责人、角色与周期</h3>
           <el-form-item label="建议项目负责人" prop="manager_id">
             <el-select
               v-model="initForm.manager_id"
@@ -1121,18 +1219,33 @@
                 :value="e.id"
               />
             </el-select>
-            <div class="sub" style="margin-top: 4px">由直属负责人或经营管理角色确认。</div>
           </el-form-item>
+          <div class="init-date-row">
+            <el-form-item label="计划开始">
+              <el-date-picker v-model="initForm.start_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="计划结束">
+              <el-date-picker v-model="initForm.end_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </div>
+        </section>
+        <section class="form-block">
+          <h3><span>3</span>资源安排</h3>
           <el-form-item label="所需部门" required>
             <div class="role-assign-list">
+              <div class="role-assign-head">
+                <span class="role-col-dept">部门</span>
+                <span class="role-col-user">建议对接人</span>
+                <span class="role-col-action" />
+              </div>
               <div v-for="(row, idx) in initForm.resource_roles" :key="idx" class="role-assign-row">
                 <el-select
                   v-model="row.role_name"
                   filterable
                   allow-create
                   default-first-option
-                  placeholder="飞书部门"
-                  style="flex: 1.1"
+                  placeholder="选择飞书部门"
+                  class="role-col-dept"
                   @change="onRoleNameChange(row)"
                 >
                   <el-option
@@ -1146,8 +1259,9 @@
                   v-model="row.suggested_user_id"
                   filterable
                   clearable
-                  placeholder="指定人员"
-                  style="flex: 1"
+                  :disabled="!row.role_name"
+                  :placeholder="row.role_name ? '可选，指定对接人' : '请先选部门'"
+                  class="role-col-user"
                 >
                   <el-option
                     v-for="m in membersForRole(row.role_name)"
@@ -1156,38 +1270,25 @@
                     :value="m.id"
                   />
                 </el-select>
-                <el-button text type="danger" @click="removeRoleRow(idx)">移除</el-button>
+                <el-button
+                  class="role-col-action"
+                  text
+                  type="danger"
+                  :disabled="initForm.resource_roles.length <= 1"
+                  @click="removeRoleRow(idx)"
+                >
+                  移除
+                </el-button>
               </div>
-              <el-button type="primary" link @click="addRoleRow">+ 添加角色</el-button>
+              <el-button type="primary" link @click="addRoleRow">+ 添加部门</el-button>
             </div>
             <div class="sub" style="margin-top: 6px">
-              {{ roleOptionsHint || '选项来自飞书通讯录真实部门，可指定具体人员；提交后进入「待确认资源」由部门确认。' }}
+              {{
+                roleOptionsHint ||
+                '（N人）为部门在册人数；指定对接人后，提交由该部门确认投入。'
+              }}
             </div>
           </el-form-item>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px">
-            <el-form-item label="计划开始">
-              <el-date-picker v-model="initForm.start_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="计划结束">
-              <el-date-picker v-model="initForm.end_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-          </div>
-          <el-form-item label="立项门槛（系统核验）">
-            <div class="handoff-checks init-gate-checks">
-              <span :class="{ failed: !initGate.contractOk }">
-                {{ initGate.contractOk ? '✓' : '⚠' }} 合同已签署
-              </span>
-              <span :class="{ failed: !initGate.paymentOk }">
-                {{ initGate.paymentOk ? '✓' : '⚠' }} 已确认到账
-              </span>
-            </div>
-            <div class="sub" style="margin-top: 6px">
-              须选择已签署合同，且该合同在「到款核销」中至少有一笔财务已确认到账，才能提交立项。
-            </div>
-          </el-form-item>
-          <div class="health-hint">
-            <div><span>✓</span> 提交后由涉及部门确认资源投入</div>
-          </div>
         </section>
       </el-form>
       <template #footer>
@@ -1421,7 +1522,7 @@
 
     <!-- 任务弹窗 -->
     <el-dialog v-model="taskVisible" title="新建项目任务" width="560px" destroy-on-close>
-      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="110px">
+      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="100px" class="task-create-form">
         <el-form-item label="所属项目" prop="project_id">
           <el-select
             v-model="taskForm.project_id"
@@ -1437,11 +1538,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item
-          label="所属节点"
-          prop="milestone_id"
-          :required="openTaskMilestones.length > 0"
-        >
+        <el-form-item label="所属节点" prop="milestone_id">
           <el-select
             v-model="taskForm.milestone_id"
             filterable
@@ -1463,16 +1560,24 @@
           </div>
         </el-form-item>
         <el-form-item label="任务名称" prop="title">
-          <el-input v-model="taskForm.title" />
+          <el-input v-model="taskForm.title" placeholder="一句话说清要做什么" />
         </el-form-item>
         <el-form-item label="完成标准" prop="criteria">
-          <el-input v-model="taskForm.criteria" type="textarea" :rows="2" />
+          <el-input
+            v-model="taskForm.criteria"
+            type="textarea"
+            :rows="2"
+            resize="none"
+            placeholder="怎样算完成，可验收"
+          />
         </el-form-item>
         <el-form-item label="责任人">
           <el-select
             v-model="taskForm.assignee_id"
             filterable
             remote
+            clearable
+            placeholder="默认本人，可改"
             :remote-method="searchEmployees"
             style="width: 100%"
           >
@@ -1484,12 +1589,28 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="截止日期" prop="due_date">
-          <el-date-picker v-model="taskForm.due_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="计划工时" prop="planned_hours">
-          <el-input-number v-model="taskForm.planned_hours" :min="0" :precision="1" style="width: 100%" />
-        </el-form-item>
+        <div class="task-form-row">
+          <el-form-item label="截止日期" prop="due_date">
+            <el-date-picker
+              v-model="taskForm.due_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <el-form-item label="计划工时" prop="planned_hours" label-width="80px">
+            <div class="task-hours-field">
+              <el-input-number
+                v-model="taskForm.planned_hours"
+                :min="0"
+                :precision="1"
+                controls-position="right"
+                class="task-hours-input"
+              />
+              <span class="task-hours-unit">小时</span>
+            </div>
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="taskVisible = false">取消</el-button>
@@ -1636,10 +1757,77 @@
     </el-drawer>
 
     <!-- 验收弹窗 -->
+    <el-dialog
+      v-model="leftoverVisible"
+      width="560px"
+      destroy-on-close
+      class="claim-dialog"
+    >
+      <template #header>
+        <div>
+          <small class="dialog-eyebrow">验收与结项</small>
+          <h3 class="dialog-title">
+            {{ leftoverCanClose ? '关闭遗留问题' : '遗留问题' }}
+          </h3>
+        </div>
+      </template>
+      <template v-if="leftoverRow">
+        <p class="dialog-flow-hint">
+          项目：{{ leftoverRow.name }}（{{ leftoverRow.project_no }}）
+        </p>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="状态">
+            <el-tag
+              size="small"
+              :type="leftoverRow.leftover_closed ? 'success' : 'warning'"
+            >
+              {{ leftoverRow.leftover_closed ? '已关闭' : '未关闭' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="验收结论">
+            {{ leftoverRow.acceptance_conclusion || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="遗留内容">
+            <div class="leftover-content">{{ leftoverRow.leftover_summary }}</div>
+          </el-descriptions-item>
+        </el-descriptions>
+        <p v-if="leftoverCanClose" class="dialog-flow-hint" style="margin-top: 12px">
+          确认遗留事项已处理完毕后，再关闭；关闭后才可结项。
+        </p>
+      </template>
+      <template #footer>
+        <el-button @click="leftoverVisible = false">
+          {{ leftoverCanClose ? '取消' : '关闭' }}
+        </el-button>
+        <el-button link type="primary" @click="leftoverRow && goDetail(leftoverRow)">
+          打开项目详情
+        </el-button>
+        <el-button
+          v-if="leftoverCanClose"
+          type="primary"
+          :loading="saving"
+          @click="confirmCloseLeftover"
+        >
+          确认关闭遗留
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="acceptVisible" title="发起内部验收" width="640px" destroy-on-close>
-      <el-form ref="acceptFormRef" :model="acceptForm" :rules="acceptRules" label-width="120px">
-        <el-form-item label="验收项目" prop="project_id">
-          <el-select v-model="acceptForm.project_id" filterable style="width: 100%">
+      <p class="dialog-flow-hint">
+        提交后进入审批中心；审批通过 → 财务核对 → 结项。有条件通过必须写清遗留问题。
+      </p>
+      <el-form ref="acceptFormRef" :model="acceptForm" :rules="acceptRules" label-width="100px">
+        <el-form-item v-if="acceptProjectLocked" label="验收项目">
+          <el-input :model-value="acceptProjectLabel" disabled />
+        </el-form-item>
+        <el-form-item v-else label="验收项目" prop="project_id">
+          <el-select
+            v-model="acceptForm.project_id"
+            filterable
+            placeholder="选择待验收项目"
+            style="width: 100%"
+          >
             <el-option
               v-for="p in acceptanceCandidates"
               :key="p.id"
@@ -1648,37 +1836,61 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="验收结果" prop="result">
-          <el-select v-model="acceptForm.result" style="width: 100%">
-            <el-option label="验收通过" value="pass" />
-            <el-option label="有条件通过" value="conditional" />
-            <el-option label="验收不通过" value="fail" disabled />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="验收日期" prop="accepted_at">
-          <el-date-picker v-model="acceptForm.accepted_at" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="验收方式" prop="method">
-          <el-select v-model="acceptForm.method" style="width: 100%">
-            <el-option label="内部验收单" value="内部验收单" />
-            <el-option label="部门负责人确认" value="部门负责人确认" />
-            <el-option label="项目评审会议纪要" value="项目评审会议纪要" />
-            <el-option label="其他可追溯方式" value="其他可追溯方式" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="验收负责人">
-          <el-input :model-value="userStore.displayName" disabled />
-        </el-form-item>
-        <el-form-item label="结论与遗留安排" prop="conclusion">
+
+        <div class="accept-meta-row">
+          <el-form-item label="验收结果" prop="result">
+            <el-select v-model="acceptForm.result" style="width: 100%" @change="onAcceptResultChange">
+              <el-option label="验收通过" value="pass" />
+              <el-option label="有条件通过" value="conditional" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="验收日期" prop="accepted_at">
+            <el-date-picker
+              v-model="acceptForm.accepted_at"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </div>
+
+        <div class="accept-meta-row">
+          <el-form-item label="验收方式" prop="method">
+            <el-select v-model="acceptForm.method" style="width: 100%">
+              <el-option label="内部验收单" value="内部验收单" />
+              <el-option label="部门负责人确认" value="部门负责人确认" />
+              <el-option label="项目评审会议纪要" value="项目评审会议纪要" />
+              <el-option label="其他可追溯方式" value="其他可追溯方式" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="提交人">
+            <el-input :model-value="userStore.displayName" disabled />
+          </el-form-item>
+        </div>
+
+        <el-form-item label="验收结论" prop="conclusion">
           <el-input
             v-model="acceptForm.conclusion"
             type="textarea"
-            :rows="3"
-            placeholder="记录内部验收结论、遗留问题、责任人和完成期限"
+            :rows="2"
+            placeholder="说明是否达到交付标准、主要验收意见"
           />
         </el-form-item>
-        <el-form-item label="遗留问题摘要">
-          <el-input v-model="acceptForm.leftover_summary" type="textarea" :rows="2" />
+        <el-form-item
+          label="遗留问题"
+          prop="leftover_summary"
+          :required="acceptForm.result === 'conditional'"
+        >
+          <el-input
+            v-model="acceptForm.leftover_summary"
+            type="textarea"
+            :rows="2"
+            :placeholder="
+              acceptForm.result === 'conditional'
+                ? '必填：遗留事项、责任人、完成期限'
+                : '无遗留可留空；有遗留请写清事项、责任人和期限'
+            "
+          />
         </el-form-item>
         <el-form-item label="验收附件" prop="attachment">
           <div
@@ -1729,7 +1941,6 @@ import {
   confirmProjectResource,
   createProject,
   createProjectTask,
-  fetchDepartmentMonitor,
   fetchProjectDetail,
   fetchProjectResourceNeeds,
   fetchProjectStats,
@@ -1745,7 +1956,6 @@ import {
   reviewMilestoneEvidence,
   updateProject,
   updateProjectTask,
-  type DepartmentMonitor,
   type Project,
   type ProjectMilestone,
   type ProjectResourceNeed,
@@ -1758,11 +1968,16 @@ import {
 import { fetchContracts, type Contract } from '@/api/contracts'
 import { fetchEmployees, type Employee } from '@/api/org'
 import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
+import {
+  fetchTickets,
+  TICKET_STATUS_LABEL,
+  type Ticket,
+} from '@/api/tickets'
 import { useUserStore } from '@/stores/user'
 import { uploadFile } from '@/api/uploads'
 
 type TabKey = 'portfolio' | 'initiation' | 'execute' | 'acceptance'
-type OverviewMode = 'list' | 'board' | 'department'
+type OverviewMode = 'list' | 'board'
 type ExecuteMode = 'plan' | 'tasks'
 type Workbench = 'portfolio' | 'delivery'
 
@@ -1810,7 +2025,7 @@ const visibleTabs = computed(() =>
 )
 const workbenchDesc = computed(() =>
   workbench.value === 'portfolio'
-    ? '项目列表、看板与本部门负荷；查档案、看进度从这里进。'
+    ? '同一批项目，用列表或看板查看；点进去看档案和进度。'
     : '立项交接、计划基线、任务工时与验收结项；日常干活从这里进。',
 )
 
@@ -1826,10 +2041,7 @@ const keyword = ref('')
 const statusFilter = ref<string | undefined>()
 type PortfolioStatKey = 'executing' | 'accepting' | 'accepted' | 'completed'
 const portfolioStat = ref<PortfolioStatKey | null>(null)
-const boardKeyword = keyword
-const boardType = ref<string | undefined>()
-const deptMonitor = ref<DepartmentMonitor | null>(null)
-const deptLoading = ref(false)
+const portfolioType = ref<string | undefined>()
 
 const planProjectId = ref<number | undefined>()
 const planProject = ref<Project | null>(null)
@@ -1845,6 +2057,17 @@ const taskLoading = ref(false)
 const taskKeyword = ref('')
 const taskStatus = ref<string | undefined>()
 const taskProjectFilter = ref<number | undefined>()
+const linkedTickets = ref<Ticket[]>([])
+const linkedTicketsLoading = ref(false)
+const linkedTicketsTotal = ref(0)
+const linkedTicketsPanelRef = ref<HTMLElement | null>(null)
+const taskProjectFilterName = computed(() => {
+  if (!taskProjectFilter.value) return ''
+  const hit = tasks.value.find((t) => t.project_id === taskProjectFilter.value)
+  if (hit?.project_name) return hit.project_name
+  const fromList = projects.value.find((p) => p.id === taskProjectFilter.value)
+  return fromList?.name || ''
+})
 const taskScheduleVisible = ref(false)
 const taskSchedulesLoading = ref(false)
 const taskSchedules = ref<Schedule[]>([])
@@ -1923,6 +2146,9 @@ const completeVisible = ref(false)
 const completeTarget = ref<ProjectTask | null>(null)
 const completeActualHours = ref(0)
 const acceptVisible = ref(false)
+const leftoverVisible = ref(false)
+const leftoverCanClose = ref(false)
+const leftoverRow = ref<Project | null>(null)
 const initFormRef = ref<FormInstance>()
 const taskFormRef = ref<FormInstance>()
 const acceptFormRef = ref<FormInstance>()
@@ -1959,6 +2185,30 @@ const resourceForm = reactive({
   note: '',
 })
 
+const resourceActionOptions = [
+  {
+    value: 'accept' as const,
+    title: '确认投入',
+    desc: '按建议成员与计划投入直接确认',
+  },
+  {
+    value: 'adjust' as const,
+    title: '调整后确认',
+    desc: '更换成员或修改投入小时后再确认',
+  },
+  {
+    value: 'reject' as const,
+    title: '暂不接受',
+    desc: '说明冲突原因并退回协调',
+  },
+]
+
+const resourceSubmitLabel = computed(() => {
+  if (resourceForm.action === 'reject') return '退回协调'
+  if (resourceForm.action === 'adjust') return '调整并确认'
+  return '确认投入'
+})
+
 const msForm = reactive({
   name: '',
   role: '',
@@ -1976,13 +2226,16 @@ const taskForm = reactive({
   due_date: '',
   planned_hours: 8,
 })
-const taskRules: FormRules = {
+const taskRules = computed<FormRules>(() => ({
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  milestone_id: openTaskMilestones.value.length
+    ? [{ required: true, message: '请选择所属计划节点', trigger: 'change' }]
+    : [],
   title: [{ required: true, message: '请填写任务名称', trigger: 'blur' }],
   criteria: [{ required: true, message: '请填写完成标准', trigger: 'blur' }],
   due_date: [{ required: true, message: '请选择截止日期', trigger: 'change' }],
   planned_hours: [{ required: true, message: '请填写计划工时', trigger: 'blur' }],
-}
+}))
 
 const acceptForm = reactive({
   project_id: undefined as number | undefined,
@@ -1994,14 +2247,27 @@ const acceptForm = reactive({
   attachment: '',
   attachment_path: '',
 })
-const acceptRules: FormRules = {
-  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+const acceptProjectLocked = ref(false)
+const acceptRules = computed<FormRules>(() => ({
+  project_id: acceptProjectLocked.value
+    ? []
+    : [{ required: true, message: '请选择项目', trigger: 'change' }],
   result: [{ required: true, message: '请选择结果', trigger: 'change' }],
   accepted_at: [{ required: true, message: '请选择日期', trigger: 'change' }],
   method: [{ required: true, message: '请选择验收方式', trigger: 'change' }],
-  conclusion: [{ required: true, message: '请填写结论与遗留安排', trigger: 'blur' }],
+  conclusion: [{ required: true, message: '请填写验收结论', trigger: 'blur' }],
+  leftover_summary:
+    acceptForm.result === 'conditional'
+      ? [{ required: true, message: '有条件通过须填写遗留问题', trigger: 'blur' }]
+      : [],
   attachment: [{ required: true, message: '请上传验收附件', trigger: 'change' }],
-}
+}))
+const acceptProjectLabel = computed(() => {
+  const id = acceptForm.project_id
+  if (!id) return '—'
+  const p = projects.value.find((x) => x.id === id)
+  return p ? `${p.project_no} · ${p.name}` : `项目 #${id}`
+})
 
 const portfolioStatCards = computed(() => [
   { key: 'executing' as const, label: '执行中', note: '交付推进中', count: stats.value?.executing ?? 0 },
@@ -2010,20 +2276,17 @@ const portfolioStatCards = computed(() => [
   { key: 'completed' as const, label: '已完成', note: '已结项归档', count: stats.value?.completed ?? 0 },
 ])
 
-const listProjects = computed(() => projects.value)
+const listProjects = computed(() =>
+  projects.value.filter((p) => !portfolioType.value || p.project_type === portfolioType.value),
+)
 
-const listProjectTotal = computed(() => projectTotal.value)
+const listProjectTotal = computed(() =>
+  portfolioType.value ? listProjects.value.length : projectTotal.value,
+)
 
-const boardFiltered = computed(() => {
-  const q = boardKeyword.value.trim().toLowerCase()
-  return projects.value.filter((p) => {
-    if (p.status === 'terminated') return false
-    if (boardType.value && p.project_type !== boardType.value) return false
-    if (!q) return true
-    const hay = `${p.name}${p.project_no}${p.manager_name || ''}${p.next_node || ''}`.toLowerCase()
-    return hay.includes(q)
-  })
-})
+const boardFiltered = computed(() =>
+  listProjects.value.filter((p) => p.status !== 'terminated'),
+)
 
 const boardColumns = computed(() => {
   const defs = [
@@ -2039,9 +2302,6 @@ const boardColumns = computed(() => {
   }))
 })
 
-const boardDeviation = computed(
-  () => boardFiltered.value.filter((p) => p.health === 'attention' || p.health === 'risk').length,
-)
 const initiatingProjects = computed(() =>
   projects.value.filter((p) => p.status === 'initiating' || p.status === 'planning'),
 )
@@ -2304,9 +2564,18 @@ const initGate = computed(() => {
 function setTab(next: TabKey) {
   tab.value = next
   const path = next === 'portfolio' ? '/projects' : '/projects/delivery'
-  const query = { ...route.query, tab: next } as Record<string, string>
-  if (next === 'portfolio') {
-    // keep overview mode hints if present
+  const query: Record<string, string> = { tab: next }
+  if (next === 'execute') {
+    query.mode = executeMode.value === 'tasks' ? 'tasks' : 'plan'
+    const pid =
+      executeMode.value === 'tasks' && taskProjectFilter.value
+        ? taskProjectFilter.value
+        : planProjectId.value
+    if (pid) query.project_id = String(pid)
+  } else {
+    // 离开「执行」时清掉 mode/筛选，避免再点回来被 URL 钉死在任务工时
+    executeMode.value = 'plan'
+    taskProjectFilter.value = undefined
   }
   router.replace({ path, query })
   if (next === 'execute') {
@@ -2316,17 +2585,40 @@ function setTab(next: TabKey) {
       loadTaskStats()
     }
   }
-  if (next === 'portfolio' && overviewMode.value === 'department') loadDeptMonitor()
   if (next === 'initiation') loadResourceNeeds()
 }
 
 function onOverviewModeChange(mode: string | number | boolean | undefined) {
-  if (mode === 'department') loadDeptMonitor()
+  const next = mode === 'board' ? 'board' : 'list'
+  overviewMode.value = next
+  const path = workbench.value === 'portfolio' ? '/projects' : '/projects/delivery'
+  const query = { ...route.query } as Record<string, string | undefined>
+  if (next === 'board') query.tab = 'board'
+  else delete query.tab
+  router.replace({ path, query })
+}
+
+function syncExecuteRoute(mode: ExecuteMode) {
+  const query: Record<string, string> = {
+    tab: 'execute',
+    mode,
+  }
+  if (mode === 'tasks') {
+    if (taskProjectFilter.value) query.project_id = String(taskProjectFilter.value)
+  } else if (planProjectId.value) {
+    query.project_id = String(planProjectId.value)
+  }
+  router.replace({ path: '/projects/delivery', query })
 }
 
 function onExecuteModeChange(mode: string | number | boolean | undefined) {
-  if (mode === 'plan') ensurePlanProject()
-  else if (mode === 'tasks') {
+  const next: ExecuteMode = mode === 'tasks' ? 'tasks' : 'plan'
+  if (next === 'plan') {
+    taskProjectFilter.value = undefined
+    syncExecuteRoute('plan')
+    ensurePlanProject()
+  } else {
+    syncExecuteRoute('tasks')
     loadTasks()
     loadTaskStats()
   }
@@ -2334,31 +2626,17 @@ function onExecuteModeChange(mode: string | number | boolean | undefined) {
 
 function goToTasksWorkbench() {
   executeMode.value = 'tasks'
-  onExecuteModeChange('tasks')
-  const query: Record<string, string> = {
-    tab: 'execute',
-    mode: 'tasks',
-  }
-  if (planProjectId.value) query.project_id = String(planProjectId.value)
-  router.replace({ path: '/projects/delivery', query })
+  // 从计划卡进入任务时，默认聚焦当前计划项目
+  if (planProjectId.value) taskProjectFilter.value = planProjectId.value
+  syncExecuteRoute('tasks')
+  loadTasks()
+  loadTaskStats()
 }
 
 function goCreateScheduleForProject() {
   const query: Record<string, string> = { create: '1' }
   if (planProjectId.value) query.project_id = String(planProjectId.value)
   router.push({ path: '/schedules', query })
-}
-
-async function loadDeptMonitor() {
-  deptLoading.value = true
-  try {
-    const { data } = await fetchDepartmentMonitor()
-    deptMonitor.value = data
-  } catch {
-    deptMonitor.value = null
-  } finally {
-    deptLoading.value = false
-  }
 }
 
 function goDetail(row: Project) {
@@ -2475,6 +2753,72 @@ async function loadTasks() {
   } finally {
     taskLoading.value = false
   }
+  await loadLinkedTickets()
+}
+
+function ticketStatusTag(row: Ticket) {
+  if (row.is_overdue) return 'danger'
+  if (row.status === 'closed' || row.status === 'completed') return 'success'
+  if (row.status === 'processing' || row.status === 'pending_confirm') return 'warning'
+  return 'info'
+}
+
+const OPEN_TICKET_STATUSES = new Set([
+  'pending_assign',
+  'pending_accept',
+  'processing',
+  'pending_confirm',
+])
+
+const linkedTicketDisplayCount = computed(() => {
+  if (taskProjectFilter.value) return linkedTicketsTotal.value
+  return taskStats.value?.linked_tickets ?? 0
+})
+
+async function loadLinkedTickets() {
+  if (!taskProjectFilter.value) {
+    linkedTickets.value = []
+    linkedTicketsTotal.value = 0
+    return
+  }
+  linkedTicketsLoading.value = true
+  try {
+    const { data } = await fetchTickets({
+      project_id: taskProjectFilter.value,
+      page: 1,
+      page_size: 50,
+    })
+    linkedTickets.value = data.items
+    linkedTicketsTotal.value = data.total
+  } finally {
+    linkedTicketsLoading.value = false
+  }
+}
+
+function focusLinkedTickets() {
+  if (!taskProjectFilter.value) {
+    ElMessage.info('请先点任务表里的「所属项目」聚焦到单个项目，再看关联工单')
+    return
+  }
+  linkedTicketsPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function filterTasksByProject(row: ProjectTask) {
+  if (!row.project_id) return
+  taskProjectFilter.value = row.project_id
+  executeMode.value = 'tasks'
+  syncExecuteRoute('tasks')
+  loadTasks()
+  loadTaskStats()
+}
+
+async function countOpenTickets(projectId: number) {
+  const { data } = await fetchTickets({
+    project_id: projectId,
+    page: 1,
+    page_size: 100,
+  })
+  return data.items.filter((t) => OPEN_TICKET_STATUSES.has(String(t.status))).length
 }
 
 async function openTaskSchedules(row: ProjectTask) {
@@ -2548,17 +2892,17 @@ function memberLabel(m: ResourceRoleMember) {
 }
 
 function roleOptionLabel(r: ResourceRoleOption) {
-  if (r.member_count > 0) return `${r.role_name}（${r.member_count}人）`
-  return r.role_name
+  if (r.member_count > 0) return `${r.role_name}（${r.member_count}人在册）`
+  return `${r.role_name}（暂无人员）`
 }
 
 function membersForRole(roleName: string): ResourceRoleMember[] {
+  if (!roleName) return roleEmployees.value
   const opt = roleOptions.value.find((r) => r.role_name === roleName)
-  const preferred = opt?.members || []
-  if (!preferred.length) return roleEmployees.value
-  const preferredIds = new Set(preferred.map((m) => m.id))
-  const rest = roleEmployees.value.filter((m) => !preferredIds.has(m.id))
-  return [...preferred, ...rest]
+  // 已匹配飞书部门：只展示该部门成员，与「（N人在册）」一致
+  if (opt) return opt.members || []
+  // 手动创建的部门名：回退全员列表
+  return roleEmployees.value
 }
 
 function buildDefaultRoleRows(type: string): RoleAssignRow[] {
@@ -2588,7 +2932,7 @@ async function loadRoleOptions() {
   } catch {
     roleOptions.value = []
     roleEmployees.value = []
-    roleOptionsHint.value = '加载飞书角色失败，可手动输入角色并指定人员。'
+    roleOptionsHint.value = '加载飞书部门失败，可手动输入部门并指定对接人。'
   }
 }
 
@@ -2970,6 +3314,7 @@ function goToMilestoneTasks(row: ProjectMilestone) {
   taskKeyword.value = ''
   taskStatus.value = undefined
   executeMode.value = 'tasks'
+  syncExecuteRoute('tasks')
   loadTasks()
   loadTaskStats()
   ElMessage.info(`已切换到任务工时：请完成「${row.name}」剩余任务`)
@@ -2977,6 +3322,7 @@ function goToMilestoneTasks(row: ProjectMilestone) {
 
 function clearTaskProjectFilter() {
   taskProjectFilter.value = undefined
+  syncExecuteRoute('tasks')
   loadTasks()
 }
 
@@ -3174,10 +3520,6 @@ async function openTaskCreate() {
 async function onCreateTask() {
   const ok = await taskFormRef.value?.validate().catch(() => false)
   if (!ok || !taskForm.project_id) return
-  if (openTaskMilestones.value.length && !taskForm.milestone_id) {
-    ElMessage.warning('请选择所属计划节点')
-    return
-  }
   saving.value = true
   try {
     await createProjectTask({
@@ -3253,6 +3595,7 @@ async function onConfirmCompleteTask() {
 }
 
 function openAcceptance(row?: Project) {
+  const fromRow = !!row
   const target = row || acceptanceCandidates.value[0]
   if (!target) {
     ElMessage.warning('暂无可验收项目')
@@ -3268,6 +3611,7 @@ function openAcceptance(row?: Project) {
     ElMessage.warning(`还有 ${total - done} 个计划节点未完成，不可发起验收`)
     return
   }
+  acceptProjectLocked.value = fromRow
   acceptForm.project_id = target.id
   acceptForm.result = 'pass'
   acceptForm.accepted_at = new Date().toISOString().slice(0, 10)
@@ -3277,6 +3621,24 @@ function openAcceptance(row?: Project) {
   acceptForm.attachment = ''
   acceptForm.attachment_path = ''
   acceptVisible.value = true
+  void warnOpenTickets(target.id, target.name)
+}
+
+async function warnOpenTickets(projectId: number, projectName: string) {
+  try {
+    const n = await countOpenTickets(projectId)
+    if (n > 0) {
+      ElMessage.warning(
+        `「${projectName}」还有 ${n} 张未关闭协作工单（不阻断验收，请知悉）`,
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function onAcceptResultChange() {
+  acceptFormRef.value?.clearValidate(['leftover_summary'])
 }
 
 function triggerAcceptUpload() {
@@ -3302,8 +3664,8 @@ async function onAcceptFileChange(ev: Event) {
 async function onAccept() {
   const ok = await acceptFormRef.value?.validate().catch(() => false)
   if (!ok || !acceptForm.project_id) return
-  if (acceptForm.result === 'fail') {
-    ElMessage.warning('验收不通过不可提交审批')
+  if (acceptForm.result === 'conditional' && !acceptForm.leftover_summary.trim()) {
+    ElMessage.warning('有条件通过须填写遗留问题')
     return
   }
   saving.value = true
@@ -3313,7 +3675,7 @@ async function onAccept() {
       accepted_at: acceptForm.accepted_at,
       method: acceptForm.method,
       conclusion: acceptForm.conclusion,
-      leftover_summary: acceptForm.leftover_summary || undefined,
+      leftover_summary: acceptForm.leftover_summary.trim() || undefined,
       attachment: acceptForm.attachment,
       attachment_path: acceptForm.attachment_path || undefined,
       owner_id: userStore.user?.id,
@@ -3341,13 +3703,24 @@ async function onFinanceCheck(row: Project) {
   await reloadAll()
 }
 
-async function onCloseLeftover(row: Project) {
-  await ElMessageBox.confirm(`确认关闭「${row.name}」遗留问题？`, '关闭遗留', {
-    type: 'warning',
-  })
-  await setProjectLeftoverClosed(row.id, true)
-  ElMessage.success('遗留问题已关闭')
-  await reloadAll()
+function openLeftover(row: Project, canClose = false) {
+  leftoverRow.value = row
+  leftoverCanClose.value = canClose && !!row.leftover_summary && !row.leftover_closed
+  leftoverVisible.value = true
+}
+
+async function confirmCloseLeftover() {
+  const row = leftoverRow.value
+  if (!row) return
+  saving.value = true
+  try {
+    await setProjectLeftoverClosed(row.id, true)
+    ElMessage.success('遗留问题已关闭')
+    leftoverVisible.value = false
+    await reloadAll()
+  } finally {
+    saving.value = false
+  }
 }
 
 async function onComplete(row: Project) {
@@ -3372,12 +3745,11 @@ async function reloadAll() {
     await loadTasks()
     await loadTaskStats()
   }
-  if (tab.value === 'portfolio' && overviewMode.value === 'department') await loadDeptMonitor()
   if (tab.value === 'initiation') await loadResourceNeeds()
 }
 
 function normalizeTab(raw?: string | null): TabKey {
-  if (raw === 'board' || raw === 'department') return 'portfolio'
+  if (raw === 'board') return 'portfolio'
   if (raw === 'plan' || raw === 'tasks') return 'execute'
   if (ALL_TABS.some((t) => t.key === raw)) return raw as TabKey
   return workbench.value === 'delivery' ? 'initiation' : 'portfolio'
@@ -3386,6 +3758,10 @@ function normalizeTab(raw?: string | null): TabKey {
 function syncWorkbenchRoute() {
   const raw = route.query.tab as string | undefined
   const lifecycleTabs: TabKey[] = ['initiation', 'execute', 'acceptance']
+  if (raw === 'department') {
+    router.replace({ path: '/', query: { focus: 'dept-monitor' } })
+    return true
+  }
   if (workbench.value === 'portfolio') {
     if (lifecycleTabs.includes(raw as TabKey) || raw === 'plan' || raw === 'tasks') {
       router.replace({
@@ -3394,7 +3770,7 @@ function syncWorkbenchRoute() {
       })
       return true
     }
-  } else if (raw === 'portfolio' || raw === 'board' || raw === 'department') {
+  } else if (raw === 'portfolio' || raw === 'board') {
     router.replace({
       path: '/projects',
       query: { ...route.query, tab: raw === 'portfolio' ? undefined : raw },
@@ -3423,21 +3799,41 @@ async function applyRouteTabAndLoad() {
   const raw = route.query.tab as string
   const mode = String(route.query.mode || '')
   if (raw === 'board') overviewMode.value = 'board'
-  if (raw === 'department') overviewMode.value = 'department'
-  if (raw === 'tasks' || mode === 'tasks') executeMode.value = 'tasks'
-  if (raw === 'plan' || mode === 'plan') executeMode.value = 'plan'
+  else if (workbench.value === 'portfolio') overviewMode.value = 'list'
+
+  const nextTab = normalizeTab(raw)
+  tab.value = nextTab
+
+  if (nextTab === 'execute') {
+    if (raw === 'tasks' || mode === 'tasks') executeMode.value = 'tasks'
+    else if (raw === 'plan' || mode === 'plan' || !mode) executeMode.value = 'plan'
+  } else {
+    executeMode.value = 'plan'
+    taskProjectFilter.value = undefined
+  }
+
   const pid = Number(route.query.project_id)
-  if (Number.isFinite(pid) && pid > 0) planProjectId.value = pid
-  tab.value = normalizeTab(raw)
+  if (Number.isFinite(pid) && pid > 0) {
+    planProjectId.value = pid
+    if (nextTab === 'execute' && executeMode.value === 'tasks') {
+      taskProjectFilter.value = pid
+    }
+  } else if (nextTab === 'execute' && executeMode.value === 'tasks') {
+    // URL 未带项目时，不强制聚焦
+  } else if (nextTab !== 'execute') {
+    taskProjectFilter.value = undefined
+  }
+
   await reloadAll()
   if (tab.value === 'execute') {
-    if (executeMode.value === 'plan') await ensurePlanProject()
-    else {
+    if (executeMode.value === 'plan') {
+      taskProjectFilter.value = undefined
+      await ensurePlanProject()
+    } else {
       await loadTasks()
       await loadTaskStats()
     }
   }
-  if (tab.value === 'portfolio' && overviewMode.value === 'department') await loadDeptMonitor()
   if (tab.value === 'initiation') await loadResourceNeeds()
 }
 </script>
@@ -3451,6 +3847,27 @@ async function applyRouteTabAndLoad() {
 .muted {
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.task-logic-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--crm-surface-soft, #f7f7f7);
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.task-logic-hint b {
+  color: var(--crm-ink, #303133);
+  font-weight: 600;
+}
+.kpi-clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+.kpi-clickable:hover {
+  background: var(--crm-surface-soft, #f5f7fa);
 }
 .card-head {
   display: flex;
@@ -3468,11 +3885,92 @@ async function applyRouteTabAndLoad() {
   gap: 8px;
   width: 100%;
 }
+.role-assign-head,
 .role-assign-row {
   display: flex;
   gap: 8px;
   align-items: center;
   width: 100%;
+}
+.role-assign-head {
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.role-col-dept {
+  flex: 1.1;
+  min-width: 0;
+}
+.role-col-user {
+  flex: 1;
+  min-width: 0;
+}
+.role-col-action {
+  flex: 0 0 44px;
+  width: 44px;
+  padding: 0 !important;
+  justify-content: center;
+}
+.dialog-flow-hint {
+  margin: 0 0 12px;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+}
+.init-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.accept-meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.accept-meta-row :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.task-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: start;
+}
+.task-create-form :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+.task-form-row :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+.task-form-row :deep(.el-form-item__content) {
+  min-width: 0;
+}
+.task-hours-field {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+.task-hours-input {
+  width: 128px;
+}
+.task-hours-unit {
+  flex: none;
+  color: var(--crm-ink-soft);
+  font-size: 13px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+.init-dialog-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.init-dialog-form :deep(.form-block) {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+}
+.init-dialog-form :deep(.form-block h3) {
+  margin-bottom: 8px;
 }
 .health-hint {
   margin-top: 8px;
@@ -3506,5 +4004,152 @@ async function applyRouteTabAndLoad() {
 .upload-box small {
   color: var(--crm-ink-soft, #909399);
   font-size: 12px;
+}
+
+.resource-summary {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--crm-border, #ebeef5);
+  border-radius: 10px;
+  background: var(--crm-surface-soft, #f7f8fa);
+}
+.resource-summary-main {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--crm-border, #e4e7ed);
+}
+.resource-summary-main small,
+.resource-summary-grid small {
+  display: block;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.resource-summary-main b {
+  display: block;
+  margin-top: 4px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--crm-ink, #303133);
+}
+.resource-summary-project {
+  display: block;
+  margin-top: 4px;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.resource-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.resource-summary-grid b {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--crm-ink, #303133);
+  word-break: break-word;
+}
+.resource-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.resource-action-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--crm-border, #dcdfe6);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.resource-action-card:hover {
+  border-color: var(--el-color-primary-light-5, #a0cfff);
+}
+.resource-action-card.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9, #ecf5ff);
+  box-shadow: inset 0 0 0 1px var(--el-color-primary);
+}
+.resource-action-card.danger {
+  border-color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9, #fef0f0);
+  box-shadow: inset 0 0 0 1px var(--el-color-danger);
+}
+.resource-action-radio {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1.5px solid var(--crm-border, #c0c4cc);
+  border-radius: 50%;
+  background: #fff;
+  position: relative;
+}
+.resource-action-card.active .resource-action-radio {
+  border-color: var(--el-color-primary);
+}
+.resource-action-card.danger .resource-action-radio {
+  border-color: var(--el-color-danger);
+}
+.resource-action-card.active .resource-action-radio::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+}
+.resource-action-card.danger .resource-action-radio::after {
+  background: var(--el-color-danger);
+}
+.resource-action-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.resource-action-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--crm-ink, #303133);
+  line-height: 1.3;
+}
+.resource-action-copy small {
+  font-size: 12px;
+  color: var(--crm-ink-soft, #909399);
+  line-height: 1.4;
+}
+.resource-detail-form {
+  margin-top: 2px;
+}
+.resource-detail-form.soft {
+  margin-top: 4px;
+  padding: 12px 12px 2px;
+  border-radius: 10px;
+  background: var(--crm-surface-soft, #f7f8fa);
+  border: 1px solid var(--crm-border, #ebeef5);
+}
+.resource-detail-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.resource-adjust-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0 12px;
+}
+@media (max-width: 640px) {
+  .resource-summary-grid,
+  .resource-adjust-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

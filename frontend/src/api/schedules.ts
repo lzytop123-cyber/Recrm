@@ -10,7 +10,7 @@ export type ScheduleStatus =
   | 'completed'
   | 'cancelled'
 
-export type ScheduleResourceType = 'instructor' | 'streamer' | 'other'
+export type ScheduleResourceType = 'instructor' | 'streamer' | 'shooting_edit' | 'other'
 export type ScheduleType = 'internal_training' | 'external_salon' | 'project_live' | 'other'
 
 export interface ScheduleConflict {
@@ -97,6 +97,7 @@ export const SCHEDULE_STATUS_LABEL: Record<string, string> = {
 export const SCHEDULE_RESOURCE_OPTIONS = [
   { value: 'instructor', label: '讲师' },
   { value: 'streamer', label: '主播' },
+  { value: 'shooting_edit', label: '拍摄剪辑' },
   { value: 'other', label: '其他' },
 ]
 

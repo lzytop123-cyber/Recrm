@@ -73,10 +73,15 @@
           clearable
           filterable
           placeholder="全部部门"
-          style="width: 160px"
+          style="width: 180px"
           @change="reload"
         >
-          <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
+          <el-option
+            v-for="d in departmentFlatOptions"
+            :key="d.id"
+            :label="d.label"
+            :value="d.id"
+          />
         </el-select>
         <el-select
           v-model="priority"
@@ -129,7 +134,7 @@
             <h3>{{ row.title }}</h3>
             <div class="ticket-card-meta">
               <span>承接 <b>{{ row.department_name || '—' }}</b></span>
-              <span>处理人 <b>{{ row.assignee_name || '待分派' }}</b></span>
+              <span>处理人 <b>{{ assigneeDisplay(row) }}</b></span>
             </div>
             <div class="ticket-card-meta" style="margin-top: 4px">
               <span>{{ typeLabel(row.ticket_type) }}</span>
@@ -158,9 +163,19 @@
             <el-input v-model="form.title" maxlength="200" placeholder="简述跨部门请求" />
           </el-form-item>
           <el-form-item label="承接部门" prop="department_id">
-            <el-select v-model="form.department_id" filterable placeholder="请选择" style="width: 100%">
-              <el-option v-for="d in departments" :key="d.id" :label="d.name" :value="d.id" />
-            </el-select>
+            <el-tree-select
+              v-model="form.department_id"
+              :data="departmentTreeForSelect"
+              :props="{ label: 'name', value: 'id', children: 'children', disabled: 'disabled' }"
+              filterable
+              check-strictly
+              :render-after-expand="false"
+              default-expand-all
+              placeholder="选择实际承接的业务部门"
+              style="width: 100%"
+              @change="onDepartmentChange"
+            />
+            <div class="field-tip">跨部门请求请选对方业务部门；不可选「总公司」根节点。</div>
           </el-form-item>
           <el-form-item label="工单分类" prop="ticket_type">
             <el-select v-model="form.ticket_type" style="width: 100%">
@@ -196,14 +211,20 @@
           <h3><span>2</span>分派与挂接（可选）</h3>
           <el-form-item label="指定处理人">
             <el-select
-              v-model="form.assignee_id"
+              v-model="form.assignee_ids"
+              multiple
               clearable
               filterable
-              placeholder="可不选，稍后由承接部门分派"
+              collapse-tags
+              collapse-tags-tooltip
+              :disabled="!form.department_id"
+              :loading="assigneeLoading"
+              :placeholder="assigneePlaceholder"
               style="width: 100%"
             >
               <el-option v-for="u in assignees" :key="u.id" :label="u.name" :value="u.id" />
             </el-select>
+            <div class="field-tip">{{ assigneeFieldTip }}</div>
           </el-form-item>
           <el-form-item label="挂到项目">
             <el-select
@@ -211,15 +232,15 @@
               clearable
               filterable
               remote
-              :remote-method="searchProjects"
+              :remote-method="searchLinkableProjects"
               :loading="projectLoading"
-              placeholder="输入编号/名称搜索；已完成项目也可挂"
+              placeholder="输入编号/名称搜索；已结项/已终止项目不可挂"
               style="width: 100%"
-              @visible-change="(open: boolean) => open && searchProjects('')"
+              @visible-change="(open: boolean) => open && searchLinkableProjects('')"
               @change="onProjectChange"
             >
               <el-option
-                v-for="p in projectOptions"
+                v-for="p in linkableProjectOptions"
                 :key="p.id"
                 :label="projectOptionLabel(p)"
                 :value="p.id"
@@ -309,10 +330,45 @@ const slaVisible = ref(false)
 const items = ref<Ticket[]>([])
 const stats = ref<TicketStats | null>(null)
 const projectOptions = ref<Project[]>([])
+const linkableProjectOptions = ref<Project[]>([])
 const taskOptions = ref<ProjectTask[]>([])
 const departments = ref<Department[]>([])
 const assignees = ref<AssigneeOption[]>([])
+const assigneeLoading = ref(false)
 const focusFilter = ref<FocusFilter | null>(null)
+
+type DeptSelectNode = Department & { disabled?: boolean }
+
+function isRootDepartment(d: Pick<Department, 'code' | 'name' | 'parent_id'>) {
+  return (d.code || '').toUpperCase() === 'ROOT'
+}
+
+function markDepartmentTree(nodes: Department[]): DeptSelectNode[] {
+  return (nodes || []).map((n) => ({
+    ...n,
+    disabled: isRootDepartment(n),
+    children: n.children?.length ? markDepartmentTree(n.children) : [],
+  }))
+}
+
+function flattenDepartments(
+  nodes: Department[],
+  prefix = '',
+): { id: number; label: string }[] {
+  const out: { id: number; label: string }[] = []
+  for (const n of nodes || []) {
+    const root = isRootDepartment(n)
+    const label = root ? n.name : prefix ? `${prefix} / ${n.name}` : n.name
+    if (!root) out.push({ id: n.id, label })
+    if (n.children?.length) {
+      out.push(...flattenDepartments(n.children, root ? '' : label))
+    }
+  }
+  return out
+}
+
+const departmentTreeForSelect = computed(() => markDepartmentTree(departments.value))
+const departmentFlatOptions = computed(() => flattenDepartments(departments.value))
 
 const projectId = ref<number | undefined>()
 const departmentId = ref<number | undefined>()
@@ -325,11 +381,24 @@ const form = reactive({
   ticket_type: 'collaboration',
   priority: 'normal',
   content: '',
-  assignee_id: undefined as number | undefined,
+  assignee_ids: [] as number[],
   department_id: undefined as number | undefined,
   project_id: undefined as number | undefined,
   task_id: undefined as number | undefined,
   remark: '',
+})
+
+const assigneePlaceholder = computed(() => {
+  if (!form.department_id) return '请先选择承接部门'
+  if (assigneeLoading.value) return '加载部门人员…'
+  if (!assignees.value.length) return '该部门暂无在职人员'
+  return '可多选；可不选，稍后由部门分派'
+})
+
+const assigneeFieldTip = computed(() => {
+  if (!form.department_id) return '选定承接部门后，仅显示该部门人员。'
+  if (!assignees.value.length) return '该部门下暂无可用人员，可先提交由部门负责人分派。'
+  return '可多选为候选处理人；多人时谁先接单谁成为主责处理人。'
 })
 
 const rules: FormRules = {
@@ -434,6 +503,14 @@ function slaClass(row: Ticket) {
   return ''
 }
 
+function assigneeDisplay(row: Ticket) {
+  if (row.assignee_name) return row.assignee_name
+  const names = row.candidate_names || []
+  if (names.length > 1) return `候选 ${names.length} 人`
+  if (names.length === 1) return names[0]
+  return '待分派'
+}
+
 function goDetail(row: Ticket) {
   router.push(`/tickets/${row.id}`)
 }
@@ -442,8 +519,21 @@ async function searchProjects(q: string) {
   projectLoading.value = true
   try {
     const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 50 })
-    // 工单挂项目用于追溯：已完成也可挂；仅排除已终止
+    // 列表筛选：可看已结项项目上的历史工单；终止项目一般不再关注
     projectOptions.value = data.items.filter((p) => p.status !== 'terminated')
+  } finally {
+    projectLoading.value = false
+  }
+}
+
+async function searchLinkableProjects(q: string) {
+  projectLoading.value = true
+  try {
+    const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 50 })
+    // 与后端一致：已结项 / 已终止不可再挂协作工单
+    linkableProjectOptions.value = data.items.filter(
+      (p) => p.status !== 'terminated' && p.status !== 'completed',
+    )
   } finally {
     projectLoading.value = false
   }
@@ -451,13 +541,19 @@ async function searchProjects(q: string) {
 
 function projectOptionLabel(p: Project) {
   const st =
-    p.status === 'completed'
-      ? '已完成'
-      : p.status === 'executing'
-        ? '执行中'
-        : p.status === 'accepted'
-          ? '已验收'
-          : ''
+    p.status === 'executing'
+      ? '执行中'
+      : p.status === 'accepted'
+        ? '已验收'
+        : p.status === 'accepting'
+          ? '验收中'
+          : p.status === 'planning'
+            ? '计划中'
+            : p.status === 'initiating'
+              ? '立项'
+              : p.status === 'completed'
+                ? '已完成'
+                : ''
   return st ? `${p.project_no} · ${p.name}（${st}）` : `${p.project_no} · ${p.name}`
 }
 
@@ -536,21 +632,43 @@ async function reload() {
   await Promise.all([loadStats(), loadList()])
 }
 
+async function loadAssigneesForDepartment(deptId?: number) {
+  assignees.value = []
+  if (!deptId) return
+  assigneeLoading.value = true
+  try {
+    const { data } = await fetchAssigneeOptions({ department_id: deptId })
+    assignees.value = data
+  } finally {
+    assigneeLoading.value = false
+  }
+}
+
+async function onDepartmentChange(deptId?: number) {
+  form.assignee_ids = []
+  await loadAssigneesForDepartment(deptId)
+}
+
 async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.ticket_type = 'collaboration'
   form.priority = 'normal'
   form.content = ''
-  form.assignee_id = undefined
-  form.department_id = departments.value[0]?.id
-  form.project_id = presetProjectId || projectId.value
+  form.assignee_ids = []
+  form.department_id = undefined
+  form.project_id = undefined
   form.task_id = undefined
   form.remark = ''
+  assignees.value = []
   taskOptions.value = []
   createVisible.value = true
-  if (form.project_id) {
-    await searchProjects('')
-    await loadTasksForProject(form.project_id)
+  await searchLinkableProjects('')
+  const wantId = presetProjectId || projectId.value
+  if (wantId && linkableProjectOptions.value.some((p) => p.id === wantId)) {
+    form.project_id = wantId
+    await loadTasksForProject(wantId)
+  } else if (wantId) {
+    ElMessage.warning('该项目已结项或已终止，不可再挂协作工单')
   }
 }
 
@@ -564,7 +682,7 @@ async function onCreate() {
       ticket_type: form.ticket_type,
       priority: form.priority,
       content: form.content.trim(),
-      assignee_id: form.assignee_id,
+      assignee_ids: form.assignee_ids.length ? form.assignee_ids : undefined,
       department_id: form.department_id,
       project_id: form.project_id,
       task_id: form.task_id,
@@ -578,22 +696,24 @@ async function onCreate() {
   }
 }
 
-async function applyCreateQuery() {
-  if (String(route.query.create || '') !== '1') return
+async function applyRouteQuery() {
   const pid = Number(route.query.project_id)
-  await openCreate(Number.isFinite(pid) && pid > 0 ? pid : undefined)
+  if (Number.isFinite(pid) && pid > 0) {
+    projectId.value = pid
+    if (!projectOptions.value.some((p) => p.id === pid)) {
+      await searchProjects('')
+    }
+  }
+  if (String(route.query.create || '') === '1') {
+    await openCreate(Number.isFinite(pid) && pid > 0 ? pid : undefined)
+  }
 }
 
 onMounted(async () => {
-  const [{ data: depts }, { data: users }] = await Promise.all([
-    fetchDepartments(),
-    fetchAssigneeOptions(),
-    searchProjects(''),
-  ])
+  const [{ data: depts }] = await Promise.all([fetchDepartments(), searchProjects('')])
   departments.value = depts
-  assignees.value = users
+  await applyRouteQuery()
   await reload()
-  await applyCreateQuery()
 })
 </script>
 

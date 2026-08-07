@@ -41,12 +41,6 @@ class ContractTerminateRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
 
-class ContractCompleteRequest(BaseModel):
-    """回款未收齐时须 force=true 并填写 force_reason（特批完成）。"""
-    force: bool = False
-    force_reason: Optional[str] = Field(None, max_length=500)
-
-
 class ContractSignRequest(BaseModel):
     signed_date: Optional[date] = None
     effective_date: Optional[date] = None

@@ -548,8 +548,10 @@ def accept_project(
         raise HTTPException(status_code=400, detail="无效的验收结果")
     if payload.result == "fail":
         raise HTTPException(status_code=400, detail="验收不通过时不可提交审批")
+    if payload.result == "conditional" and not (payload.leftover_summary or "").strip():
+        raise HTTPException(status_code=400, detail="有条件通过须填写遗留问题摘要")
     if not (payload.conclusion or "").strip():
-        raise HTTPException(status_code=400, detail="验收结论与遗留安排为必填")
+        raise HTTPException(status_code=400, detail="请填写验收结论")
     if not (payload.attachment or "").strip():
         raise HTTPException(status_code=400, detail="请上传内部验收附件")
     if not (payload.method or "").strip():
@@ -1022,6 +1024,13 @@ def enrich_task(db: Session, task: ProjectTask) -> ProjectTask:
         task.department_name = dept.name if dept else None  # type: ignore[attr-defined]
     else:
         task.department_name = None  # type: ignore[attr-defined]
+    if task.ticket_id:
+        from app.models.ticket import Ticket
+
+        linked = db.query(Ticket).filter(Ticket.id == task.ticket_id).first()
+        task.ticket_no = linked.ticket_no if linked else None  # type: ignore[attr-defined]
+    else:
+        task.ticket_no = None  # type: ignore[attr-defined]
     if task.status == TASK_STATUS_DONE:
         task.due_status = "done"  # type: ignore[attr-defined]
     elif task.due_date and task.due_date < date.today():
@@ -1276,7 +1285,7 @@ def project_stats(db: Session, user: User) -> dict:
 
     _, all_items = list_projects(db, user, page=1, page_size=5000, enrich=False)
     high_risk = sum(1 for p in all_items if compute_health(p) == "risk")
-    leftover = sum(1 for p in all_items if p.leftover_summary)
+    leftover = sum(1 for p in all_items if p.leftover_summary and not p.leftover_closed)
 
     return {
         "total": _count(),

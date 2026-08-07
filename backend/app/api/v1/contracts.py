@@ -8,7 +8,6 @@ from app.api.deps import PermissionChecker
 from app.database import get_db
 from app.models.user import User
 from app.schemas.contract import (
-    ContractCompleteRequest,
     ContractCreate,
     ContractListOut,
     ContractOut,
@@ -152,9 +151,8 @@ def complete_contract(
     contract_id: int,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["contract:view"]))],
-    payload: ContractCompleteRequest = ContractCompleteRequest(),
 ) -> ContractOut:
-    contract = contract_service.complete_contract(db, current_user, contract_id, payload)
+    contract = contract_service.complete_contract(db, current_user, contract_id)
     return ContractOut.model_validate(contract)
 
 

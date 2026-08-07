@@ -1,5 +1,5 @@
 <template>
-  <div class="crm-page sales-center">
+  <div class="crm-page sales-center crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
         <h1>销售中心</h1>
@@ -25,7 +25,6 @@
         @click="setTab('pool')"
       >
         线索总览
-        <span class="tab-lock">管理层</span>
       </button>
       <button type="button" class="sales-tab" :class="{ active: tab === 'mine' }" @click="setTab('mine')">
         我的线索
@@ -41,18 +40,20 @@
       </button>
     </div>
 
-    <LeadListView
-      v-if="tab === 'pool' || tab === 'mine'"
-      :key="tab"
-      :forced-pool="tab === 'pool' ? 'public' : 'mine'"
-      :embedded="true"
-      :open-create-signal="leadCreateTick"
-    />
-    <OpportunityListView
-      v-else-if="tab === 'customers'"
-      :embedded="true"
-      :open-create-signal="oppCreateTick"
-    />
+    <div class="crm-fit-body">
+      <LeadListView
+        v-if="tab === 'pool' || tab === 'mine'"
+        :key="tab"
+        :forced-pool="tab === 'pool' ? 'public' : 'mine'"
+        :embedded="true"
+        :open-create-signal="leadCreateTick"
+      />
+      <OpportunityListView
+        v-else-if="tab === 'customers'"
+        :embedded="true"
+        :open-create-signal="oppCreateTick"
+      />
+    </div>
   </div>
 </template>
 
@@ -136,6 +137,7 @@ function onImport() {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 .sales-head-copy h1 {
   margin: 0;
@@ -163,6 +165,7 @@ function onImport() {
   margin-bottom: 16px;
   border-bottom: 1px solid var(--crm-border);
   padding-bottom: 0;
+  flex-shrink: 0;
 }
 .sales-tab {
   appearance: none;
@@ -182,12 +185,5 @@ function onImport() {
   color: var(--crm-primary);
   border-bottom-color: var(--crm-primary);
   font-weight: 600;
-}
-.tab-lock {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--crm-primary-soft);
-  color: var(--crm-primary);
 }
 </style>

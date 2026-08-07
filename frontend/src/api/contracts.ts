@@ -135,11 +135,8 @@ export function activateContract(id: number) {
   return request.post<Contract>(`/contracts/${id}/activate`)
 }
 
-export function completeContract(
-  id: number,
-  data?: { force?: boolean; force_reason?: string },
-) {
-  return request.post<Contract>(`/contracts/${id}/complete`, data || {})
+export function completeContract(id: number) {
+  return request.post<Contract>(`/contracts/${id}/complete`, {})
 }
 
 export function terminateContract(id: number, reason: string) {

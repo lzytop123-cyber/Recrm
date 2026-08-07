@@ -45,15 +45,15 @@
         <el-button
           v-if="contract.status === 'approved' && canSignContract"
           type="success"
-          @click="signVisible = true"
+          @click="openSign"
         >
           签署
         </el-button>
         <el-button v-if="contract.status === 'signed'" type="primary" @click="onActivate">进入执行</el-button>
         <el-button
           v-if="contract.status === 'active' && canCompleteContract"
-          v-perm.any="['contract:complete', 'contract:force_complete', 'contract:manage']"
-          type="success"
+          :type="isCollectionCollected ? 'success' : 'info'"
+          :plain="!isCollectionCollected"
           @click="onComplete"
         >
           完成
@@ -69,68 +69,153 @@
       </div>
     </div>
 
-    <el-card v-if="contract">
-      <template #header>
-        <div class="card-header">
-          <span>{{ contract.contract_no }} · {{ contract.title }}</span>
+    <template v-if="contract">
+      <el-card>
+        <div class="detail-summary">
           <el-tag :type="statusTag(contract.status)" size="small">
             {{ CONTRACT_STATUS_LABEL[contract.status] || contract.status }}
           </el-tag>
+          <small>
+            {{ contract.contract_no }} ·
+            <el-button
+              link
+              type="primary"
+              class="customer-link"
+              @click="$router.push(`/customers/${contract.customer_id}`)"
+            >
+              {{ contract.customer_name || `客户#${contract.customer_id}` }}
+            </el-button>
+          </small>
         </div>
-      </template>
-      <el-descriptions :column="3" border>
-        <el-descriptions-item label="合同编号">{{ contract.contract_no }}</el-descriptions-item>
-        <el-descriptions-item label="合同名称">{{ contract.title }}</el-descriptions-item>
-        <el-descriptions-item label="客户">
-          <el-button link type="primary" @click="$router.push(`/customers/${contract.customer_id}`)">
-            {{ contract.customer_name || `#${contract.customer_id}` }}
-          </el-button>
-        </el-descriptions-item>
-        <el-descriptions-item label="类型">{{ typeLabel(contract.contract_type) }}</el-descriptions-item>
-        <el-descriptions-item label="金额">
-          {{ formatAmount(contract.amount) }} {{ contract.currency }}
-        </el-descriptions-item>
-        <el-descriptions-item label="付款方式">{{ payLabel(contract.payment_method) }}</el-descriptions-item>
-        <el-descriptions-item label="签署日期">{{ contract.signed_date || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="生效日期">{{ contract.effective_date || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="到期日期">{{ contract.expire_date || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="负责人">{{ contract.owner_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="创建人">{{ contract.creator_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="审批人">{{ contract.approved_by_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="审批时间">{{ formatTime(contract.approved_at) }}</el-descriptions-item>
-        <el-descriptions-item label="合同证明" :span="2">
-          <div class="proof-cell">
-            <template v-if="contract.proof_url">
-              <a :href="contract.proof_url" target="_blank" rel="noopener">
-                {{ contract.proof_filename || '查看附件' }}
-              </a>
-            </template>
-            <span v-else class="muted">未上传（提交审批前须补传）</span>
-            <template v-if="contract.status === 'draft'">
-              <el-button
-                link
-                type="primary"
-                :loading="uploadingProof"
-                @click="pickDetailProof"
-              >
-                {{ contract.proof_url ? '重新上传' : '上传证明' }}
-              </el-button>
-              <input
-                ref="detailProofInputRef"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-                hidden
-                @change="onDetailProofSelected"
-              />
-            </template>
+        <h2 class="contract-title">{{ contract.title }}</h2>
+        <p
+          v-if="showCollectionHint"
+          class="collection-hint"
+          :class="{ ok: isCollectionCollected }"
+        >
+          {{ collectionHintText }}
+        </p>
+      </el-card>
+
+      <el-card class="stack-gap">
+        <template #header>合同摘要</template>
+        <div class="detail-grid">
+          <div class="detail-cell highlight">
+            <small>合同金额</small>
+            <b class="amount">{{ formatAmount(contract.amount) }} {{ contract.currency }}</b>
           </div>
-        </el-descriptions-item>
-        <el-descriptions-item v-if="contract.terminate_reason" label="终止原因" :span="2">
-          {{ contract.terminate_reason }}
-        </el-descriptions-item>
-        <el-descriptions-item label="备注" :span="3">{{ contract.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+          <div class="detail-cell">
+            <small>合同类型</small>
+            <b>{{ typeLabel(contract.contract_type) }}</b>
+          </div>
+          <div class="detail-cell">
+            <small>负责人</small>
+            <b>{{ contract.owner_name || '-' }}</b>
+          </div>
+          <div class="detail-cell">
+            <small>付款方式</small>
+            <b>{{ payLabel(contract.payment_method) }}</b>
+          </div>
+          <div class="detail-cell">
+            <small>创建人</small>
+            <b>{{ contract.creator_name || '-' }}</b>
+          </div>
+          <div class="detail-cell wide">
+            <small>合同证明</small>
+            <div class="proof-cell">
+              <template v-if="contract.proof_url">
+                <a
+                  v-if="isProofImage"
+                  :href="contract.proof_url"
+                  target="_blank"
+                  rel="noopener"
+                  class="proof-thumb-link"
+                >
+                  <img :src="contract.proof_url" :alt="contract.proof_filename || '合同证明'" class="proof-thumb" />
+                </a>
+                <a :href="contract.proof_url" target="_blank" rel="noopener">
+                  {{ contract.proof_filename || '查看附件' }}
+                </a>
+              </template>
+              <span v-else class="muted-inline">未上传（提交审批前须补传）</span>
+              <template v-if="contract.status === 'draft'">
+                <el-button
+                  link
+                  type="primary"
+                  :loading="uploadingProof"
+                  @click="pickDetailProof"
+                >
+                  {{ contract.proof_url ? '重新上传' : '上传证明' }}
+                </el-button>
+                <input
+                  ref="detailProofInputRef"
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                  hidden
+                  @change="onDetailProofSelected"
+                />
+              </template>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card class="stack-gap">
+        <template #header>有效期</template>
+        <div class="detail-grid cols-3">
+          <div class="detail-cell">
+            <small>签署日期</small>
+            <b :class="{ placeholder: !contract.signed_date }">
+              {{ contract.signed_date || '待签署' }}
+            </b>
+          </div>
+          <div class="detail-cell">
+            <small>生效日期</small>
+            <b :class="{ placeholder: !contract.effective_date }">
+              {{ contract.effective_date || '待填写' }}
+            </b>
+          </div>
+          <div class="detail-cell">
+            <small>到期日期</small>
+            <b :class="{ placeholder: !contract.expire_date }">
+              {{ contract.expire_date || '待填写' }}
+            </b>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card v-if="showApprovalSection" class="stack-gap">
+        <template #header>审批信息</template>
+        <div class="detail-grid">
+          <div class="detail-cell">
+            <small>审批人</small>
+            <b :class="{ placeholder: !contract.approved_by_name }">
+              {{ contract.approved_by_name || '等待审批' }}
+            </b>
+          </div>
+          <div class="detail-cell">
+            <small>审批时间</small>
+            <b :class="{ placeholder: !contract.approved_at }">
+              {{ contract.approved_at ? formatTime(contract.approved_at) : '—' }}
+            </b>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card v-if="contract.remark || contract.terminate_reason" class="stack-gap">
+        <template #header>备注与说明</template>
+        <div class="detail-grid">
+          <div v-if="contract.remark" class="detail-cell wide">
+            <small>备注</small>
+            <b>{{ contract.remark }}</b>
+          </div>
+          <div v-if="contract.terminate_reason" class="detail-cell wide">
+            <small>终止原因</small>
+            <b>{{ contract.terminate_reason }}</b>
+          </div>
+        </div>
+      </el-card>
+    </template>
 
     <el-dialog v-model="editVisible" title="编辑草稿" width="560px" destroy-on-close>
       <el-form :model="editForm" label-width="100px">
@@ -199,16 +284,38 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="signVisible" title="签署合同" width="480px">
+    <el-dialog v-model="signVisible" title="签署合同" width="480px" destroy-on-close>
+      <p v-if="contract" class="dialog-context">
+        {{ contract.contract_no }} · {{ contract.title }}
+      </p>
+      <p class="dialog-hint">签署日期默认为今天；生效日未填则与签署日相同。到期日选填，但不能早于生效日。</p>
       <el-form :model="signForm" label-width="100px">
-        <el-form-item label="签署日期">
-          <el-date-picker v-model="signForm.signed_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        <el-form-item label="签署日期" required>
+          <el-date-picker
+            v-model="signForm.signed_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择签署日期"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="生效日期">
-          <el-date-picker v-model="signForm.effective_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker
+            v-model="signForm.effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="默认与签署日相同"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="到期日期">
-          <el-date-picker v-model="signForm.expire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker
+            v-model="signForm.expire_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选填"
+            style="width: 100%"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -222,26 +329,6 @@
       <template #footer>
         <el-button @click="terminateVisible = false">取消</el-button>
         <el-button type="danger" :loading="saving" @click="onTerminate">确认终止</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="forceCompleteVisible" title="特批完成合同" width="480px" destroy-on-close>
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        title="回款尚未收齐。特批完成后合同将标为已完成，请填写原因。"
-        style="margin-bottom: 12px"
-      />
-      <el-input
-        v-model="forceCompleteReason"
-        type="textarea"
-        :rows="3"
-        placeholder="特批原因（必填）"
-      />
-      <template #footer>
-        <el-button @click="forceCompleteVisible = false">取消</el-button>
-        <el-button type="warning" :loading="saving" @click="onForceComplete">确认特批完成</el-button>
       </template>
     </el-dialog>
   </div>
@@ -280,8 +367,6 @@ const editVisible = ref(false)
 const signVisible = ref(false)
 const terminateVisible = ref(false)
 const terminateReason = ref('')
-const forceCompleteVisible = ref(false)
-const forceCompleteReason = ref('')
 const editProofInputRef = ref<HTMLInputElement>()
 const detailProofInputRef = ref<HTMLInputElement>()
 
@@ -333,14 +418,46 @@ const canSignContract = computed(() => {
   return contract.value.owner_id === userStore.user?.id
 })
 
-/** 回款已齐可完成 / 未齐特批：对应权限码 */
+/** 回款已齐才可完成 */
 const canCompleteContract = computed(() =>
-  userStore.hasAnyPermission('contract:complete', 'contract:force_complete', 'contract:manage'),
+  userStore.hasAnyPermission('contract:complete', 'contract:manage'),
 )
 
-const canForceComplete = computed(() =>
-  userStore.hasAnyPermission('contract:force_complete', 'contract:manage'),
+const isCollectionCollected = computed(
+  () => contract.value?.collection_status === 'collected',
 )
+
+/** 签署后进入执行阶段才展示回款进度提示 */
+const showCollectionHint = computed(() => {
+  const s = contract.value?.status
+  return s === 'signed' || s === 'active' || s === 'completed'
+})
+
+const collectionHintText = computed(() => {
+  const c = contract.value
+  if (!c) return ''
+  const paid = Number(c.paid_amount ?? 0)
+  const amount = Number(c.amount ?? 0)
+  const paidText = formatAmount(paid)
+  const amountText = formatAmount(amount)
+  const currency = c.currency || 'CNY'
+  if (c.status === 'completed' || isCollectionCollected.value) {
+    return `回款进度：已收齐 ${paidText} / ${amountText} ${currency}，可以完成合同`
+  }
+  return `回款进度：已核销 ${paidText} / 合同金额 ${amountText} ${currency} · 未收齐，收齐后才能点「完成」`
+})
+
+/** 草稿阶段不展示审批区块，避免一堆空字段 */
+const showApprovalSection = computed(() => {
+  const s = contract.value?.status
+  return !!s && s !== 'draft'
+})
+
+const isProofImage = computed(() => {
+  const name = (contract.value?.proof_filename || contract.value?.proof_url || '').toLowerCase()
+  return /\.(png|jpe?g|gif|webp)(\?|$)/.test(name)
+})
+
 function typeLabel(code: string) {
   return CONTRACT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
 }
@@ -538,11 +655,37 @@ async function onReject() {
   }
 }
 
+function todayStr() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function openSign() {
+  const today = todayStr()
+  const c = contract.value
+  signForm.signed_date = today
+  signForm.effective_date = c?.effective_date || today
+  signForm.expire_date = c?.expire_date || ''
+  signVisible.value = true
+}
+
 async function onSign() {
+  if (!signForm.signed_date) {
+    ElMessage.warning('请选择签署日期')
+    return
+  }
+  const effective = signForm.effective_date || signForm.signed_date
+  if (signForm.expire_date && signForm.expire_date < effective) {
+    ElMessage.warning('到期日期不能早于生效日期')
+    return
+  }
   saving.value = true
   try {
     await signContract(contractId.value, {
-      signed_date: signForm.signed_date || undefined,
+      signed_date: signForm.signed_date,
       effective_date: signForm.effective_date || undefined,
       expire_date: signForm.expire_date || undefined,
     })
@@ -566,7 +709,7 @@ async function onActivate() {
 }
 
 async function onComplete() {
-  if (contract.value?.collection_status === 'collected') {
+  if (isCollectionCollected.value) {
     try {
       await ElMessageBox.confirm('回款已收齐，确认完成该合同？', '完成合同')
       await completeContract(contractId.value)
@@ -577,31 +720,11 @@ async function onComplete() {
     }
     return
   }
-  if (!canForceComplete.value) {
-    ElMessage.warning('回款尚未收齐，暂不能完成；请先完成到款核销，或联系财务/管理层特批')
-    return
-  }
-  forceCompleteReason.value = ''
-  forceCompleteVisible.value = true
-}
-
-async function onForceComplete() {
-  if (!forceCompleteReason.value.trim()) {
-    ElMessage.warning('请填写特批原因')
-    return
-  }
-  saving.value = true
-  try {
-    await completeContract(contractId.value, {
-      force: true,
-      force_reason: forceCompleteReason.value.trim(),
-    })
-    ElMessage.success('已特批完成合同')
-    forceCompleteVisible.value = false
-    await loadDetail()
-  } finally {
-    saving.value = false
-  }
+  const paid = formatAmount(Number(contract.value?.paid_amount ?? 0))
+  const amount = formatAmount(Number(contract.value?.amount ?? 0))
+  ElMessage.warning(
+    `回款尚未收齐（已核销 ${paid} / ${amount}），暂不能完成；请先完成到款核销`,
+  )
 }
 
 async function onTerminate() {
@@ -624,14 +747,119 @@ onMounted(loadDetail)
 </script>
 
 <style scoped>
-.muted {
+.dialog-context {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--crm-ink);
+  line-height: 1.4;
+}
+.dialog-hint {
+  margin: 0 0 14px;
   color: var(--crm-ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.detail-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.detail-summary small {
+  color: var(--crm-ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.customer-link {
+  padding: 0;
+  height: auto;
+  font-size: inherit;
+}
+.contract-title {
+  margin: 0;
+  font-size: 20px;
+}
+.collection-hint {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #8a5a00;
+  background: oklch(0.97 0.03 85);
+  border: 1px solid oklch(0.9 0.05 85);
+}
+.collection-hint.ok {
+  color: #1f6b3a;
+  background: oklch(0.97 0.02 145);
+  border-color: oklch(0.9 0.04 145);
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.detail-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.detail-cell {
+  padding: 12px;
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  background: var(--crm-surface-soft);
+}
+.detail-cell.wide {
+  grid-column: 1 / -1;
+}
+.detail-cell.highlight {
+  background: oklch(0.97 0.02 250);
+  border-color: oklch(0.88 0.04 250);
+}
+.detail-cell small {
+  display: block;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.detail-cell b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--crm-ink);
+  line-height: 1.4;
+}
+.detail-cell b.amount {
+  font-size: 18px;
+}
+.detail-cell b.placeholder {
+  font-weight: 500;
+  color: var(--crm-ink-soft);
+}
+.stack-gap {
+  margin-top: 16px;
+}
+.muted-inline {
+  color: var(--crm-ink-soft);
+  font-size: 13px;
 }
 .proof-cell {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+}
+.proof-thumb-link {
+  display: block;
+  flex-shrink: 0;
+}
+.proof-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--crm-border);
+  display: block;
 }
 .upload-box {
   width: 100%;
@@ -661,6 +889,12 @@ onMounted(loadDetail)
 .upload-box small {
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+@media (max-width: 720px) {
+  .detail-grid,
+  .detail-grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 

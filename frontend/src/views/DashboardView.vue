@@ -1,37 +1,44 @@
 <template>
   <div class="overview-page crm-page" v-loading="loading">
     <header class="sales-head">
+      <div class="sales-head-copy">
+        <h1>经营总览</h1>
+        <p>
+          {{ greeting }}
+          <template v-if="data?.as_of"> · {{ data.as_of }}</template>
+        </p>
+      </div>
       <div class="sales-head-actions">
-        <el-button disabled>本月 ▾</el-button>
-        <el-button type="primary" @click="onExport">导出经营简报</el-button>
+        <el-tag size="small" type="info" effect="plain">{{ scopeLabel }}</el-tag>
+        <el-button @click="load">刷新</el-button>
+        <el-button type="primary" @click="onExport">导出简报</el-button>
       </div>
     </header>
 
-    <section v-if="kpis.length" class="ov-kpi-grid">
+    <section v-if="kpis.length" class="ov-kpi-grid" :style="{ '--kpi-cols': String(Math.min(kpis.length, 4)) }">
       <button
         v-for="kpi in kpis"
         :key="kpi.key"
         type="button"
-        class="ov-kpi ov-reveal"
-        :class="{ 'top-accent': kpi.accent }"
+        class="ov-kpi"
+        :class="{ accent: kpi.accent }"
         @click="kpi.path && go(kpi.path)"
       >
         <div class="ov-kpi-top">
-          <span class="ov-kpi-icon">{{ kpi.icon }}</span>
+          <span class="ov-kpi-label">{{ kpi.label }}</span>
           <span class="ov-delta" :class="{ down: kpi.delta_tone === 'down' }">{{ kpi.delta }}</span>
         </div>
-        <span class="ov-kpi-label">{{ kpi.label }}</span>
         <strong class="ov-kpi-value">{{ animatedDisplay(kpi) }}</strong>
         <span class="ov-kpi-note">{{ kpi.note }}</span>
       </button>
     </section>
 
     <section class="ov-grid">
-      <article class="ov-card ov-chart-card ov-reveal">
+      <article class="ov-card ov-chart-card">
         <div class="ov-card-head">
           <div>
-            <h2>收入与回款趋势</h2>
-            <p>单位：万元，按自然月统计</p>
+            <h2>收入与回款</h2>
+            <p>单位：万元 · 按自然月</p>
           </div>
           <div class="ov-chart-legend">
             <span><i class="ov-legend-dot income"></i>确认收入</span>
@@ -42,7 +49,7 @@
           <svg :viewBox="`0 0 ${chartW} ${chartH}`" role="img" preserveAspectRatio="none">
             <defs>
               <linearGradient id="ovAreaFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="var(--crm-primary)" stop-opacity=".22" />
+                <stop offset="0" stop-color="var(--crm-primary)" stop-opacity=".18" />
                 <stop offset="1" stop-color="var(--crm-primary)" stop-opacity="0" />
               </linearGradient>
             </defs>
@@ -65,7 +72,7 @@
               class="ov-chart-point"
               :cx="pt.x"
               :cy="pt.incomeY"
-              r="4"
+              r="3.5"
             >
               <title>{{ pt.label }} 确认收入 {{ pt.income }} 万元</title>
             </circle>
@@ -81,16 +88,16 @@
             </text>
           </svg>
         </div>
-        <div v-else class="ov-empty-note">暂无收入与回款趋势数据</div>
+        <div v-else class="ov-empty-note">暂无趋势数据</div>
       </article>
 
-      <article class="ov-card ov-card-pad ov-funnel-card ov-reveal">
+      <article class="ov-card ov-card-pad ov-funnel-card">
         <div class="ov-card-head">
           <div>
-            <h2>销售转化漏斗</h2>
-            <p>当前可见范围 · 线索去重后</p>
+            <h2>销售漏斗</h2>
+            <p>当前可见范围 · 线索去重</p>
           </div>
-          <button type="button" class="ov-text-link" @click="go('/sales')">查看明细</button>
+          <button type="button" class="ov-text-link" @click="go('/sales')">明细</button>
         </div>
         <div v-if="funnel.length" class="ov-funnel">
           <div v-for="step in funnel" :key="step.label" class="ov-funnel-row">
@@ -105,18 +112,18 @@
       </article>
     </section>
 
-    <section class="ov-alerts-wrap">
-      <article class="ov-card ov-card-pad ov-alerts-card ov-reveal">
+    <section class="ov-bottom-grid">
+      <article class="ov-card ov-card-pad">
         <div class="ov-card-head">
           <div>
             <h2>待处理预警</h2>
-            <p>按影响和时效排序</p>
+            <p>按影响与时效排序</p>
           </div>
           <span class="ov-status-badge" :class="{ ok: !alerts.length }">
             {{ alerts.length ? `${alerts.length} 项` : '正常' }}
           </span>
         </div>
-        <div v-if="alerts.length" class="ov-alert-list">
+        <div v-if="alerts.length" class="ov-alert-list ov-alert-list--stack">
           <div
             v-for="item in alerts"
             :key="item.key"
@@ -133,18 +140,16 @@
             </button>
           </div>
         </div>
-        <div v-else class="ov-empty-note">当前没有待处理预警</div>
+        <div v-else class="ov-empty-note">暂无待处理预警</div>
       </article>
-    </section>
 
-    <section class="ov-bottom-grid">
-      <article class="ov-card ov-card-pad ov-reveal">
+      <article class="ov-card ov-card-pad">
         <div class="ov-card-head">
           <div>
             <h2>项目健康度</h2>
-            <p>由里程碑、任务、风险和验收共同计算</p>
+            <p>里程碑 · 任务 · 风险 · 验收</p>
           </div>
-          <button type="button" class="ov-text-link" @click="go('/projects')">全部项目</button>
+          <button type="button" class="ov-text-link" @click="go('/projects')">全部</button>
         </div>
         <div class="ov-project-health">
           <div class="ov-progress-ring">
@@ -188,11 +193,11 @@
         </div>
       </article>
 
-      <article class="ov-card ov-card-pad ov-reveal">
+      <article class="ov-card ov-card-pad">
         <div class="ov-card-head">
           <div>
             <h2>今日排期</h2>
-            <p>会议、讲师和主播统一占用</p>
+            <p>会议 · 讲师 · 主播占用</p>
           </div>
           <button type="button" class="ov-text-link" @click="go('/schedules')">周视图</button>
         </div>
@@ -215,50 +220,103 @@
         </div>
         <div v-else class="ov-empty-note">今日暂无排期</div>
       </article>
+    </section>
 
-      <article v-if="false" class="ov-card ov-card-pad ov-reveal">
-        <div class="ov-card-head">
-          <div>
-            <h2>组织执行</h2>
-            <p>部门目标与员工任务汇总（第二期开放）</p>
-          </div>
-          <button type="button" class="ov-text-link" @click="go('/okrs')">查看目标</button>
+    <section id="dept-monitor" class="ov-card ov-card-pad ov-dept" v-loading="deptLoading">
+      <div class="ov-card-head">
+        <div>
+          <h2>{{ deptMonitor?.department_name || '本部门' }} · 执行监控</h2>
+          <p>看人、看任务、看异常；项目档案请到「项目台账」</p>
         </div>
-        <div v-if="orgExecution.length" class="ov-score-bars">
-          <div v-for="row in orgExecution" :key="row.name" class="ov-score-row">
-            <span>{{ row.name }}</span>
-            <div class="ov-progress-track">
-              <div class="ov-progress-fill" :style="{ width: `${row.score}%` }" />
-            </div>
-            <b>{{ row.score }}</b>
-          </div>
+        <button
+          type="button"
+          class="ov-text-link"
+          @click="go('/projects/delivery?tab=execute&mode=tasks')"
+        >
+          去任务工时
+        </button>
+      </div>
+
+      <div class="ov-dept-kpis">
+        <div class="ov-dept-kpi">
+          <small>执行健康分</small>
+          <strong>{{ deptMonitor?.health_score ?? 0 }}</strong>
         </div>
-        <div v-else class="ov-empty-note">暂无组织目标数据</div>
-      </article>
+        <div class="ov-dept-kpi">
+          <small>任务按期率</small>
+          <strong>{{ formatRate(deptMonitor?.on_time_rate) }}%</strong>
+          <span>逾期 {{ deptMonitor?.overdue_tasks ?? 0 }}</span>
+        </div>
+        <div class="ov-dept-kpi">
+          <small>工时完整率</small>
+          <strong>{{ formatRate(deptMonitor?.hours_complete_rate) }}%</strong>
+          <span>缺失 {{ deptMonitor?.missing_hours ?? 0 }}</span>
+        </div>
+        <div class="ov-dept-kpi">
+          <small>待处理异常</small>
+          <strong>{{ (deptMonitor?.overdue_tasks ?? 0) + (deptMonitor?.missing_hours ?? 0) }}</strong>
+          <span>逾期 + 缺报</span>
+        </div>
+      </div>
+
+      <el-table :data="deptMonitor?.members || []" stripe empty-text="暂无本部门任务数据">
+        <el-table-column prop="name" label="员工" min-width="100" />
+        <el-table-column prop="planned_tasks" label="计划" width="72" />
+        <el-table-column prop="done_tasks" label="完成" width="72" />
+        <el-table-column prop="overdue_tasks" label="逾期" width="72">
+          <template #default="{ row }">
+            <span :class="{ 'ov-danger': row.overdue_tasks > 0 }">{{ row.overdue_tasks }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="计划 / 实际工时" min-width="130">
+          <template #default="{ row }">
+            {{ formatHours(row.planned_hours) }} / {{ formatHours(row.actual_hours) }}h
+          </template>
+        </el-table-column>
+        <el-table-column label="工时完整" width="90">
+          <template #default="{ row }">{{ formatRate(row.hours_complete_rate) }}%</template>
+        </el-table-column>
+        <el-table-column prop="open_tickets" label="待处理工单" width="100" />
+      </el-table>
+      <p v-if="!(deptMonitor?.members || []).length" class="ov-dept-hint">
+        可在「交付执行 → 任务工时」中创建并指派责任人后查看汇总。
+      </p>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   fetchDashboard,
   type AlertItem,
   type DashboardData,
   type FunnelStep,
-  type OrgScoreItem,
   type OverviewKpi,
   type ProjectHealth,
   type RevenueTrendPoint,
   type TodayScheduleItem,
 } from '@/api/dashboard'
+import {
+  fetchDepartmentMonitor,
+  type DepartmentMonitor,
+} from '@/api/projects'
+
+const SCOPE_LABEL: Record<string, string> = {
+  company: '全公司',
+  department: '本部门',
+  personal: '本人',
+}
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const data = ref<DashboardData | null>(null)
 const animValues = ref<Record<string, number>>({})
+const deptLoading = ref(false)
+const deptMonitor = ref<DepartmentMonitor | null>(null)
 
 const kpis = computed<OverviewKpi[]>(() => data.value?.kpis ?? [])
 const revenueTrend = computed<RevenueTrendPoint[]>(() => data.value?.revenue_trend ?? [])
@@ -268,7 +326,41 @@ const health = computed<ProjectHealth>(
   () => data.value?.project_health ?? { score: 0, healthy: 0, watch: 0, risk: 0 },
 )
 const todaySchedules = computed<TodayScheduleItem[]>(() => data.value?.today_schedules ?? [])
-const orgExecution = computed<OrgScoreItem[]>(() => data.value?.org_execution ?? [])
+
+const scopeLabel = computed(() => SCOPE_LABEL[data.value?.data_scope || ''] || '可见范围')
+const greeting = computed(() => {
+  const name = data.value?.display_name
+  return name ? `${name}，欢迎回来` : '集中查看经营、回款、项目与执行'
+})
+
+function formatHours(v?: number | string | null) {
+  const n = Number(v || 0)
+  return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '0'
+}
+
+function formatRate(v?: number | string | null) {
+  const n = Number(v || 0)
+  if (!Number.isFinite(n)) return '0'
+  return String(Math.round(n * 10) / 10)
+}
+
+async function loadDeptMonitor() {
+  deptLoading.value = true
+  try {
+    const { data: monitor } = await fetchDepartmentMonitor()
+    deptMonitor.value = monitor
+  } catch {
+    deptMonitor.value = null
+  } finally {
+    deptLoading.value = false
+  }
+}
+
+async function focusDeptMonitorIfNeeded() {
+  if (String(route.query.focus || '') !== 'dept-monitor') return
+  await nextTick()
+  document.getElementById('dept-monitor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const chartW = 720
 const chartH = 220
@@ -355,7 +447,7 @@ function animateKpis(items: OverviewKpi[]) {
     if (from[kpi.key] == null) from[kpi.key] = 0
   }
   function tick(now: number) {
-    const p = Math.min(1, (now - start) / 850)
+    const p = Math.min(1, (now - start) / 700)
     const eased = 1 - Math.pow(1 - p, 3)
     const next: Record<string, number> = {}
     for (const key of Object.keys(targets)) {
@@ -386,12 +478,22 @@ function onExport() {
 async function load() {
   loading.value = true
   try {
-    const { data: response } = await fetchDashboard()
+    const [{ data: response }] = await Promise.all([fetchDashboard(), loadDeptMonitor()])
     data.value = response
   } finally {
     loading.value = false
   }
 }
 
-onMounted(load)
+watch(
+  () => String(route.query.focus || ''),
+  () => {
+    focusDeptMonitorIfNeeded()
+  },
+)
+
+onMounted(async () => {
+  await load()
+  await focusDeptMonitorIfNeeded()
+})
 </script>

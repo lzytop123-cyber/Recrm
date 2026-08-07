@@ -51,7 +51,6 @@ PERMISSIONS = [
     ("管理合同", "contract:manage", "contract"),
     ("审批合同", "contract:approve", "contract"),
     ("完成合同", "contract:complete", "contract"),
-    ("特批完成合同", "contract:force_complete", "contract"),
     ("查看收款", "payment:view", "payment"),
     ("管理收款", "payment:manage", "payment"),
     ("提交到款认领", "payment:claim", "payment"),
@@ -86,7 +85,7 @@ ROLES = [
     ("董事会", "board", "company", [
         "dashboard:view", "approval:center",
         "lead:view", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:force_complete", "payment:view",
+        "contract:view", "contract:approve", "contract:complete", "payment:view",
         "project:view", "project:accept_approve", "project:complete",
         "ticket:view", "schedule:view", "org:view", "knowledge:view",
     ]),
@@ -94,7 +93,7 @@ ROLES = [
         # lead:manage：可查看/分配待分配线索池（与中层一致；销售无此权限）
         "dashboard:view", "approval:center",
         "lead:view", "lead:manage", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:complete", "contract:force_complete",
+        "contract:view", "contract:approve", "contract:complete",
         "payment:view",
         "project:view", "project:manage",
         "project:accept_submit", "project:accept_approve",
@@ -106,7 +105,7 @@ ROLES = [
     ("中层管理", "middle_manager", "department", [
         "dashboard:view", "approval:center",
         "lead:view", "lead:manage", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:complete", "contract:force_complete",
+        "contract:view", "contract:approve", "contract:complete",
         "payment:view",
         "project:view", "project:manage",
         "project:accept_submit", "project:accept_approve",
@@ -121,7 +120,6 @@ ROLES = [
     ]),
     ("销售", "sales", "department", [
         # 无 lead:manage：待分配线索池仅管理层/中层可看，销售只处理已分配线索
-        # 无 contract:force_complete：回款未齐不可特批完成
         "dashboard:view",
         "lead:view", "customer:view", "customer:manage",
         "opportunity:view", "opportunity:manage",
@@ -151,7 +149,7 @@ ROLES = [
     ]),
     ("财务", "finance", "company", [
         "lead:view", "approval:center",
-        "contract:view", "contract:approve", "contract:complete", "contract:force_complete",
+        "contract:view", "contract:approve", "contract:complete",
         "payment:view", "payment:manage", "payment:claim",
         "payment:confirm", "payment:allocate", "payment:refund",
         "project:view", "project:finance_approve",

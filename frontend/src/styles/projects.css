@@ -1,5 +1,20 @@
 /* 项目交付工作台 */
 
+.project-delivery.crm-fit-page > .sales-head,
+.project-delivery.crm-fit-page > .project-tabs {
+  flex-shrink: 0;
+}
+
+.project-delivery .crm-fit-body > .submode-bar,
+.project-delivery .crm-fit-body > .portfolio-hero {
+  flex-shrink: 0;
+}
+
+.project-delivery .crm-fit-body > .crm-panel.crm-fit-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .project-delivery .sales-head {
   margin-bottom: 16px;
 }

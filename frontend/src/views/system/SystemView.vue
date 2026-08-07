@@ -1,5 +1,5 @@
 <template>
-  <div class="crm-page system-page" v-loading="loading">
+  <div class="crm-page system-page crm-fit-page" v-loading="loading">
     <div class="crm-stats" :style="{ '--crm-stats-cols': String(statCards.length) }">
       <button
         v-for="item in statCards"
@@ -13,90 +13,102 @@
       </button>
     </div>
 
-    <el-card>
-      <el-tabs v-model="tab">
+    <el-card class="system-main-card" shadow="never">
+      <el-tabs v-model="tab" class="system-tabs">
         <el-tab-pane label="角色权限" name="roles">
-          <div class="toolbar">
-            <span class="hint">admin 角色受保护，不可改权限/删除</span>
-            <el-button type="primary" @click="openRoleCreate">新建角色</el-button>
+          <div class="tab-pane-body">
+            <div class="toolbar">
+              <span class="hint">admin 角色受保护，不可改权限/删除</span>
+              <el-button type="primary" @click="openRoleCreate">新建角色</el-button>
+            </div>
+            <div class="crm-table-wrap">
+              <el-table :data="roles" stripe height="100%">
+                <el-table-column prop="name" label="角色" width="120" />
+                <el-table-column prop="code" label="编码" width="130" />
+                <el-table-column label="数据范围" width="100">
+                  <template #default="{ row }">
+                    {{ DATA_SCOPE_LABEL[row.data_scope] || row.data_scope }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="权限数" width="80">
+                  <template #default="{ row }">{{ row.permission_ids?.length || 0 }}</template>
+                </el-table-column>
+                <el-table-column prop="user_count" label="用户数" width="80" />
+                <el-table-column prop="description" label="说明" min-width="140" show-overflow-tooltip />
+                <el-table-column label="操作" width="140" fixed="right">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="openRoleEdit(row)">编辑</el-button>
+                    <el-button
+                      v-if="row.code !== 'admin'"
+                      link
+                      type="danger"
+                      @click="onDeleteRole(row)"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </div>
-          <el-table :data="roles" stripe>
-            <el-table-column prop="name" label="角色" width="120" />
-            <el-table-column prop="code" label="编码" width="130" />
-            <el-table-column label="数据范围" width="100">
-              <template #default="{ row }">
-                {{ DATA_SCOPE_LABEL[row.data_scope] || row.data_scope }}
-              </template>
-            </el-table-column>
-            <el-table-column label="权限数" width="80">
-              <template #default="{ row }">{{ row.permission_ids?.length || 0 }}</template>
-            </el-table-column>
-            <el-table-column prop="user_count" label="用户数" width="80" />
-            <el-table-column prop="description" label="说明" min-width="140" show-overflow-tooltip />
-            <el-table-column label="操作" width="140" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openRoleEdit(row)">编辑</el-button>
-                <el-button
-                  v-if="row.code !== 'admin'"
-                  link
-                  type="danger"
-                  @click="onDeleteRole(row)"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
         </el-tab-pane>
 
         <el-tab-pane label="权限目录" name="permissions">
-          <el-table :data="permissions" stripe>
-            <el-table-column prop="module" label="模块" width="120" />
-            <el-table-column prop="name" label="名称" width="160" />
-            <el-table-column prop="code" label="编码" width="180" />
-            <el-table-column prop="description" label="说明" min-width="160" show-overflow-tooltip />
-          </el-table>
+          <div class="tab-pane-body">
+            <div class="crm-table-wrap">
+              <el-table :data="permissions" stripe height="100%">
+                <el-table-column prop="module" label="模块" width="120" />
+                <el-table-column prop="name" label="名称" width="160" />
+                <el-table-column prop="code" label="编码" width="180" />
+                <el-table-column prop="description" label="说明" min-width="160" show-overflow-tooltip />
+              </el-table>
+            </div>
+          </div>
         </el-tab-pane>
 
         <el-tab-pane label="审计日志" name="audits">
-          <div class="toolbar">
-            <div class="filters">
-              <el-input
-                v-model="auditKeyword"
-                clearable
-                placeholder="用户名/详情"
-                style="width: 180px"
-                @keyup.enter="reloadAudits"
-              />
-              <el-input
-                v-model="auditModule"
-                clearable
-                placeholder="模块"
-                style="width: 120px"
-                @keyup.enter="reloadAudits"
-              />
-              <el-button type="primary" @click="reloadAudits">查询</el-button>
+          <div class="tab-pane-body">
+            <div class="toolbar">
+              <div class="filters">
+                <el-input
+                  v-model="auditKeyword"
+                  clearable
+                  placeholder="用户名/详情"
+                  style="width: 180px"
+                  @keyup.enter="reloadAudits"
+                />
+                <el-input
+                  v-model="auditModule"
+                  clearable
+                  placeholder="模块"
+                  style="width: 120px"
+                  @keyup.enter="reloadAudits"
+                />
+                <el-button type="primary" @click="reloadAudits">查询</el-button>
+              </div>
             </div>
-          </div>
-          <el-table :data="audits" v-loading="auditLoading" stripe>
-            <el-table-column prop="created_at" label="时间" width="170">
-              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column prop="username" label="用户" width="100" />
-            <el-table-column prop="module" label="模块" width="100" />
-            <el-table-column prop="action" label="动作" width="100" />
-            <el-table-column prop="ip" label="IP" width="120" />
-            <el-table-column prop="detail" label="详情" min-width="180" show-overflow-tooltip />
-          </el-table>
-          <div class="pager">
-            <el-pagination
-              v-model:current-page="auditPage"
-              v-model:page-size="auditPageSize"
-              :total="auditTotal"
-              layout="total, prev, pager, next"
-              @current-change="loadAudits"
-              @size-change="loadAudits"
-            />
+            <div class="crm-table-wrap">
+              <el-table :data="audits" v-loading="auditLoading" stripe height="100%">
+                <el-table-column prop="created_at" label="时间" width="170">
+                  <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+                </el-table-column>
+                <el-table-column prop="username" label="用户" width="100" />
+                <el-table-column prop="module" label="模块" width="100" />
+                <el-table-column prop="action" label="动作" width="100" />
+                <el-table-column prop="ip" label="IP" width="120" />
+                <el-table-column prop="detail" label="详情" min-width="180" show-overflow-tooltip />
+              </el-table>
+            </div>
+            <div class="pager">
+              <el-pagination
+                v-model:current-page="auditPage"
+                v-model:page-size="auditPageSize"
+                :total="auditTotal"
+                layout="total, prev, pager, next"
+                @current-change="loadAudits"
+                @size-change="loadAudits"
+              />
+            </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -333,6 +345,92 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.system-page :deep(.crm-stats) {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+.system-main-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.system-main-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 16px 14px;
+}
+
+.system-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.system-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+.system-tabs :deep(.el-tabs__content) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.system-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tab-pane-body {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.crm-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+
 .perm-group {
   margin-bottom: 10px;
   width: 100%;

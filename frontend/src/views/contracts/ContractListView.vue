@@ -68,7 +68,7 @@
             type="primary"
             @click="openClaim"
           >
-            ＋ 提交到款认领
+            ＋ 登记到账
           </el-button>
         </div>
       </div>
@@ -87,7 +87,7 @@
       </button>
     </div>
 
-    <section class="crm-panel">
+    <section class="crm-panel" :class="{ 'crm-fit-panel': embedded }">
       <div class="toolbar">
         <div class="filters">
           <el-radio-group v-if="!embedded" v-model="scope" @change="reload">
@@ -124,7 +124,14 @@
 
       <!-- 合同台账 -->
       <template v-if="!embedded || financeTab === 'contracts'">
-        <el-table :data="items" v-loading="loading" stripe @row-click="goDetail">
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+          <el-table
+            :data="items"
+            v-loading="loading"
+            stripe
+            :height="embedded ? '100%' : undefined"
+            @row-click="goDetail"
+          >
           <el-table-column prop="contract_no" label="合同编号" width="150">
             <template #default="{ row }"><b>{{ row.contract_no }}</b></template>
           </el-table-column>
@@ -168,11 +175,18 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </template>
 
       <!-- 应收计划 -->
       <template v-else-if="financeTab === 'receivables'">
-        <el-table :data="receivableItems" v-loading="loading" stripe>
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+          <el-table
+            :data="receivableItems"
+            v-loading="loading"
+            stripe
+            :height="embedded ? '100%' : undefined"
+          >
           <el-table-column label="应收编号" width="150">
             <template #default="{ row }"><b>{{ `YS-${row.id}` }}</b></template>
           </el-table-column>
@@ -202,6 +216,7 @@
           </el-table-column>
           <el-table-column prop="owner_name" label="负责人" width="100" />
         </el-table>
+        </div>
         <div class="table-footer">
           <span>应收计划需手动创建；分期合同按节点拆成多笔</span>
           <span>合计金额不得超过合同总额</span>
@@ -210,7 +225,13 @@
 
       <!-- 到款核销 -->
       <template v-else>
-        <el-table :data="receiptItems" v-loading="loading" stripe>
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+          <el-table
+            :data="receiptItems"
+            v-loading="loading"
+            stripe
+            :height="embedded ? '100%' : undefined"
+          >
           <el-table-column label="到款认领单" width="150">
             <template #default="{ row }"><b>{{ row.receipt_no }}</b></template>
           </el-table-column>
@@ -264,8 +285,9 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
         <div class="table-footer">
-          <span>财务复核确认到账；核销提交后进入审批中心，通过后才计入应收</span>
+          <span>流程：登记到账 → 财务确认到账 → 核销到应收（审批通过后计入）</span>
           <span>本模块不生成法定会计凭证</span>
         </div>
       </template>
@@ -367,8 +389,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="receivableVisible" title="新建应收计划（分期节点）" width="560px" destroy-on-close>
-      <p class="dialog-hint">同一合同可建多笔；金额合计不超过合同总额。一次性付款建一笔即可，分期按首付/验收/尾款等拆开。</p>
+    <el-dialog v-model="receivableVisible" title="新建应收计划" width="560px" destroy-on-close>
+      <p class="dialog-hint">把合同金额拆成可收款的节点。同一合同可建多笔，合计不超过合同总额。</p>
       <el-form
         ref="receivableFormRef"
         :model="receivableForm"
@@ -376,7 +398,13 @@
         label-width="100px"
       >
         <el-form-item label="合同" prop="contract_id">
-          <el-select v-model="receivableForm.contract_id" filterable style="width: 100%">
+          <el-select
+            v-model="receivableForm.contract_id"
+            filterable
+            placeholder="选择合同"
+            style="width: 100%"
+            @change="onReceivableContractChange"
+          >
             <el-option
               v-for="c in claimContracts"
               :key="c.id"
@@ -385,22 +413,55 @@
             />
           </el-select>
         </el-form-item>
+        <div v-if="receivableForm.contract_id" class="receivable-balance" v-loading="receivableBalanceLoading">
+          <div>
+            <small>合同总额</small>
+            <b>¥{{ formatAmount(receivableContractAmount) }}</b>
+          </div>
+          <div>
+            <small>已建应收</small>
+            <b>¥{{ formatAmount(receivablePlannedAmount) }}</b>
+          </div>
+          <div>
+            <small>还可建</small>
+            <b :class="{ warn: receivableRemainingAmount <= 0 }">
+              ¥{{ formatAmount(receivableRemainingAmount) }}
+            </b>
+          </div>
+        </div>
         <el-form-item label="收款节点" prop="title">
           <el-input v-model="receivableForm.title" placeholder="如：首付款、验收款、尾款" />
+          <div class="node-presets">
+            <button
+              v-for="name in RECEIVABLE_NODE_PRESETS"
+              :key="name"
+              type="button"
+              class="node-chip"
+              :class="{ active: receivableForm.title === name }"
+              @click="applyReceivableNode(name)"
+            >
+              {{ name }}
+            </button>
+          </div>
         </el-form-item>
         <el-form-item label="应收金额" prop="amount">
           <el-input-number
             v-model="receivableForm.amount"
             :min="0.01"
+            :max="Math.max(receivableRemainingAmount, 0.01)"
             :precision="2"
             style="width: 100%"
           />
+          <div v-if="receivableForm.contract_id" class="field-tip">
+            剩余可建 ¥{{ formatAmount(receivableRemainingAmount) }}
+          </div>
         </el-form-item>
         <el-form-item label="计划日期" prop="due_date">
           <el-date-picker
             v-model="receivableForm.due_date"
             type="date"
             value-format="YYYY-MM-DD"
+            placeholder="预计客户应付日"
             style="width: 100%"
           />
         </el-form-item>
@@ -418,15 +479,15 @@
 
     <el-dialog
       v-model="claimVisible"
-      title="提交到账信息"
+      title="登记到账"
       width="720px"
       destroy-on-close
       class="claim-dialog"
     >
-      <p class="dialog-eyebrow">到款认领</p>
+      <p class="dialog-hint">提交后由财务确认到账，再核销到应收计划。当前只登记「钱已到」这一步。</p>
       <el-form ref="claimFormRef" :model="claimForm" :rules="claimRules" label-position="top" class="claim-form">
         <section class="form-block">
-          <h3><span>1</span>关联合同</h3>
+          <h3><span>1</span>到账信息</h3>
           <el-form-item label="合同" prop="contract_id">
             <el-select
               v-model="claimForm.contract_id"
@@ -443,9 +504,31 @@
               />
             </el-select>
           </el-form-item>
+          <div v-if="claimForm.contract_id" class="receivable-balance" v-loading="claimBalanceLoading">
+            <div>
+              <small>合同总额</small>
+              <b>¥{{ formatAmount(claimContractAmount) }}</b>
+            </div>
+            <div>
+              <small>应收未收</small>
+              <b>¥{{ formatAmount(claimOutstandingAmount) }}</b>
+            </div>
+            <div>
+              <small>合同已确认到账</small>
+              <b>¥{{ formatAmount(claimPaidAmount) }}</b>
+            </div>
+          </div>
           <div class="form-grid-2">
             <el-form-item label="认领金额" prop="amount">
-              <el-input-number v-model="claimForm.amount" :min="0.01" :precision="2" style="width: 100%" />
+              <el-input-number
+                v-model="claimForm.amount"
+                :min="0.01"
+                :precision="2"
+                style="width: 100%"
+              />
+              <div v-if="claimForm.contract_id && claimOutstandingAmount > 0" class="field-tip">
+                参考：应收未收 ¥{{ formatAmount(claimOutstandingAmount) }}
+              </div>
             </el-form-item>
             <el-form-item label="到账日期" prop="paid_date">
               <el-date-picker
@@ -462,7 +545,7 @@
               <el-input
                 v-model="claimForm.account_tail"
                 maxlength="4"
-                placeholder="用于财务匹配"
+                placeholder="选填，便于财务匹配"
               />
             </el-form-item>
           </div>
@@ -478,11 +561,11 @@
             >
               <template v-if="claimForm.proof_filename">
                 <b>{{ claimForm.proof_filename }}</b>
-                <small>已选择 · 可重新选择</small>
+                <small>已选择 · 点击可重新选择</small>
               </template>
               <template v-else>
                 <b>上传银行回单或到账截图</b>
-                <small>PDF、PNG或JPG · 单文件不超过10MB · 财务复核可追溯</small>
+                <small>PDF、PNG或JPG · 单文件不超过10MB</small>
               </template>
             </div>
             <input
@@ -496,26 +579,31 @@
         </section>
 
         <section class="form-block">
-          <h3><span>3</span>提交检查</h3>
+          <h3><span>3</span>提交前核对</h3>
           <div class="health-list">
-            <div class="health-row">
-              <span>ⓘ 关联合同</span>
-              <b>{{ selectedClaimContractNo || '待选择' }}</b>
-            </div>
-            <div class="health-row">
-              <span>ⓘ 到账确认</span>
-              <b>提交后进入待复核队列，确认到账后再提交核销审批</b>
-            </div>
-            <div class="health-row">
-              <span>✓ 审计记录</span>
-              <b>保存提交人与附件版本</b>
+            <div
+              v-for="item in claimChecklist"
+              :key="item.key"
+              class="health-row"
+              :class="{ ok: item.ok, pending: !item.ok }"
+            >
+              <span>{{ item.ok ? '✓' : '○' }} {{ item.label }}</span>
+              <b>{{ item.value }}</b>
             </div>
           </div>
+          <p class="claim-next-hint">下一步：财务确认到账 → 再提交核销到应收</p>
         </section>
       </el-form>
       <template #footer>
         <el-button @click="claimVisible = false">取消</el-button>
-        <el-button type="primary" :loading="claimSaving" @click="onSubmitClaim">提交财务复核</el-button>
+        <el-button
+          type="primary"
+          :loading="claimSaving"
+          :disabled="!claimReadyToSubmit"
+          @click="onSubmitClaim"
+        >
+          提交财务复核
+        </el-button>
       </template>
     </el-dialog>
 
@@ -702,6 +790,10 @@ const saving = ref(false)
 const claimSaving = ref(false)
 const receivableSaving = ref(false)
 const allocationSaving = ref(false)
+const receivableBalanceLoading = ref(false)
+const claimBalanceLoading = ref(false)
+const receivablePlansForContract = ref<Receivable[]>([])
+const claimPlansForContract = ref<Receivable[]>([])
 const customerLoading = ref(false)
 const items = ref<Contract[]>([])
 const receivableItems = ref<Receivable[]>([])
@@ -767,6 +859,25 @@ const receivableForm = reactive({
   due_date: '',
   remark: '',
 })
+const RECEIVABLE_NODE_PRESETS = ['首付款', '验收款', '尾款', '全款'] as const
+
+const selectedReceivableContract = computed(() =>
+  claimContracts.value.find((c) => c.id === receivableForm.contract_id),
+)
+const receivableContractAmount = computed(() =>
+  Number(selectedReceivableContract.value?.amount || 0),
+)
+const receivablePlannedAmount = computed(() =>
+  receivablePlansForContract.value
+    .filter((r) => r.status !== 'cancelled')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0),
+)
+const receivableRemainingAmount = computed(() =>
+  Math.max(
+    0,
+    Number((receivableContractAmount.value - receivablePlannedAmount.value).toFixed(2)),
+  ),
+)
 const allocationForm = reactive({
   receivable_plan_id: undefined as number | undefined,
   amount: undefined as number | undefined,
@@ -789,10 +900,50 @@ const allocationRules: FormRules = {
   amount: [{ required: true, message: '请输入核销金额', trigger: 'blur' }],
 }
 
-const selectedClaimContractNo = computed(() => {
-  const c = claimContracts.value.find((x) => x.id === claimForm.contract_id)
-  return c?.contract_no || ''
-})
+const selectedClaimContract = computed(() =>
+  claimContracts.value.find((x) => x.id === claimForm.contract_id),
+)
+const selectedClaimContractNo = computed(() => selectedClaimContract.value?.contract_no || '')
+const claimContractAmount = computed(() => Number(selectedClaimContract.value?.amount || 0))
+const claimPaidAmount = computed(() => Number(selectedClaimContract.value?.paid_amount || 0))
+const claimOutstandingAmount = computed(() =>
+  claimPlansForContract.value
+    .filter((r) => r.status !== 'cancelled')
+    .reduce((sum, r) => sum + Number(r.outstanding_amount || 0), 0),
+)
+const claimChecklist = computed(() => [
+  {
+    key: 'contract',
+    label: '合同',
+    ok: !!claimForm.contract_id,
+    value: selectedClaimContractNo.value || '待选择',
+  },
+  {
+    key: 'amount',
+    label: '认领金额',
+    ok: Number(claimForm.amount) > 0,
+    value: Number(claimForm.amount) > 0 ? `¥${formatAmount(claimForm.amount)}` : '待填写',
+  },
+  {
+    key: 'paid_date',
+    label: '到账日期',
+    ok: !!claimForm.paid_date,
+    value: claimForm.paid_date || '待选择',
+  },
+  {
+    key: 'payer',
+    label: '付款方',
+    ok: !!claimForm.payer_name?.trim(),
+    value: claimForm.payer_name?.trim() || '待填写',
+  },
+  {
+    key: 'proof',
+    label: '到账证明',
+    ok: !!claimForm.proof_filename,
+    value: claimForm.proof_filename || '待上传',
+  },
+])
+const claimReadyToSubmit = computed(() => claimChecklist.value.every((x) => x.ok))
 
 const allocationMaxAmount = computed(() => {
   const receiptAvailable = Number(allocationReceipt.value?.available_amount || 0)
@@ -1089,6 +1240,7 @@ async function openClaim() {
   claimForm.payer_name = ''
   claimForm.account_tail = ''
   claimForm.proof_filename = ''
+  claimPlansForContract.value = []
   const { data } = await fetchContracts({ page: 1, page_size: 100, scope: 'all' })
   claimContracts.value = data.items.filter((c) =>
     ['signed', 'active', 'approved', 'completed'].includes(c.status),
@@ -1097,18 +1249,57 @@ async function openClaim() {
   claimVisible.value = true
 }
 
+async function onClaimContractChange(id?: number) {
+  claimPlansForContract.value = []
+  if (!id) {
+    claimForm.payer_name = ''
+    return
+  }
+  const c = claimContracts.value.find((x) => x.id === id)
+  if (c?.customer_name) claimForm.payer_name = c.customer_name
+  claimBalanceLoading.value = true
+  try {
+    const { data } = await fetchReceivables(id)
+    claimPlansForContract.value = data
+  } finally {
+    claimBalanceLoading.value = false
+  }
+}
+
 async function openReceivableCreate() {
   receivableForm.contract_id = undefined
   receivableForm.title = ''
   receivableForm.amount = undefined
   receivableForm.due_date = ''
   receivableForm.remark = ''
+  receivablePlansForContract.value = []
   const { data } = await fetchContracts({ page: 1, page_size: 100, scope: 'all' })
   claimContracts.value = data.items.filter((c) =>
     ['signed', 'active', 'approved'].includes(c.status),
   )
   if (!claimContracts.value.length) claimContracts.value = data.items
   receivableVisible.value = true
+}
+
+async function onReceivableContractChange(id?: number) {
+  receivablePlansForContract.value = []
+  receivableForm.amount = undefined
+  if (!id) return
+  receivableBalanceLoading.value = true
+  try {
+    const { data } = await fetchReceivables(id)
+    receivablePlansForContract.value = data
+  } finally {
+    receivableBalanceLoading.value = false
+  }
+}
+
+function applyReceivableNode(name: string) {
+  receivableForm.title = name
+  if (name === '全款' && receivableRemainingAmount.value > 0) {
+    receivableForm.amount = receivableRemainingAmount.value
+  }
+  receivableFormRef.value?.clearValidate('title')
 }
 
 async function onCreateReceivable() {
@@ -1119,6 +1310,14 @@ async function onCreateReceivable() {
     !receivableForm.amount ||
     !receivableForm.due_date
   ) return
+  if (receivableRemainingAmount.value <= 0) {
+    ElMessage.warning('该合同已无剩余可建金额')
+    return
+  }
+  if (receivableForm.amount > receivableRemainingAmount.value + 0.001) {
+    ElMessage.warning(`应收金额不能超过剩余可建 ¥${formatAmount(receivableRemainingAmount.value)}`)
+    return
+  }
   receivableSaving.value = true
   try {
     await createReceivable(receivableForm.contract_id, {
@@ -1135,11 +1334,6 @@ async function onCreateReceivable() {
   }
 }
 
-function onClaimContractChange(id: number) {
-  const c = claimContracts.value.find((x) => x.id === id)
-  if (c?.customer_name) claimForm.payer_name = c.customer_name
-}
-
 function pickProof() {
   proofInputRef.value?.click()
 }
@@ -1154,6 +1348,7 @@ function onProofSelected(e: Event) {
     return
   }
   claimForm.proof_filename = file.name
+  claimFormRef.value?.clearValidate('proof_filename')
   input.value = ''
 }
 
@@ -1175,7 +1370,7 @@ async function onSubmitClaim() {
       proof_filename: claimForm.proof_filename,
       idempotency_key: newIdempotencyKey(),
     })
-    ElMessage.success('到款认领已提交，已进入财务复核队列')
+    ElMessage.success('已提交登记到账，等待财务确认')
     claimVisible.value = false
     financeTab.value = 'reconciliation'
     reload()
@@ -1285,6 +1480,30 @@ watch(
 </script>
 
 <style scoped>
+.embedded.contracts-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embedded.contracts-page > .crm-stats,
+.embedded.contracts-page > .finance-subtabs {
+  flex-shrink: 0;
+}
+.embedded.contracts-page > .crm-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.embedded.contracts-page .crm-table-wrap.is-fit {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.embedded.contracts-page .pager,
+.embedded.contracts-page .table-footer {
+  flex-shrink: 0;
+}
 .finance-kpi .is-accent {
   background: linear-gradient(145deg, #0b3d91, #062a66);
   color: #fff;
@@ -1327,6 +1546,60 @@ watch(
   color: var(--crm-ink-soft);
   font-size: 13px;
   line-height: 1.5;
+}
+.receivable-balance {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  background: var(--crm-surface-soft, #f7f8fa);
+}
+.receivable-balance small {
+  display: block;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.receivable-balance b {
+  font-size: 15px;
+  color: var(--crm-ink);
+}
+.receivable-balance b.warn {
+  color: oklch(0.55 0.16 25);
+}
+.node-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.node-chip {
+  border: 1px solid var(--crm-border);
+  background: #fff;
+  color: var(--crm-ink);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.node-chip:hover {
+  border-color: var(--crm-primary);
+  color: var(--crm-primary);
+}
+.node-chip.active {
+  border-color: var(--crm-primary);
+  background: oklch(0.96 0.02 250);
+  color: var(--crm-primary);
+}
+.field-tip {
+  margin-top: 4px;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .form-block {
   margin-bottom: 18px;
@@ -1401,9 +1674,27 @@ watch(
   background: var(--crm-surface-soft);
   font-size: 13px;
 }
+.health-row.ok {
+  background: oklch(0.97 0.02 145);
+}
+.health-row.pending {
+  background: oklch(0.98 0.01 85);
+}
+.health-row.pending b {
+  color: var(--crm-ink-soft);
+  font-weight: 500;
+}
 .health-row b {
   font-weight: 600;
   color: var(--crm-ink);
+  text-align: right;
+  word-break: break-all;
+}
+.claim-next-hint {
+  margin: 12px 0 0;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
 }
 @media (max-width: 700px) {
   .form-grid-2 {

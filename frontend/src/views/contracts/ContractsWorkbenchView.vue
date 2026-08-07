@@ -1,5 +1,5 @@
 <template>
-  <div class="crm-page contracts-workbench">
+  <div class="crm-page contracts-workbench crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
         <h1>合同回款</h1>
@@ -10,7 +10,9 @@
       </div>
     </header>
 
-    <ContractListView :embedded="true" :open-create-signal="contractCreateTick" />
+    <div class="crm-fit-body">
+      <ContractListView :embedded="true" :open-create-signal="contractCreateTick" />
+    </div>
   </div>
 </template>
 
@@ -28,6 +30,7 @@ const contractCreateTick = ref(0)
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 .sales-head-copy h1 {
   margin: 0;

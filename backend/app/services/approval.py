@@ -7,7 +7,12 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.core.rbac import user_can
-from app.models.asset import BORROW_PENDING, AssetBorrowRequest
+from app.models.asset import (
+    BORROW_PENDING,
+    AssetBorrowItem,
+    AssetBorrowRequest,
+    FixedAsset,
+)
 from app.models.contract import CONTRACT_STATUS_PENDING_APPROVAL, Contract
 from app.models.department import Department
 from app.models.finance import (
@@ -88,6 +93,129 @@ def _can_review_receipt(user: User) -> bool:
 def _can_resolve_appeal(user: User) -> bool:
     role_codes = {r.code for r in user.roles}
     return bool(role_codes & {"admin", "executive", "middle_manager", "hr", "hr_supervisor"})
+
+
+def _contract_brief(db: Session, contract_id: int | None) -> str:
+    if not contract_id:
+        return "—"
+    c = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not c:
+        return f"#{contract_id}"
+    no = c.contract_no or str(c.id)
+    title = (c.title or "").strip()
+    return f"{no} · {title}" if title else no
+
+
+def _receipt_facts(db: Session, r: Receipt) -> list[ApprovalFact]:
+    facts = [
+        ApprovalFact(label="金额", value=f"¥{r.amount}"),
+        ApprovalFact(label="付款方", value=r.payer_name or "—"),
+        ApprovalFact(label="到账日期", value=str(r.paid_date) if r.paid_date else "—"),
+        ApprovalFact(label="关联合同", value=_contract_brief(db, r.contract_id)),
+    ]
+    if r.bank_reference:
+        facts.append(ApprovalFact(label="收款账户", value=str(r.bank_reference)))
+    facts.append(ApprovalFact(label="到账证明", value=r.proof_filename or "未上传"))
+    return facts
+
+
+def _allocation_facts(
+    db: Session, a: ReceiptAllocation, r: Receipt, plan: ReceivablePlan
+) -> list[ApprovalFact]:
+    return [
+        ApprovalFact(label="核销金额", value=f"¥{a.amount}"),
+        ApprovalFact(label="应收计划", value=plan.title or "—"),
+        ApprovalFact(label="收款单号", value=r.receipt_no or "—"),
+        ApprovalFact(label="关联合同", value=_contract_brief(db, r.contract_id)),
+        ApprovalFact(label="付款方", value=r.payer_name or "—"),
+    ]
+
+
+def _receipt_deep_link(contract_id: int | None) -> str:
+    if contract_id:
+        return f"/contracts/{contract_id}"
+    return "/sales?tab=contracts"
+
+
+def _fmt_approval_dt(v: Optional[datetime]) -> str:
+    if not v:
+        return "—"
+    if hasattr(v, "strftime"):
+        return v.strftime("%Y-%m-%d %H:%M")
+    return str(v).replace("T", " ")[:16]
+
+
+def _borrow_assets_brief(db: Session, borrow_id: int) -> tuple[str, int]:
+    rows = (
+        db.query(FixedAsset)
+        .join(AssetBorrowItem, AssetBorrowItem.asset_id == FixedAsset.id)
+        .filter(AssetBorrowItem.request_id == borrow_id)
+        .order_by(FixedAsset.id.asc())
+        .all()
+    )
+    names = [a.name for a in rows if a.name]
+    count = len(names)
+    if count == 0:
+        return "未指定器材", 0
+    if count <= 2:
+        return "、".join(names), count
+    return f"{names[0]}、{names[1]} 等{count}件", count
+
+
+def _asset_borrow_item(
+    db: Session,
+    b: AssetBorrowRequest,
+    *,
+    status_label: str,
+    node: str,
+    can_act: bool,
+    actions: list[str],
+    id_suffix: str = "",
+    applicant_name: Optional[str] = None,
+) -> ApprovalItemOut:
+    assets_label, count = _borrow_assets_brief(db, b.id)
+    purpose = (b.purpose or "").strip() or "—"
+    request_no = b.request_no or str(b.id)
+    title = f"借用 · {assets_label}" if count else f"借用申请 {request_no}"
+    period = f"{_fmt_approval_dt(b.start_time)} ~ {_fmt_approval_dt(b.end_time)}"
+    summary_parts = [
+        f"{count}件" if count else None,
+        purpose if purpose != "—" else None,
+        period,
+    ]
+    summary = " · ".join(p for p in summary_parts if p)
+    facts = [
+        ApprovalFact(label="申请单号", value=request_no),
+        ApprovalFact(label="借用器材", value=assets_label),
+        ApprovalFact(label="用途说明", value=purpose),
+        ApprovalFact(label="借用时段", value=period),
+    ]
+    if b.schedule_ref:
+        facts.append(ApprovalFact(label="关联档期", value=b.schedule_ref))
+    if b.remark:
+        facts.append(ApprovalFact(label="备注", value=b.remark.strip()))
+    if b.reject_reason:
+        facts.append(ApprovalFact(label="驳回原因", value=b.reject_reason.strip()))
+    return _item(
+        id=f"asset_borrow:{b.id}{id_suffix}",
+        type="asset_borrow",
+        category="固定资产",
+        source="资产借用",
+        source_id=request_no,
+        title=title,
+        applicant_name=applicant_name or _user_name(db, b.applicant_id),
+        department_name="—",
+        submitted_at=(b.approved_at or b.created_at) if id_suffix else b.created_at,
+        status=b.status,
+        status_label=status_label,
+        node=node,
+        summary=summary,
+        facts=facts,
+        deep_link=f"/assets?tab=borrow&borrow_id={b.id}",
+        can_act=can_act,
+        actions=actions,
+        meta={"entity_id": b.id},
+    )
 
 
 def _item(
@@ -181,28 +309,13 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
         )
         for b in rows:
             items.append(
-                _item(
-                    id=f"asset_borrow:{b.id}",
-                    type="asset_borrow",
-                    category="固定资产",
-                    source="资产借用",
-                    source_id=b.request_no or str(b.id),
-                    title=b.purpose or f"借用申请 #{b.id}",
-                    applicant_name=_user_name(db, b.applicant_id),
-                    department_name="—",
-                    submitted_at=b.created_at,
-                    status=b.status,
+                _asset_borrow_item(
+                    db,
+                    b,
                     status_label="待审批",
                     node="资产管理员审批",
-                    summary=b.schedule_ref or "资产借用申请",
-                    facts=[
-                        ApprovalFact(label="用途", value=b.purpose or "—"),
-                        ApprovalFact(label="档期", value=b.schedule_ref or "—"),
-                    ],
-                    deep_link="/assets",
                     can_act=True,
                     actions=["approve", "reject", "open"],
-                    meta={"entity_id": b.id},
                 )
             )
 
@@ -339,11 +452,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
                     status_label="待复核",
                     node="财务复核到账",
                     summary=f"¥{r.amount} · {r.payer_name or '—'}",
-                    facts=[
-                        ApprovalFact(label="金额", value=str(r.amount)),
-                        ApprovalFact(label="付款方", value=r.payer_name or "—"),
-                    ],
-                    deep_link="/sales?tab=contracts",
+                    facts=_receipt_facts(db, r),
+                    deep_link=_receipt_deep_link(r.contract_id),
                     can_act=True,
                     actions=["approve", "reject", "open"],
                     meta={"entity_id": r.id, "version": r.version, "contract_id": r.contract_id},
@@ -375,12 +485,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
                     status_label="待审批",
                     node="财务审批核销",
                     summary=f"¥{a.amount} · {plan.title}",
-                    facts=[
-                        ApprovalFact(label="核销金额", value=str(a.amount)),
-                        ApprovalFact(label="应收计划", value=plan.title),
-                        ApprovalFact(label="收款单号", value=r.receipt_no or "—"),
-                    ],
-                    deep_link="/sales?tab=contracts",
+                    facts=_allocation_facts(db, a, r, plan),
+                    deep_link=_receipt_deep_link(r.contract_id),
                     can_act=True,
                     actions=["approve", "reject", "open"],
                     meta={
@@ -520,25 +626,14 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
     )
     for b in rows:
         items.append(
-            _item(
-                id=f"asset_borrow:{b.id}",
-                type="asset_borrow",
-                category="固定资产",
-                source="资产借用",
-                source_id=b.request_no or str(b.id),
-                title=b.purpose or f"借用申请 #{b.id}",
-                applicant_name=_user_name(db, user.id),
-                department_name="—",
-                submitted_at=b.created_at,
-                status=b.status,
+            _asset_borrow_item(
+                db,
+                b,
                 status_label="待审批",
                 node="等待资产管理员",
-                summary=b.schedule_ref or "",
-                facts=[],
-                deep_link="/assets",
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": b.id},
+                applicant_name=_user_name(db, user.id),
             )
         )
 
@@ -670,11 +765,11 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
                 status_label="待复核",
                 node="等待财务复核",
                 summary=f"¥{r.amount}",
-                facts=[],
-                deep_link="/sales?tab=contracts",
+                facts=_receipt_facts(db, r),
+                deep_link=_receipt_deep_link(r.contract_id),
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": r.id, "version": r.version},
+                meta={"entity_id": r.id, "version": r.version, "contract_id": r.contract_id},
             )
         )
 
@@ -706,11 +801,15 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
                 status_label="待审批",
                 node="等待财务审批",
                 summary=f"¥{a.amount} · {plan.title}",
-                facts=[],
-                deep_link="/sales?tab=contracts",
+                facts=_allocation_facts(db, a, r, plan),
+                deep_link=_receipt_deep_link(r.contract_id),
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": a.id, "version": a.version},
+                meta={
+                    "entity_id": a.id,
+                    "version": a.version,
+                    "contract_id": r.contract_id,
+                },
             )
         )
 
@@ -799,25 +898,14 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
     )
     for b in rows:
         items.append(
-            _item(
-                id=f"asset_borrow:{b.id}:done",
-                type="asset_borrow",
-                category="固定资产",
-                source="资产借用",
-                source_id=b.request_no or str(b.id),
-                title=b.purpose or f"借用申请 #{b.id}",
-                applicant_name=_user_name(db, b.applicant_id),
-                department_name="—",
-                submitted_at=b.approved_at or b.created_at,
-                status=b.status,
+            _asset_borrow_item(
+                db,
+                b,
                 status_label="已处理",
                 node="借用审批完成",
-                summary=b.status,
-                facts=[],
-                deep_link="/assets",
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": b.id},
+                id_suffix=":done",
             )
         )
 
@@ -955,11 +1043,11 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
                 status_label="已处理",
                 node="到款复核完成",
                 summary=f"¥{r.amount} · {r.status}",
-                facts=[],
-                deep_link="/sales?tab=contracts",
+                facts=_receipt_facts(db, r),
+                deep_link=_receipt_deep_link(r.contract_id),
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": r.id},
+                meta={"entity_id": r.id, "contract_id": r.contract_id},
             )
         )
 
@@ -994,11 +1082,11 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
                 status_label=label,
                 node="核销审批完成",
                 summary=f"¥{a.amount} · {label}",
-                facts=[],
-                deep_link="/sales?tab=contracts",
+                facts=_allocation_facts(db, a, r, plan),
+                deep_link=_receipt_deep_link(r.contract_id),
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": a.id},
+                meta={"entity_id": a.id, "contract_id": r.contract_id},
             )
         )
 
@@ -1079,17 +1167,48 @@ def _parse_approval_id(approval_id: str) -> tuple[str, int]:
 
 def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
     submitted = ApprovalTimelineNode(
-        name="提交申请",
+        name="登记到账" if item.type == "receipt" else "提交申请",
         status="done",
         actor_name=item.applicant_name,
         acted_at=item.submitted_at,
     )
+    if item.can_act:
+        current_status = "pending"
+        current_comment = "待你处理"
+    elif item.status_label.startswith("已"):
+        current_status = "done"
+        current_comment = None
+    else:
+        current_status = "active"
+        current_comment = "等待审批人处理"
+    # 到款/核销保留业务提示；其它类型不再把摘要塞进节点，避免看起来像审批人
+    if item.type == "receipt" and item.can_act:
+        current_comment = "确认银行到账是否属实"
+    elif item.type == "allocation" and item.can_act:
+        current_comment = "核对核销金额与合同应收"
     current = ApprovalTimelineNode(
         name=item.node or "当前节点",
-        status="pending" if item.can_act else ("done" if item.status_label.startswith("已") else "active"),
-        comment=item.summary or None,
+        status=current_status,
+        comment=current_comment,
     )
-    return [submitted, current]
+    nodes = [submitted, current]
+    if item.type == "receipt" and item.can_act:
+        nodes.append(
+            ApprovalTimelineNode(
+                name="核销到应收",
+                status="waiting",
+                comment="确认到账后再提交核销",
+            )
+        )
+    elif item.type == "allocation" and item.can_act:
+        nodes.append(
+            ApprovalTimelineNode(
+                name="计入应收",
+                status="waiting",
+                comment="审批通过后生效",
+            )
+        )
+    return nodes
 
 
 def get_approval(db: Session, user: User, approval_id: str) -> ApprovalDetailOut:

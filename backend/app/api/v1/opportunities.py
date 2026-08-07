@@ -8,6 +8,7 @@ from app.api.deps import PermissionChecker
 from app.database import get_db
 from app.models.user import User
 from app.schemas.contract import ContractOut
+from app.schemas.lead import SalesJourneyOut
 from app.schemas.opportunity import (
     OpportunityActivityCreate,
     OpportunityActivityOut,
@@ -20,6 +21,7 @@ from app.schemas.opportunity import (
     OpportunityUpdate,
 )
 from app.services import opportunity as opportunity_service
+from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/opportunities", tags=["商机管理"])
 
@@ -74,6 +76,20 @@ def get_opportunity(
 ) -> OpportunityDetailOut:
     opp = opportunity_service.get_opportunity_detail(db, current_user, opportunity_id)
     return OpportunityDetailOut.model_validate(opp)
+
+
+@router.get(
+    "/{opportunity_id}/journey",
+    response_model=SalesJourneyOut,
+    summary="销售旅程",
+)
+def get_opportunity_journey(
+    opportunity_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["opportunity:view"]))],
+) -> SalesJourneyOut:
+    opp = opportunity_service.get_opportunity_detail(db, current_user, opportunity_id)
+    return SalesJourneyOut(**sales_journey_service.build_sales_journey(db, opportunity=opp))
 
 
 @router.patch("/{opportunity_id}", response_model=OpportunityOut, summary="编辑商机")

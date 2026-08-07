@@ -87,6 +87,12 @@ def enrich_lead(db: Session, lead: Lead) -> Lead:
             LEAD_STATUS_FOLLOWING,
         }
     )
+    if lead.status == LEAD_STATUS_CONVERTED and not lead.converted_opportunity_id:
+        from app.services.sales_journey import resolve_converted_opportunity_id
+
+        opp_id = resolve_converted_opportunity_id(db, lead)
+        if opp_id:
+            lead.converted_opportunity_id = opp_id
     return lead
 
 
@@ -151,8 +157,9 @@ def can_manage_lead_pool(user: User) -> bool:
 
 
 def can_self_follow_on_create(user: User) -> bool:
-    """全员录入一律进待分配池，由管理层统一分配（不再支持录入即自跟进）。"""
-    return False
+    """销售录入后可直接自己跟进；其他岗位仍进管理层待分配池。"""
+    role_codes = {r.code for r in (user.roles or [])}
+    return "sales" in role_codes
 
 
 def assert_can_view(user: User, lead: Lead) -> None:
@@ -203,12 +210,12 @@ def create_lead(db: Session, user: User, payload: LeadCreate, *, force: bool = F
             detail=f"存在确定重复线索（ID: {ids}）。确认仍要录入请加参数 force=true",
         )
 
-    # 全员录入进待分配池；不再支持录入即自跟进
+    # 销售默认录入即自跟进；非销售（或显式 self_follow=false）进待分配池
     want_self = payload.self_follow
     if want_self is None:
         want_self = can_self_follow_on_create(user)
     if want_self and not can_self_follow_on_create(user):
-        raise HTTPException(status_code=403, detail="当前策略录入后不可自己跟进，请交待分配池")
+        raise HTTPException(status_code=403, detail="仅销售角色录入后可自己跟进，请交待分配池")
 
     contact_name = (payload.name or "").strip() or payload.company_name.strip()
     lead = Lead(
@@ -848,6 +855,7 @@ def convert_lead(db: Session, user: User, lead_id: int, payload: LeadConvertRequ
     now = _now()
     lead.status = LEAD_STATUS_CONVERTED
     lead.converted_customer_id = customer.id
+    lead.converted_opportunity_id = opp.id
     lead.converted_at = now
     write_lead_log(
         db,

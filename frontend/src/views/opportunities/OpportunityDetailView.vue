@@ -16,8 +16,21 @@
             {{ OPP_STAGE_LABEL[opp.stage] || opp.stage }}
           </el-tag>
           <small>{{ opp.opportunity_no }} · {{ opp.customer_name || `客户#${opp.customer_id}` }}</small>
+          <el-button
+            v-if="opp.source_lead_id"
+            link
+            type="primary"
+            @click="goSourceLead"
+          >
+            来源线索 #{{ opp.source_lead_id }}
+          </el-button>
         </div>
         <h2 class="opp-title">{{ opp.title }}</h2>
+        <SalesJourneyBar
+          class="journey-in-card"
+          :opportunity-id="opp.id"
+          hide-self-opp
+        />
       </el-card>
 
       <el-card class="stack-gap">
@@ -57,22 +70,51 @@
 
       <el-card class="stack-gap">
         <template #header>阶段与操作轨迹</template>
-        <el-timeline v-if="opp.activities?.length">
+        <el-timeline v-if="timelineItems.length">
           <el-timeline-item
-            v-for="act in opp.activities"
-            :key="act.id"
-            :timestamp="formatTime(act.created_at)"
+            v-for="item in timelineItems"
+            :key="item.key"
+            :timestamp="item.timestamp"
             placement="top"
           >
-            <div class="fu-item">
-              <el-tag size="small" :type="activityTag(act.activity_type)">
-                {{ activityLabel(act.activity_type) }}
+            <div v-if="item.kind === 'activity'" class="fu-item">
+              <el-tag size="small" :type="activityTag(item.activity!.activity_type)">
+                {{ activityLabel(item.activity!.activity_type) }}
               </el-tag>
-              <span class="muted">{{ act.user_name || (act.user_id ? `用户#${act.user_id}` : '系统') }}</span>
-              <p>{{ act.content }}</p>
-              <p v-if="act.evidence" class="muted">
-                {{ act.activity_type === 'contract' ? '合同：' : '依据：' }}{{ act.evidence }}
+              <span class="muted">
+                {{
+                  item.activity!.user_name ||
+                  (item.activity!.user_id ? `用户#${item.activity!.user_id}` : '系统')
+                }}
+              </span>
+              <p>{{ item.activity!.content }}</p>
+              <p v-if="item.activity!.evidence" class="muted">
+                {{ item.activity!.activity_type === 'contract' ? '合同：' : '依据：' }}
+                {{ item.activity!.evidence }}
               </p>
+            </div>
+            <div v-else class="contract-group">
+              <div class="contract-group-head" @click="toggleContractGroup(item.key)">
+                <el-tag size="small" type="success">合同</el-tag>
+                <b>{{ item.contractNo || '关联合同' }}</b>
+                <span class="muted">{{ item.summary }}</span>
+                <el-button link type="primary">
+                  {{ expandedContractKeys.has(item.key) ? '收起' : `展开 ${item.activities!.length} 条` }}
+                </el-button>
+              </div>
+              <div v-if="expandedContractKeys.has(item.key)" class="contract-group-body">
+                <div
+                  v-for="act in item.activities"
+                  :key="act.id"
+                  class="contract-step"
+                >
+                  <small class="muted">{{ formatTime(act.created_at) }}</small>
+                  <span>
+                    {{ act.user_name || (act.user_id ? `用户#${act.user_id}` : '系统') }}
+                    · {{ act.content }}
+                  </span>
+                </div>
+              </div>
             </div>
           </el-timeline-item>
         </el-timeline>
@@ -145,6 +187,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   BUSINESS_TYPE_OPTIONS,
   OPP_STAGE_LABEL,
@@ -152,6 +195,7 @@ import {
   createOpportunityActivity,
   draftContractFromOpportunity,
   fetchOpportunityDetail,
+  type OpportunityActivity,
   type OpportunityDetail,
 } from '@/api/opportunities'
 
@@ -161,6 +205,62 @@ const loading = ref(false)
 const saving = ref(false)
 const opp = ref<OpportunityDetail | null>(null)
 const followVisible = ref(false)
+const expandedContractKeys = ref(new Set<string>())
+
+type TimelineItem = {
+  key: string
+  kind: 'activity' | 'contract_group'
+  timestamp: string
+  activity?: OpportunityActivity
+  contractNo?: string
+  summary?: string
+  activities?: OpportunityActivity[]
+  sortAt?: number
+}
+
+const timelineItems = computed<TimelineItem[]>(() => {
+  const acts = opp.value?.activities || []
+  if (!acts.length) return []
+
+  const contractBuckets = new Map<string, OpportunityActivity[]>()
+  const singles: OpportunityActivity[] = []
+  for (const act of acts) {
+    if (act.activity_type === 'contract') {
+      const no = act.evidence || '合同'
+      const bucket = contractBuckets.get(no) || []
+      bucket.push(act)
+      contractBuckets.set(no, bucket)
+    } else {
+      singles.push(act)
+    }
+  }
+
+  const items: TimelineItem[] = singles.map((act) => ({
+    key: `act-${act.id}`,
+    kind: 'activity' as const,
+    timestamp: formatTime(act.created_at),
+    activity: act,
+    sortAt: new Date(act.created_at).getTime(),
+  }))
+
+  for (const [contractNo, group] of contractBuckets) {
+    const sorted = [...group].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+    const latest = sorted[0]
+    items.push({
+      key: `contract-${contractNo}-${latest.id}`,
+      kind: 'contract_group',
+      timestamp: formatTime(latest.created_at),
+      contractNo,
+      summary: latest.content || `${sorted.length} 条合同节点`,
+      activities: sorted,
+      sortAt: new Date(latest.created_at).getTime(),
+    })
+  }
+
+  return items.sort((a, b) => (b.sortAt || 0) - (a.sortAt || 0))
+})
 
 const followForm = reactive({
   action_type: '需求访谈',
@@ -191,6 +291,17 @@ const canDraft = computed(
 
 function goLinkedContract() {
   if (linkedContractId.value) router.push(`/contracts/${linkedContractId.value}`)
+}
+
+function goSourceLead() {
+  if (opp.value?.source_lead_id) router.push(`/leads/${opp.value.source_lead_id}`)
+}
+
+function toggleContractGroup(key: string) {
+  const next = new Set(expandedContractKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedContractKeys.value = next
 }
 const stageChanged = computed(
   () => !!opp.value && !!followForm.stage && followForm.stage !== opp.value.stage,
@@ -366,8 +477,11 @@ onMounted(load)
   color: var(--crm-ink-soft);
 }
 .opp-title {
-  margin: 0;
+  margin: 0 0 12px;
   font-size: 20px;
+}
+.journey-in-card {
+  margin-top: 4px;
 }
 .detail-grid {
   display: grid;
@@ -405,6 +519,28 @@ onMounted(load)
   color: var(--crm-ink-soft);
   font-size: 13px;
   margin-left: 8px;
+}
+.contract-group-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  cursor: pointer;
+}
+.contract-group-body {
+  margin-top: 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--crm-border);
+}
+.contract-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.contract-step:last-child {
+  margin-bottom: 0;
 }
 @media (max-width: 720px) {
   .detail-grid {

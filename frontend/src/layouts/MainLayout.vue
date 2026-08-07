@@ -606,6 +606,9 @@ onUnmounted(() => {
 
 .content-shell {
   min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
   background: var(--crm-canvas);
 }
 
@@ -678,9 +681,20 @@ onUnmounted(() => {
 
 .main {
   min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: var(--crm-space-5) var(--crm-space-6);
   background: var(--crm-canvas);
-  overflow-x: hidden;
+  overflow: hidden;
+}
+
+.main > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
 }
 
 .account-dialog-grid {

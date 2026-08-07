@@ -1,37 +1,51 @@
 <template>
-  <div class="crm-page schedule-workbench" v-loading="loading">
+  <div class="crm-page schedule-workbench crm-fit-page" v-loading="loading">
     <header class="sales-head">
       <div class="sales-head-copy">
         <h1>排期会议</h1>
-        <p>管人员日历档期与冲突；可挂到交付项目/任务，但不等于计划节点，也不影响项目进度。</p>
+        <p>人员档期与冲突一览；可挂交付项目，不影响项目进度。</p>
       </div>
       <div class="sales-head-actions">
         <el-button type="primary" @click="openCreate()">＋ 新建排期</el-button>
       </div>
     </header>
 
-    <div class="schedule-tabs">
-      <button
-        v-for="item in tabs"
-        :key="item.key"
-        type="button"
-        class="schedule-tab"
-        :class="{ active: tab === item.key }"
-        @click="setTab(item.key)"
-      >
-        {{ item.label }}
-      </button>
+    <div class="schedule-toolbar">
+      <div class="schedule-tabs">
+        <button
+          v-for="item in tabs"
+          :key="item.key"
+          type="button"
+          class="schedule-tab"
+          :class="{ active: tab === item.key }"
+          @click="setTab(item.key)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <section class="schedule-summary" aria-label="当前范围统计">
+        <div>
+          <small>{{ tab === 'month' ? '本月' : '本周' }}</small>
+          <b>{{ scopeStats.total }}</b>
+        </div>
+        <div>
+          <small>待确认</small>
+          <b>{{ scopeStats.pending }}</b>
+        </div>
+        <div :class="{ alert: scopeStats.conflict_count > 0 }">
+          <small>冲突</small>
+          <b class="danger">{{ scopeStats.conflict_count }}</b>
+        </div>
+        <div>
+          <small>与我相关</small>
+          <b>{{ scopeStats.mine }}</b>
+        </div>
+      </section>
     </div>
 
-    <section class="schedule-summary">
-      <div><small>{{ tab === 'month' ? '本月排期' : '本周排期' }}</small><b>{{ scopeStats.total }}</b></div>
-      <div><small>待确认</small><b>{{ scopeStats.pending }}</b></div>
-      <div><small>时间冲突</small><b class="danger">{{ scopeStats.conflict_count }}</b></div>
-      <div><small>与我相关</small><b>{{ scopeStats.mine }}</b></div>
-    </section>
-
+    <div class="crm-fit-body" :class="{ 'is-scroll': tab !== 'week' && tab !== 'month' }">
     <!-- 周视图 -->
-    <div v-if="tab === 'week'" class="calendar-shell">
+    <div v-if="tab === 'week'" class="calendar-shell" :class="{ 'drawer-open': drawerVisible }">
       <div class="calendar-main">
         <div class="calendar-nav">
           <el-button @click="shiftWeek(-1)">上一周</el-button>
@@ -82,13 +96,19 @@
           </template>
         </div>
       </div>
-      <aside class="calendar-side">
+      <aside v-show="!drawerVisible" class="calendar-side">
         <div class="side-card">
           <h3>冲突提醒</h3>
-          <div v-for="c in conflictItems.slice(0, 5)" :key="c.id" class="side-row">
+          <button
+            v-for="c in conflictItems.slice(0, 5)"
+            :key="c.id"
+            type="button"
+            class="side-row side-row-btn"
+            @click="openDrawer(c)"
+          >
             <span>{{ c.title }}</span>
             <b>{{ c.employee_name }}</b>
-          </div>
+          </button>
           <div v-if="!conflictItems.length" class="side-row"><span>当前范围无冲突</span><b>—</b></div>
         </div>
         <div class="side-card">
@@ -138,8 +158,8 @@
       </div>
     </div>
 
-    <!-- 讲师 / 主播 -->
-    <template v-else-if="tab === 'instructor' || tab === 'streamer'">
+    <!-- 讲师 / 主播 / 拍摄剪辑 -->
+    <template v-else-if="isResourceTab(tab)">
       <div class="calendar-main" style="margin-bottom: 14px">
         <div class="calendar-nav">
           <el-button @click="shiftWeek(-1)">上一周</el-button>
@@ -164,7 +184,7 @@
           </div>
         </article>
         <div v-if="!resourceLoads.length" style="color: var(--crm-ink-soft); font-size: 13px">
-          当前范围暂无{{ tab === 'instructor' ? '讲师' : '主播' }}排期
+          当前范围暂无{{ resourceTabLabel(tab) }}排期
         </div>
       </div>
       <el-table :data="resourceRows" stripe @row-click="openDrawer">
@@ -187,101 +207,128 @@
         本周含 {{ weekendCount }} 条周末排期（统一周视图仅展示周一至周五，完整列表见本表）。
       </p>
     </template>
+    </div>
 
     <!-- 详情抽屉 -->
-    <el-drawer v-model="drawerVisible" :title="drawer?.title || '排期详情'" size="480px" destroy-on-close>
+    <el-drawer
+      v-model="drawerVisible"
+      size="440px"
+      destroy-on-close
+      class="schedule-detail-drawer"
+      :with-header="false"
+    >
       <template v-if="drawer">
-        <div class="drawer-section">
-          <el-tag size="small">{{ SCHEDULE_STATUS_LABEL[drawer.status] || drawer.status }}</el-tag>
-          <el-tag v-if="drawer.has_conflict" type="danger" size="small" style="margin-left: 6px">冲突</el-tag>
-          <el-tag size="small" type="info" style="margin-left: 6px">
-            {{ typeLabel(drawer.schedule_type) }}
-          </el-tag>
-        </div>
-        <div class="drawer-section">
-          <h4>时间与人员</h4>
-          <div class="drawer-grid">
-            <div><small>人员</small><b>{{ drawer.employee_name || '—' }}</b></div>
-            <div><small>角色</small><b>{{ resourceLabel(drawer.resource_type) }}</b></div>
-            <div><small>开始</small><b>{{ formatTime(drawer.start_time) }}</b></div>
-            <div><small>结束</small><b>{{ formatTime(drawer.end_time) }}</b></div>
-            <div><small>计划工时</small><b>{{ drawer.planned_hours ?? '—' }}h</b></div>
-            <div><small>地点</small><b>{{ drawer.location || '—' }}</b></div>
-          </div>
-        </div>
-        <div class="drawer-section">
-          <h4>挂接交付（可选）</h4>
-          <div class="drawer-grid">
-            <div>
-              <small>项目</small>
-              <b>
-                <el-button
-                  v-if="drawer.project_id"
-                  link
-                  type="primary"
-                  @click="$router.push(`/projects/${drawer.project_id}`)"
-                >
-                  {{ drawer.project_no }} · {{ drawer.project_name }}
-                </el-button>
-                <span v-else>—</span>
-              </b>
+        <div class="sch-drawer">
+          <header class="sch-drawer-hero">
+            <div class="sch-drawer-top">
+              <div class="sch-drawer-tags">
+                <el-tag :type="statusTagType(drawer.status)" effect="light" size="small">
+                  {{ SCHEDULE_STATUS_LABEL[drawer.status] || drawer.status }}
+                </el-tag>
+                <el-tag v-if="drawer.has_conflict" type="danger" effect="light" size="small">冲突</el-tag>
+                <el-tag type="info" effect="plain" size="small">{{ typeLabel(drawer.schedule_type) }}</el-tag>
+              </div>
+              <button type="button" class="sch-drawer-close" aria-label="关闭" @click="drawerVisible = false">
+                ×
+              </button>
             </div>
-            <div><small>项目任务</small><b>{{ drawer.task_no ? `${drawer.task_no} · ${drawer.task_title}` : '—' }}</b></div>
-            <div>
-              <small>工单</small>
-              <b>
-                <el-button
-                  v-if="drawer.ticket_id"
-                  link
-                  type="primary"
-                  @click="$router.push(`/tickets/${drawer.ticket_id}`)"
-                >
-                  {{ drawer.ticket_no }}
-                </el-button>
-                <span v-else>—</span>
-              </b>
+            <h2>{{ drawer.title || '排期详情' }}</h2>
+            <p class="sch-drawer-meta">
+              {{ drawer.employee_name || '未指定人员' }}
+              <span> · {{ resourceLabel(drawer.resource_type) }}</span>
+            </p>
+            <p class="sch-drawer-time">
+              {{ formatRange(drawer) }}
+              <span v-if="drawer.planned_hours != null"> · {{ drawer.planned_hours }}h</span>
+            </p>
+          </header>
+
+          <div class="sch-drawer-body">
+            <div v-if="drawer.has_conflict" class="sch-conflict">
+              <div class="sch-conflict-title">时间冲突</div>
+              <button
+                v-for="c in drawer.conflicts || []"
+                :key="c.id"
+                type="button"
+                class="sch-conflict-row"
+                @click="openConflict(c)"
+              >
+                <span>{{ c.title }}</span>
+                <b>{{ SCHEDULE_STATUS_LABEL[c.status] || c.status }}</b>
+              </button>
+              <div v-if="!(drawer.conflicts || []).length" class="sch-conflict-empty">存在冲突，可打开完整详情查看</div>
             </div>
-            <div>
-              <small>飞书</small>
-              <b>{{ FEISHU_SYNC_LABEL[drawer.feishu_sync_status || 'none'] }}</b>
+
+            <dl class="sch-kv">
+              <div class="sch-kv-row">
+                <dt>地点</dt>
+                <dd>{{ drawer.location || '—' }}</dd>
+              </div>
+              <div class="sch-kv-row">
+                <dt>飞书同步</dt>
+                <dd>{{ FEISHU_SYNC_LABEL[drawer.feishu_sync_status || 'none'] }}</dd>
+              </div>
+              <div v-if="drawer.project_id" class="sch-kv-row">
+                <dt>项目</dt>
+                <dd>
+                  <el-button link type="primary" @click="$router.push(`/projects/${drawer.project_id}`)">
+                    {{ drawer.project_no }} · {{ drawer.project_name }}
+                  </el-button>
+                </dd>
+              </div>
+              <div v-if="drawer.task_no" class="sch-kv-row">
+                <dt>任务</dt>
+                <dd>{{ drawer.task_no }} · {{ drawer.task_title }}</dd>
+              </div>
+              <div v-if="drawer.ticket_id" class="sch-kv-row">
+                <dt>工单</dt>
+                <dd>
+                  <el-button link type="primary" @click="$router.push(`/tickets/${drawer.ticket_id}`)">
+                    {{ drawer.ticket_no }}
+                  </el-button>
+                </dd>
+              </div>
+            </dl>
+
+            <section v-if="drawer.content" class="sch-note">
+              <h4>说明</h4>
+              <p>{{ drawer.content }}</p>
+            </section>
+            <section v-if="drawer.coordination_note" class="sch-note">
+              <h4>协调说明</h4>
+              <p>{{ drawer.coordination_note }}</p>
+            </section>
+          </div>
+
+          <footer class="sch-drawer-footer">
+            <div class="sch-drawer-actions">
+              <el-button v-if="drawer.status === 'pending'" type="primary" @click="onConfirm">
+                确认本人档期
+              </el-button>
+              <el-button v-if="drawer.status === 'pending'" @click="onCoordinate">请求协调</el-button>
+              <el-button v-if="drawer.status === 'confirmed'" type="primary" @click="onStart">开始执行</el-button>
+              <el-button
+                v-if="['confirmed', 'in_progress'].includes(drawer.status)"
+                type="success"
+                @click="openComplete"
+              >
+                完成并填工时
+              </el-button>
             </div>
-          </div>
-        </div>
-        <div v-if="drawer.coordination_note" class="drawer-section">
-          <h4>协调说明</h4>
-          <p style="margin: 0; white-space: pre-wrap">{{ drawer.coordination_note }}</p>
-        </div>
-        <div v-if="drawer.content" class="drawer-section">
-          <h4>说明</h4>
-          <p style="margin: 0; white-space: pre-wrap">{{ drawer.content }}</p>
-        </div>
-        <div v-if="drawer.has_conflict" class="drawer-section">
-          <h4>冲突项</h4>
-          <div v-for="c in drawer.conflicts || []" :key="c.id" class="side-row">
-            <span>{{ c.title }}</span>
-            <b>{{ SCHEDULE_STATUS_LABEL[c.status] || c.status }}</b>
-          </div>
-        </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 8px">
-          <el-button v-if="drawer.status === 'pending'" type="primary" @click="onConfirm">确认本人档期</el-button>
-          <el-button v-if="drawer.status === 'pending'" @click="onCoordinate">请求协调</el-button>
-          <el-button v-if="drawer.status === 'confirmed'" @click="onStart">开始执行</el-button>
-          <el-button
-            v-if="['confirmed', 'in_progress'].includes(drawer.status)"
-            type="success"
-            @click="openComplete"
-          >
-            完成并填工时
-          </el-button>
-          <el-button
-            v-if="!['completed', 'cancelled'].includes(drawer.status)"
-            type="danger"
-            plain
-            @click="onCancel"
-          >
-            取消排期
-          </el-button>
-          <el-button @click="$router.push(`/schedules/${drawer.id}`)">完整详情页</el-button>
+            <div class="sch-drawer-links">
+              <el-button
+                v-if="!['completed', 'cancelled'].includes(drawer.status)"
+                type="danger"
+                link
+                @click="onCancel"
+              >
+                取消排期
+              </el-button>
+              <el-button link type="primary" @click="$router.push(`/schedules/${drawer.id}`)">
+                完整详情
+              </el-button>
+            </div>
+          </footer>
         </div>
       </template>
     </el-drawer>
@@ -410,25 +457,43 @@ import {
   createSchedule,
   fetchResourceLoad,
   fetchResourceOptions,
+  fetchScheduleDetail,
   fetchScheduleStats,
   fetchSchedules,
   startSchedule,
   type ResourceLoad,
   type ResourceOption,
   type Schedule,
+  type ScheduleConflict,
   type ScheduleStats,
 } from '@/api/schedules'
 import { fetchProjects, fetchProjectTasks, type Project, type ProjectTask } from '@/api/projects'
 import { useUserStore } from '@/stores/user'
 
-type TabKey = 'week' | 'month' | 'instructor' | 'streamer'
+type TabKey = 'week' | 'month' | 'instructor' | 'streamer' | 'shooting_edit'
+type ResourceTabKey = 'instructor' | 'streamer' | 'shooting_edit'
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: 'week', label: '周视图' },
   { key: 'month', label: '月视图' },
   { key: 'instructor', label: '讲师档期' },
   { key: 'streamer', label: '主播档期' },
+  { key: 'shooting_edit', label: '拍摄剪辑档期' },
 ]
+
+const RESOURCE_TAB_LABELS: Record<ResourceTabKey, string> = {
+  instructor: '讲师',
+  streamer: '主播',
+  shooting_edit: '拍摄剪辑',
+}
+
+function isResourceTab(key: TabKey): key is ResourceTabKey {
+  return key === 'instructor' || key === 'streamer' || key === 'shooting_edit'
+}
+
+function resourceTabLabel(key: TabKey) {
+  return isResourceTab(key) ? RESOURCE_TAB_LABELS[key] : ''
+}
 
 const route = useRoute()
 const loading = ref(false)
@@ -538,9 +603,7 @@ const scopeStats = computed(() => {
 
 const conflictItems = computed(() => items.value.filter((x) => x.has_conflict))
 const resourceRows = computed(() =>
-  items.value.filter((x) =>
-    tab.value === 'instructor' ? x.resource_type === 'instructor' : x.resource_type === 'streamer',
-  ),
+  isResourceTab(tab.value) ? items.value.filter((x) => x.resource_type === tab.value) : [],
 )
 const weekendCount = computed(
   () =>
@@ -775,6 +838,14 @@ function resourceLabel(v: string) {
   return SCHEDULE_RESOURCE_OPTIONS.find((x) => x.value === v)?.label || v
 }
 
+function statusTagType(status?: string | null) {
+  if (status === 'confirmed' || status === 'in_progress') return 'success'
+  if (status === 'completed') return 'info'
+  if (status === 'cancelled') return 'info'
+  if (status === 'pending') return 'warning'
+  return undefined
+}
+
 function relationText(row: Schedule) {
   if (row.task_no) return `任务 · ${row.task_no}`
   if (row.ticket_no) return `工单 · ${row.ticket_no}`
@@ -812,8 +883,7 @@ async function fetchScheduleItems() {
   loading.value = true
   try {
     const range = rangeParams()
-    const resourceType =
-      tab.value === 'instructor' ? 'instructor' : tab.value === 'streamer' ? 'streamer' : undefined
+    const resourceType = isResourceTab(tab.value) ? tab.value : undefined
     const { data } = await fetchSchedules({
       ...range,
       resource_type: resourceType,
@@ -821,8 +891,8 @@ async function fetchScheduleItems() {
       page_size: 100,
     })
     items.value = data.items
-    if (tab.value === 'week' || tab.value === 'instructor' || tab.value === 'streamer') {
-      const rt = tab.value === 'streamer' ? 'streamer' : 'instructor'
+    if (tab.value === 'week' || isResourceTab(tab.value)) {
+      const rt = isResourceTab(tab.value) ? tab.value : 'instructor'
       const { data: load } = await fetchResourceLoad({
         resource_type: rt,
         date_from: range.date_from,
@@ -867,6 +937,20 @@ function openDrawer(row: Schedule) {
   drawerVisible.value = true
 }
 
+async function openConflict(c: ScheduleConflict) {
+  const found = items.value.find((x) => x.id === c.id)
+  if (found) {
+    openDrawer(found)
+    return
+  }
+  try {
+    const { data } = await fetchScheduleDetail(c.id)
+    openDrawer(data)
+  } catch {
+    ElMessage.warning('无法打开冲突排期')
+  }
+}
+
 async function searchProjects(q: string) {
   projectLoading.value = true
   try {
@@ -888,7 +972,7 @@ async function onProjectChange(pid?: number) {
 async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.schedule_type = 'internal_training'
-  form.resource_type = tab.value === 'streamer' ? 'streamer' : 'instructor'
+  form.resource_type = isResourceTab(tab.value) ? tab.value : 'instructor'
   form.employee_id = resources.value[0]?.id
   form.project_id = undefined
   form.project_task_id = undefined
@@ -948,12 +1032,9 @@ async function onCreate() {
     if (!Number.isNaN(start.getTime())) {
       anchor.value = startOfDay(start)
     }
-    if (
-      (tab.value === 'instructor' && data.resource_type !== 'instructor') ||
-      (tab.value === 'streamer' && data.resource_type !== 'streamer')
-    ) {
+    if (isResourceTab(tab.value) && data.resource_type !== tab.value) {
       ElMessage.info(
-        `当前在「${tab.value === 'streamer' ? '主播' : '讲师'}排期」页，该条资源角色为「${resourceLabel(data.resource_type)}」，请切换对应页签查看`,
+        `当前在「${resourceTabLabel(tab.value)}排期」页，该条资源角色为「${resourceLabel(data.resource_type)}」，请切换对应页签查看`,
       )
     }
     await reload()

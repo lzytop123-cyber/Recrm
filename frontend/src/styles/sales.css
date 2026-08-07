@@ -67,48 +67,6 @@
   color: var(--crm-ink);
 }
 
-.management-only-note,
-.employee-pool-note {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid color-mix(in oklab, var(--crm-primary) 28%, var(--crm-border));
-  background: var(--crm-primary-soft);
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-}
-
-.management-only-note > .note-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--crm-surface);
-  display: grid;
-  place-items: center;
-  color: var(--crm-primary);
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.management-only-note b,
-.management-only-note small,
-.employee-pool-note b,
-.employee-pool-note span {
-  display: block;
-}
-
-.management-only-note small,
-.employee-pool-note span {
-  color: var(--crm-ink-soft);
-  margin-top: 3px;
-  font-size: 12px;
-}
-
-.employee-pool-note {
-  justify-content: space-between;
-}
-
 .sales-quota-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

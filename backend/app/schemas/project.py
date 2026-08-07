@@ -178,6 +178,7 @@ class ProjectTaskOut(BaseModel):
     milestone_name: Optional[str] = None
     assignee_name: Optional[str] = None
     department_name: Optional[str] = None
+    ticket_no: Optional[str] = None
     due_status: Optional[str] = None  # ok/overdue/done
     schedule_booked: int = 0  # 待确认/已确认/进行中
     schedule_completed: int = 0  # 已完成排期数

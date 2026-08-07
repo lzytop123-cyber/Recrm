@@ -44,16 +44,9 @@
           <span>{{ selectedIds.length ? '可发起批量分配' : '仅待分配线索可勾选' }}</span>
         </button>
       </section>
-      <div class="management-only-note">
-        <span class="note-icon">总</span>
-        <div>
-          <b>管理层线索总览</b>
-          <small>集中查看全员录入、待分配、已分配、跟进、释放和转化状态；只有待分配线索可以勾选分配。</small>
-        </div>
-      </div>
     </template>
 
-    <!-- 我的线索：对齐原型 quota-strip + employee-pool-note -->
+    <!-- 我的线索：对齐原型 quota-strip -->
     <template v-else-if="embedded && pool === 'mine'">
       <section class="sales-quota-strip">
         <div class="quota-item">
@@ -73,10 +66,6 @@
           <b>{{ stats?.converted_month ?? 0 }} 条</b>
         </div>
       </section>
-      <div class="employee-pool-note">
-        <b>普通员工只查看分配给自己的线索</b>
-        <span>未分配线索及其他员工线索不会出现在此页面。</span>
-      </div>
     </template>
 
     <template v-else>
@@ -111,14 +100,9 @@
           <strong>仅我的线索</strong>
         </div>
       </section>
-
-      <section v-if="canManagePool" class="crm-panel manage-note">
-        <b>管理层线索总览</b>
-        <span>含待分配与已分配线索；仅待分配/已退回可勾选分配，已分配状态会显示负责人。</span>
-      </section>
     </template>
 
-    <section class="crm-panel" :class="{ 'allocation-panel': embedded && pool === 'public' }">
+    <section class="crm-panel" :class="{ 'allocation-panel': embedded && pool === 'public', 'crm-fit-panel': embedded }">
       <div class="toolbar" :class="{ 'allocation-toolbar': embedded && pool === 'public' }">
         <div class="filters">
           <el-radio-group v-if="!embedded" v-model="pool" @change="reload">
@@ -197,10 +181,12 @@
         </div>
       </div>
 
+      <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
       <el-table
         :data="items"
         v-loading="loading"
         stripe
+        :height="embedded ? '100%' : undefined"
         :row-class-name="rowClassName"
         @row-click="goDetail"
         @selection-change="onSelectionChange"
@@ -313,6 +299,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <div v-if="embedded && pool === 'public'" class="table-footer">
         <span>共 {{ total }} 条线索 · 待分配 {{ pageUnassignedCount }} 条</span>
@@ -502,6 +489,14 @@
           </div>
 
           <section class="drawer-section">
+            <SalesJourneyBar
+              :lead-id="drawerLead.id"
+              hide-self-lead
+              @loaded="onDrawerJourneyLoaded"
+            />
+          </section>
+
+          <section class="drawer-section">
             <h3>{{ drawerIsUnassigned ? '客户与需求' : '基本信息' }}</h3>
             <div class="detail-grid">
               <div class="detail-cell">
@@ -537,9 +532,9 @@
 
           <section class="drawer-section">
             <h3>{{ drawerIsUnassigned ? '完整跟进与流转记录' : '操作轨迹' }}</h3>
-            <el-timeline v-if="drawerLogs.length">
+            <el-timeline v-if="drawerFlowLogs.length">
               <el-timeline-item
-                v-for="log in drawerLogs"
+                v-for="log in drawerFlowLogs"
                 :key="log.id"
                 :timestamp="formatTime(log.created_at)"
                 placement="top"
@@ -548,7 +543,27 @@
                 <small class="log-meta">{{ log.username || '系统' }}{{ log.detail ? ` · ${formatLogDetail(log.detail)}` : '' }}</small>
               </el-timeline-item>
             </el-timeline>
-            <el-empty v-else description="暂无轨迹" :image-size="56" />
+            <div v-if="drawerFollowLogs.length" class="drawer-follow-fold">
+              <el-button link type="primary" @click="drawerFollowExpanded = !drawerFollowExpanded">
+                {{ drawerFollowExpanded ? '收起跟进明细' : `展开跟进明细（${drawerFollowLogs.length}）` }}
+              </el-button>
+              <el-timeline v-if="drawerFollowExpanded">
+                <el-timeline-item
+                  v-for="log in drawerFollowLogs"
+                  :key="log.id"
+                  :timestamp="formatTime(log.created_at)"
+                  placement="top"
+                >
+                  <b>{{ logActionLabel(log.action) }}</b>
+                  <small class="log-meta">{{ log.username || '系统' }}{{ log.detail ? ` · ${formatLogDetail(log.detail)}` : '' }}</small>
+                </el-timeline-item>
+              </el-timeline>
+            </div>
+            <el-empty
+              v-if="!drawerFlowLogs.length && !drawerFollowLogs.length"
+              description="暂无轨迹"
+              :image-size="56"
+            />
           </section>
         </template>
       </div>
@@ -566,7 +581,13 @@
             </el-button>
           </template>
           <template v-else-if="drawerLead?.status === 'converted'">
-            <el-button type="primary" @click="goConvertedCustomer">查看客户与商机</el-button>
+            <el-button type="primary" @click="goConvertedOpportunity">查看商机</el-button>
+            <el-button
+              v-if="drawerLead.converted_customer_id"
+              @click="goConvertedCustomer"
+            >
+              客户档案
+            </el-button>
           </template>
           <template v-else>
             <el-button v-if="canManagePool" class="drawer-action-btn" @click="openDrawerTransfer">
@@ -715,6 +736,8 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { fetchEmployees, type Employee } from '@/api/org'
+import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
+import type { SalesJourney } from '@/api/salesJourney'
 import {
   LEAD_RETURN_REASON_OPTIONS,
   LEAD_SOURCE_OPTIONS,
@@ -750,6 +773,10 @@ const userStore = useUserStore()
 const canManagePool = computed(
   () => userStore.hasPermission('lead:manage') || userStore.hasPermission('*'),
 )
+/** 销售录入后直接自己跟进；管理层/其他岗仍进待分配池 */
+const canSelfFollowOnCreate = computed(() =>
+  (userStore.user?.roles ?? []).some((r) => r.code === 'sales'),
+)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -770,6 +797,8 @@ const stats = ref<LeadStats | null>(null)
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
 const drawerLead = ref<LeadDetail | null>(null)
+const drawerJourneyOppId = ref<number | null>(null)
+const drawerFollowExpanded = ref(false)
 const drawerFollowVisible = ref(false)
 const drawerConvertVisible = ref(false)
 const drawerReturnVisible = ref(false)
@@ -1062,6 +1091,8 @@ function reload() {
 }
 
 const drawerLogs = computed(() => drawerLead.value?.logs || [])
+const drawerFlowLogs = computed(() => drawerLogs.value.filter((l) => l.action !== 'follow'))
+const drawerFollowLogs = computed(() => drawerLogs.value.filter((l) => l.action === 'follow'))
 const drawerIsUnassigned = computed(
   () => !!drawerLead.value && isUnassigned(drawerLead.value),
 )
@@ -1101,6 +1132,8 @@ async function openPoolDrawer(row: Lead) {
   drawerVisible.value = true
   drawerLoading.value = true
   drawerLead.value = null
+  drawerJourneyOppId.value = null
+  drawerFollowExpanded.value = false
   try {
     const { data } = await fetchLeadDetail(row.id)
     drawerLead.value = data
@@ -1124,6 +1157,29 @@ function allocateFromDrawer() {
   const id = drawerLead.value.id
   drawerVisible.value = false
   openBatchAssign([id])
+}
+
+function onDrawerJourneyLoaded(journey: SalesJourney) {
+  drawerJourneyOppId.value = journey.links.opportunity_id ?? null
+  if (
+    drawerLead.value &&
+    journey.links.opportunity_id &&
+    !drawerLead.value.converted_opportunity_id
+  ) {
+    drawerLead.value.converted_opportunity_id = journey.links.opportunity_id
+  }
+}
+
+function goConvertedOpportunity() {
+  const oid =
+    drawerLead.value?.converted_opportunity_id ||
+    drawerJourneyOppId.value ||
+    null
+  const cid = drawerLead.value?.converted_customer_id
+  drawerVisible.value = false
+  if (oid) router.push(`/opportunities/${oid}`)
+  else if (cid) router.push(`/customers/${cid}`)
+  else router.push('/sales?tab=customers')
 }
 
 function goConvertedCustomer() {
@@ -1370,9 +1426,11 @@ async function onCreate() {
       source: form.source,
       need_desc: form.need_desc || undefined,
       remark: form.remark || undefined,
-      self_follow: false,
+      self_follow: canSelfFollowOnCreate.value,
     }
-    const successMsg = '录入成功，已进入管理层待分配池'
+    const successMsg = canSelfFollowOnCreate.value
+      ? '录入成功，已进入我的线索，可直接跟进'
+      : '录入成功，已进入管理层待分配池'
     if (dupHard.value) {
       await ElMessageBox.confirm(
         '存在确定重复线索。确认强制录入？不会自动合并已有记录。',
@@ -1380,17 +1438,27 @@ async function onCreate() {
         { type: 'warning' },
       )
       await createLead(payload, true)
-      ElMessage.success('已强制录入，查重结果已留痕')
+      ElMessage.success(
+        canSelfFollowOnCreate.value ? '已强制录入并进入我的线索' : '已强制录入，查重结果已留痕',
+      )
     } else if (dupReview.value) {
       await createLead(payload)
-      ElMessage.success('已提交；疑似重复已写入操作记录，未发生强制合并')
+      ElMessage.success(
+        canSelfFollowOnCreate.value
+          ? '已提交并进入我的线索；疑似重复已写入操作记录'
+          : '已提交；疑似重复已写入操作记录，未发生强制合并',
+      )
     } else {
       await createLead(payload)
       ElMessage.success(successMsg)
     }
     createVisible.value = false
     if (!props.forcedPool) {
-      pool.value = canManagePool.value ? 'public' : 'created'
+      pool.value = canSelfFollowOnCreate.value
+        ? 'mine'
+        : canManagePool.value
+          ? 'public'
+          : 'created'
     }
     reload()
   } catch (e: unknown) {
@@ -1409,12 +1477,17 @@ async function onCreate() {
             phone: form.phone.trim(),
             business_type: form.business_type,
             source: form.source,
-            self_follow: false,
+            self_follow: canSelfFollowOnCreate.value,
           },
           true,
         )
-        ElMessage.success('已强制录入')
+        ElMessage.success(
+          canSelfFollowOnCreate.value ? '已强制录入并进入我的线索' : '已强制录入',
+        )
         createVisible.value = false
+        if (!props.forcedPool && canSelfFollowOnCreate.value) {
+          pool.value = 'mine'
+        }
         reload()
       } catch {
         /* cancel */
@@ -1514,12 +1587,9 @@ watch(
 </script>
 
 <style scoped>
-.quota-strip,
-.manage-note {
+.quota-strip {
   margin-bottom: 12px;
   padding: 14px 16px;
-}
-.quota-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
@@ -1535,15 +1605,6 @@ watch(
 }
 .quota-item strong {
   font-size: 18px;
-}
-.manage-note {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.manage-note span {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
 }
 .toolbar-actions {
   display: flex;
@@ -1576,6 +1637,30 @@ watch(
 }
 .embedded.leads-page {
   max-width: none;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embedded.leads-page > .allocation-summary,
+.embedded.leads-page > .sales-quota-strip,
+.embedded.leads-page > .crm-stats,
+.embedded.leads-page > .quota-strip {
+  flex-shrink: 0;
+}
+.embedded.leads-page > .crm-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.embedded.leads-page .crm-table-wrap.is-fit {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.embedded.leads-page .pager,
+.embedded.leads-page .table-footer {
+  flex-shrink: 0;
 }
 .drawer-inner {
   padding: 4px 4px 12px;
@@ -1640,6 +1725,9 @@ watch(
   margin-top: 4px;
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.drawer-follow-fold {
+  margin-top: 8px;
 }
 .drawer-footer {
   display: flex;

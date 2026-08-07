@@ -34,6 +34,7 @@ export interface Lead {
   assigned_at?: string | null
   last_followed_at?: string | null
   converted_customer_id?: number | null
+  converted_opportunity_id?: number | null
   converted_at?: string | null
   lost_reason?: string | null
   lost_at?: string | null

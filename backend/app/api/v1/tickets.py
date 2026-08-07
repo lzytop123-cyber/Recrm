@@ -33,6 +33,7 @@ router = APIRouter(prefix="/tickets", tags=["工单管理"])
 class AssigneeOption(BaseModel):
     id: int
     name: str
+    department_id: Optional[int] = None
 
 
 @router.get("/stats", response_model=TicketStatsOut, summary="工单统计")
@@ -57,9 +58,13 @@ def sla_scan(
 def assignee_options(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["ticket:view"]))],
+    department_id: Optional[int] = Query(None, description="按承接部门筛选"),
 ) -> list[AssigneeOption]:
     _ = current_user
-    return [AssigneeOption(**x) for x in ticket_service.list_assignee_options(db)]
+    return [
+        AssigneeOption(**x)
+        for x in ticket_service.list_assignee_options(db, department_id=department_id)
+    ]
 
 
 @router.get("", response_model=TicketListOut, summary="工单列表")

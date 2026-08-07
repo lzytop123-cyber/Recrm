@@ -100,6 +100,13 @@ class Lead(Base):
     converted_customer_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("customers.id"), nullable=True, comment="转化后的客户"
     )
+    converted_opportunity_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("opportunities.id", use_alter=True, name="fk_leads_converted_opportunity_id"),
+        nullable=True,
+        index=True,
+        comment="转化后的商机",
+    )
     converted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), comment="转化时间")
     lost_reason: Mapped[Optional[str]] = mapped_column(String(500), comment="流失原因")
     lost_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), comment="流失时间")

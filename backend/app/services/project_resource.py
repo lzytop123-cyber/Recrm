@@ -158,7 +158,7 @@ def list_resource_role_options(db: Session) -> ResourceRoleOptionsOut:
             roles=roles,
             employees=employees,
             source="feishu_department",
-            hint="选项来自飞书通讯录真实部门；请选择部门并指定具体人员。",
+            hint="（N人）为部门在册人数；指定对接人后，提交由该部门确认投入。",
         )
 
     # 尚未同步飞书部门时，回退本地目录

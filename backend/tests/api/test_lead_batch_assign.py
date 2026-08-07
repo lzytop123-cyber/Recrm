@@ -66,6 +66,20 @@ def _user(db: Session, username: str, role: Role) -> User:
     return u
 
 
+def test_sales_create_defaults_to_self_follow(db_session: Session) -> None:
+    from app.models.lead import LEAD_STATUS_ASSIGNED
+
+    sales_role = _ensure_role(db_session, "sales", "销售", manage=False)
+    sales = _user(db_session, "sales_self", sales_role)
+    lead = lead_service.create_lead(
+        db_session,
+        sales,
+        LeadCreate(name="自跟进客户", company_name="自跟进公司", phone="13900002222"),
+    )
+    assert lead.status == LEAD_STATUS_ASSIGNED
+    assert lead.owner_id == sales.id
+
+
 def test_unassigned_pool_hidden_from_sales(db_session: Session) -> None:
     mgr_role = _ensure_role(db_session, "executive", "管理层", manage=True)
     sales_role = _ensure_role(db_session, "sales", "销售", manage=False)
@@ -75,7 +89,12 @@ def test_unassigned_pool_hidden_from_sales(db_session: Session) -> None:
     lead = lead_service.create_lead(
         db_session,
         sales,
-        LeadCreate(name="隐藏客户", company_name="隐藏公司", phone="13900001111"),
+        LeadCreate(
+            name="隐藏客户",
+            company_name="隐藏公司",
+            phone="13900001111",
+            self_follow=False,
+        ),
     )
     assert lead.status == LEAD_STATUS_PENDING
 

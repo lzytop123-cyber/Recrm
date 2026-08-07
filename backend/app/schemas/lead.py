@@ -25,7 +25,7 @@ class LeadCreate(BaseModel):
     remark: Optional[str] = None
     self_follow: Optional[bool] = Field(
         None,
-        description="是否自己跟进；当前策略一律进待分配池，传 True 将被拒绝",
+        description="是否自己跟进；销售默认 True，非销售传 True 将被拒绝并进待分配池",
     )
 
 
@@ -169,6 +169,7 @@ class LeadOut(BaseModel):
     assigned_at: Optional[datetime] = None
     last_followed_at: Optional[datetime] = None
     converted_customer_id: Optional[int] = None
+    converted_opportunity_id: Optional[int] = None
     converted_at: Optional[datetime] = None
     lost_reason: Optional[str] = None
     lost_at: Optional[datetime] = None
@@ -190,6 +191,33 @@ class LeadConvertOut(BaseModel):
 class LeadDetailOut(LeadOut):
     follow_ups: List[LeadFollowUpOut] = []
     logs: List[LeadLogOut] = []
+
+
+class SalesJourneyMilestone(BaseModel):
+    key: str
+    label: str
+    status: str  # done / current / pending / skipped
+    at: Optional[datetime] = None
+    actor: Optional[str] = None
+    entity: Optional[str] = None  # lead / customer / opportunity / contract
+    entity_id: Optional[int] = None
+
+
+class SalesJourneyLinks(BaseModel):
+    lead_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
+    contract_id: Optional[int] = None
+    lead_label: Optional[str] = None
+    customer_name: Optional[str] = None
+    opportunity_no: Optional[str] = None
+    contract_no: Optional[str] = None
+
+
+class SalesJourneyOut(BaseModel):
+    milestones: List[SalesJourneyMilestone] = []
+    links: SalesJourneyLinks = SalesJourneyLinks()
+    current_key: Optional[str] = None
 
 
 class LeadListOut(BaseModel):

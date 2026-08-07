@@ -60,7 +60,7 @@ def test_seed_roles_include_board_and_new_perms() -> None:
     codes = {p[1] for p in PERMISSIONS}
     assert "contract:approve" in codes
     assert "contract:complete" in codes
-    assert "contract:force_complete" in codes
+    assert "contract:force_complete" not in codes
     assert "project:accept_submit" in codes
     assert "project:accept_approve" in codes
     assert "project:finance_submit" in codes
@@ -73,11 +73,10 @@ def test_seed_roles_include_board_and_new_perms() -> None:
     assert "contract:approve" in by_code["dept_head"][3]
     assert "approval:center" in by_code["dept_head"][3]
     assert "contract:approve" in by_code["finance"][3]
-    assert "contract:force_complete" in by_code["finance"][3]
+    assert "contract:complete" in by_code["finance"][3]
     assert "project:finance_approve" in by_code["finance"][3]
     assert "project:accept_approve" in by_code["delivery_lead"][3]
     assert "project:accept_submit" in by_code["delivery_lead"][3]
-    assert "contract:force_complete" not in by_code["sales"][3]
     assert "contract:complete" in by_code["sales"][3]
 
 

@@ -40,7 +40,7 @@ from app.models.platform import (
 )
 from app.models.role import Role
 from app.models.schedule import Schedule
-from app.models.ticket import Ticket, TicketRecord
+from app.models.ticket import Ticket, TicketAssigneeCandidate, TicketRecord
 from app.models.timesheet import Timesheet
 from app.models.user import User
 from app.models.employee_hr import EmployeeHistoryEvent, FeishuAttendanceDaily, SystemSyncState
@@ -100,6 +100,7 @@ __all__ = [
     "KnowledgeArticle",
     "Timesheet",
     "Ticket",
+    "TicketAssigneeCandidate",
     "TicketRecord",
     "Schedule",
     "AuditLog",

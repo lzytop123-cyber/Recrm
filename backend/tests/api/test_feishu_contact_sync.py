@@ -188,6 +188,38 @@ def test_sync_binds_existing_user_by_email(db_session: Session) -> None:
     assert existing.real_name == "销售小王"
 
 
+class RootAlsoListsLeafUsersClient(FakeFeishuClient):
+    """模拟根部门也返回子部门成员：旧逻辑会把人挂到总公司且不再纠正。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        sales_user = self.users["od_sales"][0]
+        # 根部门接口也返回销售成员，但其 department_ids 指向销售部
+        self.users["0"] = [
+            *self.users["0"],
+            {**sales_user},
+        ]
+
+
+def test_sync_uses_user_department_ids_not_query_dept(db_session: Session) -> None:
+    db_session.add(Role(name="普通员工", code="employee", data_scope="personal"))
+    db_session.add(Department(name="总公司", code="ROOT"))
+    db_session.commit()
+
+    result = asyncio.run(
+        sync_feishu_contacts(db_session, client=RootAlsoListsLeafUsersClient())  # type: ignore[arg-type]
+    )
+
+    assert result.employees_created == 2
+    root = db_session.query(Department).filter(Department.code == "ROOT").first()
+    sales = db_session.query(Department).filter(Department.code == "FS_od_sales").first()
+    assert root is not None and sales is not None
+    wang = db_session.query(User).filter(User.feishu_open_id == "ou_sales_1").first()
+    assert wang is not None
+    assert wang.department_id == sales.id
+    assert wang.department_id != root.id
+
+
 def test_sync_falls_back_to_contact_scopes(db_session: Session) -> None:
     db_session.add(Role(name="普通员工", code="employee", data_scope="personal"))
     db_session.add(Department(name="总公司", code="ROOT"))

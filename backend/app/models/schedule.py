@@ -13,11 +13,13 @@ from app.database import Base
 
 SCHEDULE_RESOURCE_INSTRUCTOR = "instructor"
 SCHEDULE_RESOURCE_STREAMER = "streamer"
+SCHEDULE_RESOURCE_SHOOTING_EDIT = "shooting_edit"
 SCHEDULE_RESOURCE_OTHER = "other"
 
 SCHEDULE_RESOURCE_TYPES = {
     SCHEDULE_RESOURCE_INSTRUCTOR,
     SCHEDULE_RESOURCE_STREAMER,
+    SCHEDULE_RESOURCE_SHOOTING_EDIT,
     SCHEDULE_RESOURCE_OTHER,
 }
 
@@ -71,7 +73,7 @@ class Schedule(Base):
         String(30),
         default=SCHEDULE_RESOURCE_OTHER,
         index=True,
-        comment="instructor/streamer/other",
+        comment="instructor/streamer/shooting_edit/other",
     )
     employee_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False, index=True, comment="被排期人员"

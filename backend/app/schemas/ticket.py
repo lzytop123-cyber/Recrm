@@ -11,6 +11,7 @@ class TicketCreate(BaseModel):
     priority: str = Field(default="normal")
     content: str = Field(..., min_length=1)
     assignee_id: Optional[int] = None
+    assignee_ids: List[int] = []
     department_id: Optional[int] = None
     project_id: Optional[int] = None
     task_id: Optional[int] = None
@@ -107,6 +108,8 @@ class TicketOut(BaseModel):
     updated_at: datetime
     creator_name: Optional[str] = None
     assignee_name: Optional[str] = None
+    candidate_ids: List[int] = []
+    candidate_names: List[str] = []
     department_name: Optional[str] = None
     project_name: Optional[str] = None
     task_no: Optional[str] = None

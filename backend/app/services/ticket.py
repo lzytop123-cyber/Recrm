@@ -33,6 +33,7 @@ from app.models.ticket import (
     TICKET_TYPE_COLLAB,
     TICKET_TYPES,
     Ticket,
+    TicketAssigneeCandidate,
     TicketRecord,
 )
 from app.models.user import User
@@ -211,6 +212,16 @@ def _find_dept_manager(db: Session, department_id: Optional[int]) -> Optional[Us
 def enrich_ticket(db: Session, ticket: Ticket, user: Optional[User] = None) -> Ticket:
     ticket.creator_name = _user_name(db, ticket.creator_id)  # type: ignore[attr-defined]
     ticket.assignee_name = _user_name(db, ticket.assignee_id)  # type: ignore[attr-defined]
+    candidates = (
+        db.query(TicketAssigneeCandidate)
+        .filter(TicketAssigneeCandidate.ticket_id == ticket.id)
+        .order_by(TicketAssigneeCandidate.id.asc())
+        .all()
+    )
+    ticket.candidate_ids = [c.user_id for c in candidates]  # type: ignore[attr-defined]
+    ticket.candidate_names = [  # type: ignore[attr-defined]
+        _user_name(db, c.user_id) or f"#{c.user_id}" for c in candidates
+    ]
     ticket.is_overdue = _is_overdue(ticket)  # type: ignore[attr-defined]
     ticket.sla_used_ratio = _sla_used_ratio(ticket)  # type: ignore[attr-defined]
     ticket.is_near_sla = _is_near_sla(ticket)  # type: ignore[attr-defined]
@@ -251,11 +262,28 @@ def enrich_detail(db: Session, ticket: Ticket, user: Optional[User] = None) -> T
     return ticket
 
 
+def _candidate_user_ids(db: Session, ticket_id: int) -> set[int]:
+    rows = (
+        db.query(TicketAssigneeCandidate.user_id)
+        .filter(TicketAssigneeCandidate.ticket_id == ticket_id)
+        .all()
+    )
+    return {r[0] for r in rows}
+
+
 def assert_can_view(user: User, ticket: Ticket) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes:
         return
     if ticket.creator_id == user.id or ticket.assignee_id == user.id:
+        return
+    cand_ids = getattr(ticket, "candidate_ids", None)
+    if cand_ids is not None and user.id in cand_ids:
+        return
+    from sqlalchemy.orm import object_session
+
+    session = object_session(ticket)
+    if session is not None and user.id in _candidate_user_ids(session, ticket.id):
         return
     scope = widest_data_scope(collect_data_scopes(user))
     if scope == "company":
@@ -296,6 +324,14 @@ def _can_accept(user: User, ticket: Ticket) -> bool:
         return True
     if ticket.assignee_id == user.id:
         return True
+    cand_ids = getattr(ticket, "candidate_ids", None)
+    if cand_ids is not None and user.id in cand_ids:
+        return True
+    from sqlalchemy.orm import object_session
+
+    session = object_session(ticket)
+    if session is not None and user.id in _candidate_user_ids(session, ticket.id):
+        return True
     return _is_undertaking_dept_lead(user, ticket)
 
 
@@ -317,6 +353,9 @@ def _next_actor_hint(ticket: Ticket) -> str:
     if ticket.status == TICKET_STATUS_PENDING_ASSIGN:
         return "请承接部门负责人分派处理人"
     if ticket.status == TICKET_STATUS_PENDING_ACCEPT:
+        names = getattr(ticket, "candidate_names", None) or []
+        if len(names) > 1:
+            return f"请候选处理人接单（{ '、'.join(names) }；部门负责人可代接）"
         return "请指定处理人接单（承接部门负责人可代接）"
     if ticket.status == TICKET_STATUS_PROCESSING:
         return "请处理人提交处理结果"
@@ -351,6 +390,18 @@ def _attach_action_flags(user: User, ticket: Ticket) -> None:
     ticket.next_actor_hint = _next_actor_hint(ticket)  # type: ignore[attr-defined]
 
 
+def _replace_candidates(db: Session, ticket: Ticket, user_ids: list[int]) -> None:
+    db.query(TicketAssigneeCandidate).filter(
+        TicketAssigneeCandidate.ticket_id == ticket.id
+    ).delete(synchronize_session=False)
+    seen: set[int] = set()
+    for uid in user_ids:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        db.add(TicketAssigneeCandidate(ticket_id=ticket.id, user_id=uid))
+
+
 def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
     ticket_type = payload.ticket_type or TICKET_TYPE_COLLAB
     if ticket_type not in TICKET_TYPES:
@@ -359,11 +410,25 @@ def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
     if priority not in TICKET_PRIORITIES:
         raise HTTPException(status_code=400, detail="无效的优先级")
 
-    assignee: Optional[User] = None
-    if payload.assignee_id:
-        assignee = db.query(User).filter(User.id == payload.assignee_id, User.is_active.is_(True)).first()
-        if not assignee:
+    assignee_ids: list[int] = []
+    for uid in list(payload.assignee_ids or []):
+        if uid and uid not in assignee_ids:
+            assignee_ids.append(uid)
+    if payload.assignee_id and payload.assignee_id not in assignee_ids:
+        assignee_ids.insert(0, payload.assignee_id)
+
+    assignees: list[User] = []
+    if assignee_ids:
+        rows = (
+            db.query(User)
+            .filter(User.id.in_(assignee_ids), User.is_active.is_(True))
+            .all()
+        )
+        by_id = {u.id: u for u in rows}
+        missing = [uid for uid in assignee_ids if uid not in by_id]
+        if missing:
             raise HTTPException(status_code=400, detail="处理人不存在或已停用")
+        assignees = [by_id[uid] for uid in assignee_ids]
 
     project_id = payload.project_id
     if project_id:
@@ -393,14 +458,42 @@ def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
         dept = db.query(Department).filter(Department.id == department_id).first()
         if not dept:
             raise HTTPException(status_code=400, detail="承接部门不存在")
-    elif assignee:
-        department_id = assignee.department_id
-    else:
-        department_id = user.department_id
+        if (dept.code or "").upper() == "ROOT":
+            raise HTTPException(
+                status_code=400,
+                detail="请选择具体业务部门作为承接部门，不能选总公司/根部门",
+            )
+    elif assignees:
+        department_id = assignees[0].department_id
+
+    if department_id is not None:
+        dept = db.query(Department).filter(Department.id == department_id).first()
+        if dept and (dept.code or "").upper() == "ROOT":
+            department_id = None
+
+    if department_id is None:
+        raise HTTPException(status_code=400, detail="请选择承接部门")
+
+    for a in assignees:
+        if a.department_id != department_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"处理人「{_user_name(db, a.id)}」不属于所选承接部门",
+            )
 
     sla_hours = TICKET_SLA_HOURS.get(ticket_type, 72)
     due_at = _now() + timedelta(hours=sla_hours)
-    status_val = TICKET_STATUS_PENDING_ACCEPT if assignee else TICKET_STATUS_PENDING_ASSIGN
+    # 多人候选：待接收，主处理人暂空，任一候选接单后落主责
+    # 单人：直接指定为处理人，待其接单
+    if len(assignees) == 1:
+        status_val = TICKET_STATUS_PENDING_ACCEPT
+        primary_id = assignees[0].id
+    elif len(assignees) > 1:
+        status_val = TICKET_STATUS_PENDING_ACCEPT
+        primary_id = None
+    else:
+        status_val = TICKET_STATUS_PENDING_ASSIGN
+        primary_id = None
 
     ticket = Ticket(
         ticket_no=_gen_ticket_no(db),
@@ -410,7 +503,7 @@ def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
         status=status_val,
         content=payload.content.strip(),
         creator_id=user.id,
-        assignee_id=assignee.id if assignee else None,
+        assignee_id=primary_id,
         department_id=department_id,
         project_id=project_id,
         due_at=due_at,
@@ -420,18 +513,18 @@ def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
     )
     db.add(ticket)
     db.flush()
+    if assignees:
+        _replace_candidates(db, ticket, [a.id for a in assignees])
     _link_task(db, ticket, task)
     _add_record(db, ticket, user, "create", f"创建工单：{ticket.title}")
     if task:
         _add_record(db, ticket, user, "link_task", f"关联任务 {task.task_no} · {task.title}")
-    if assignee:
-        _add_record(
-            db,
-            ticket,
-            user,
-            "assign",
-            f"指定处理人：{_user_name(db, assignee.id)}",
-        )
+    if assignees:
+        names = "、".join(_user_name(db, a.id) or f"#{a.id}" for a in assignees)
+        if len(assignees) == 1:
+            _add_record(db, ticket, user, "assign", f"指定处理人：{names}")
+        else:
+            _add_record(db, ticket, user, "assign", f"指定候选处理人：{names}（谁先接单谁主责）")
     db.commit()
     db.refresh(ticket)
     return enrich_detail(db, ticket, user=user)
@@ -491,12 +584,35 @@ def list_tickets(
     if scope_filter == "mine_created":
         q = q.filter(Ticket.creator_id == user.id)
     elif scope_filter == "mine_assigned":
-        q = q.filter(Ticket.assignee_id == user.id)
+        cand_ticket_ids = db.query(TicketAssigneeCandidate.ticket_id).filter(
+            TicketAssigneeCandidate.user_id == user.id
+        )
+        q = q.filter(
+            or_(Ticket.assignee_id == user.id, Ticket.id.in_(cand_ticket_ids))
+        )
     elif scope_filter == "mine":
-        q = q.filter(or_(Ticket.creator_id == user.id, Ticket.assignee_id == user.id))
+        cand_ticket_ids = db.query(TicketAssigneeCandidate.ticket_id).filter(
+            TicketAssigneeCandidate.user_id == user.id
+        )
+        q = q.filter(
+            or_(
+                Ticket.creator_id == user.id,
+                Ticket.assignee_id == user.id,
+                Ticket.id.in_(cand_ticket_ids),
+            )
+        )
     elif not is_admin:
         if scope == "personal":
-            q = q.filter(or_(Ticket.creator_id == user.id, Ticket.assignee_id == user.id))
+            cand_ticket_ids = db.query(TicketAssigneeCandidate.ticket_id).filter(
+                TicketAssigneeCandidate.user_id == user.id
+            )
+            q = q.filter(
+                or_(
+                    Ticket.creator_id == user.id,
+                    Ticket.assignee_id == user.id,
+                    Ticket.id.in_(cand_ticket_ids),
+                )
+            )
         elif scope == "department" and user.department_id:
             q = q.filter(
                 or_(
@@ -562,6 +678,7 @@ def assign_ticket(
     ticket.assignee_id = assignee.id
     ticket.department_id = assignee.department_id or ticket.department_id
     ticket.status = TICKET_STATUS_PENDING_ACCEPT
+    _replace_candidates(db, ticket, [assignee.id])
     note = payload.remark or f"分派给 {_user_name(db, assignee.id)}"
     _add_record(db, ticket, user, "assign", note)
     db.commit()
@@ -583,14 +700,35 @@ def accept_ticket(db: Session, user: User, ticket_id: int) -> Ticket:
         )
 
     if ticket.status == TICKET_STATUS_PENDING_ASSIGN and not ticket.assignee_id:
-        if not (_is_undertaking_dept_lead(user, ticket) or _is_admin(user)):
+        cand_ids = _candidate_user_ids(db, ticket.id)
+        if user.id in cand_ids:
+            ticket.assignee_id = user.id
+            _add_record(db, ticket, user, "assign", "候选处理人接单成为主责")
+        elif not (_is_undertaking_dept_lead(user, ticket) or _is_admin(user)):
             raise HTTPException(status_code=403, detail="未分派工单请由承接部门负责人认领或先分派")
-        ticket.assignee_id = user.id
-        _add_record(db, ticket, user, "assign", "部门负责人认领并接单")
+        else:
+            ticket.assignee_id = user.id
+            _add_record(db, ticket, user, "assign", "部门负责人认领并接单")
     elif ticket.assignee_id and ticket.assignee_id != user.id:
-        old = _user_name(db, ticket.assignee_id)
-        ticket.assignee_id = user.id
-        _add_record(db, ticket, user, "assign", f"部门负责人代接（原处理人 {old}）")
+        cand_ids = _candidate_user_ids(db, ticket.id)
+        if user.id in cand_ids:
+            old = _user_name(db, ticket.assignee_id)
+            ticket.assignee_id = user.id
+            _add_record(db, ticket, user, "assign", f"候选处理人接单（原指定 {old}）")
+        elif _is_undertaking_dept_lead(user, ticket) or _is_admin(user):
+            old = _user_name(db, ticket.assignee_id)
+            ticket.assignee_id = user.id
+            _add_record(db, ticket, user, "assign", f"部门负责人代接（原处理人 {old}）")
+        else:
+            raise HTTPException(status_code=403, detail="仅指定/候选处理人或部门负责人可接单")
+    elif not ticket.assignee_id:
+        # 多人候选、尚无主责
+        cand_ids = _candidate_user_ids(db, ticket.id)
+        if user.id in cand_ids or _is_undertaking_dept_lead(user, ticket) or _is_admin(user):
+            ticket.assignee_id = user.id
+            _add_record(db, ticket, user, "assign", "候选处理人接单成为主责")
+        else:
+            raise HTTPException(status_code=403, detail="仅候选处理人或部门负责人可接单")
 
     ticket.status = TICKET_STATUS_PROCESSING
     ticket.accepted_at = _now()
@@ -630,6 +768,7 @@ def transfer_ticket(
     ticket.department_id = assignee.department_id or ticket.department_id
     ticket.status = TICKET_STATUS_PENDING_ACCEPT
     ticket.accepted_at = None
+    _replace_candidates(db, ticket, [assignee.id])
     reason = payload.reason or ""
     _add_record(
         db,
@@ -817,15 +956,19 @@ def comment_ticket(
     return enrich_detail(db, ticket, user=user)
 
 
-def list_assignee_options(db: Session) -> list[dict]:
-    users = (
-        db.query(User)
-        .filter(User.is_active.is_(True))
-        .order_by(User.id.asc())
-        .limit(200)
-        .all()
-    )
-    return [{"id": u.id, "name": u.real_name or u.username} for u in users]
+def list_assignee_options(db: Session, department_id: Optional[int] = None) -> list[dict]:
+    q = db.query(User).filter(User.is_active.is_(True))
+    if department_id:
+        q = q.filter(User.department_id == department_id)
+    users = q.order_by(User.id.asc()).limit(200).all()
+    return [
+        {
+            "id": u.id,
+            "name": u.real_name or u.username,
+            "department_id": u.department_id,
+        }
+        for u in users
+    ]
 
 
 def scan_sla(db: Session, actor: User) -> dict:

@@ -125,6 +125,29 @@ class Ticket(Base):
         cascade="all, delete-orphan",
         order_by="TicketRecord.id",
     )
+    candidates: Mapped[list["TicketAssigneeCandidate"]] = relationship(
+        "TicketAssigneeCandidate",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketAssigneeCandidate.id",
+    )
+
+
+class TicketAssigneeCandidate(Base):
+    """发起/分派时指定的候选处理人；任一接单后成为主处理人。"""
+
+    __tablename__ = "ticket_assignee_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tickets.id"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="candidates")
 
 
 class TicketRecord(Base):

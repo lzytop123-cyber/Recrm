@@ -58,9 +58,23 @@
           <div class="card-header">
             <div class="title-block">
               <span>{{ project.project_no }} · {{ project.name }}</span>
-              <p class="archive-hint">
+              <p v-if="['completed', 'terminated'].includes(project.status)" class="archive-hint">
+                项目已结束，本页为档案归档；可查看客户、合同与验收记录。
+              </p>
+              <p v-else class="archive-hint">
                 项目档案页；日常立项 / 计划 / 任务 / 验收请在
-                <el-button link type="primary" @click="$router.push('/projects/delivery')">交付执行</el-button>
+                <el-button
+                  link
+                  type="primary"
+                  @click="
+                    $router.push({
+                      path: '/projects/delivery',
+                      query: { project_id: String(project.id) },
+                    })
+                  "
+                >
+                  交付执行
+                </el-button>
                 处理
               </p>
             </div>
@@ -68,15 +82,11 @@
               <el-tag :type="statusTag(project.status)" size="small">
                 {{ PROJECT_STATUS_LABEL[project.status] || project.status }}
               </el-tag>
-              <el-progress
-                :percentage="project.progress || 0"
-                :stroke-width="8"
-                style="width: 120px"
-              />
             </div>
           </div>
         </template>
-        <el-descriptions :column="3" border>
+        <ProjectJourneyBar class="journey-in-card" :project="project" />
+        <el-descriptions :column="3" border class="stack-gap-sm">
           <el-descriptions-item label="项目编号">{{ project.project_no }}</el-descriptions-item>
           <el-descriptions-item label="项目名称">{{ project.name }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ typeLabel(project.project_type) }}</el-descriptions-item>
@@ -286,6 +296,66 @@
           </el-table-column>
         </el-table>
       </el-card>
+
+      <el-card class="stack-gap">
+        <template #header>
+          <div class="card-header">
+            <span>关联协作工单</span>
+            <div class="header-actions">
+              <el-button size="small" @click="$router.push({ path: '/tickets', query: { project_id: String(project.id) } })">
+                打开工单台
+              </el-button>
+              <el-button
+                v-if="!['completed', 'terminated'].includes(project.status)"
+                size="small"
+                type="primary"
+                @click="
+                  $router.push({
+                    path: '/tickets',
+                    query: { create: '1', project_id: String(project.id) },
+                  })
+                "
+              >
+                发起协作
+              </el-button>
+            </div>
+          </div>
+        </template>
+        <p class="archive-hint" style="margin: 0 0 10px">
+          工单用于跨部门协作追溯；完成工单不会自动完成项目任务。
+        </p>
+        <el-table :data="tickets" v-loading="ticketsLoading" stripe empty-text="暂无挂到本项目的工单">
+          <el-table-column prop="ticket_no" label="编号" width="140" />
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="ticketStatusTag(row)">
+                {{ TICKET_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="assignee_name" label="处理人" width="100">
+            <template #default="{ row }">{{ row.assignee_name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="关联任务" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.task_no ? `${row.task_no} · ${row.task_title || ''}` : '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="SLA" width="100">
+            <template #default="{ row }">
+              <el-tag v-if="row.is_overdue" type="danger" size="small">已逾期</el-tag>
+              <el-tag v-else-if="row.is_near_sla" type="warning" size="small">接近时限</el-tag>
+              <span v-else class="muted">正常</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="$router.push(`/tickets/${row.id}`)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
     </template>
 
     <el-dialog v-model="editVisible" title="编辑项目" width="560px" destroy-on-close>
@@ -377,6 +447,8 @@ import {
   type ProjectMilestone,
 } from '@/api/projects'
 import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
+import { fetchTickets, TICKET_STATUS_LABEL, type Ticket } from '@/api/tickets'
+import ProjectJourneyBar from '@/components/projects/ProjectJourneyBar.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -390,6 +462,8 @@ const saving = ref(false)
 const project = ref<ProjectDetail | null>(null)
 const schedules = ref<Schedule[]>([])
 const schedulesLoading = ref(false)
+const tickets = ref<Ticket[]>([])
+const ticketsLoading = ref(false)
 const editVisible = ref(false)
 const milestoneVisible = ref(false)
 const terminateVisible = ref(false)
@@ -500,13 +574,35 @@ async function loadSchedules() {
   }
 }
 
+function ticketStatusTag(row: Ticket) {
+  if (row.is_overdue) return 'danger'
+  if (row.status === 'closed' || row.status === 'completed') return 'success'
+  if (row.status === 'processing' || row.status === 'pending_confirm') return 'warning'
+  return 'info'
+}
+
+async function loadTickets() {
+  if (!projectId.value) return
+  ticketsLoading.value = true
+  try {
+    const { data } = await fetchTickets({
+      project_id: projectId.value,
+      page: 1,
+      page_size: 50,
+    })
+    tickets.value = data.items
+  } finally {
+    ticketsLoading.value = false
+  }
+}
+
 async function loadDetail() {
   loading.value = true
   try {
     const { data } = await fetchProjectDetail(projectId.value)
     project.value = data
     fillEdit()
-    await loadSchedules()
+    await Promise.all([loadSchedules(), loadTickets()])
   } finally {
     loading.value = false
   }
@@ -558,10 +654,21 @@ function onExecute() {
   return runTransition(() => startProjectExecuting(projectId.value), '已进入执行中', '确认进入执行中？')
 }
 function onAccepting() {
-  return runTransition(() => startProjectAccepting(projectId.value), '已进入验收中', '确认进入验收中？')
+  return runTransition(async () => {
+    const openCount = tickets.value.filter((t) =>
+      ['pending_assign', 'pending_accept', 'processing', 'pending_confirm'].includes(String(t.status)),
+    ).length
+    if (openCount > 0) {
+      ElMessage.warning(`还有 ${openCount} 张未关闭协作工单（不阻断进入验收）`)
+    }
+    return startProjectAccepting(projectId.value)
+  }, '已进入验收中', '确认进入验收中？')
 }
 function goAcceptanceWorkbench() {
-  router.push({ path: '/projects/delivery', query: { tab: 'acceptance' } })
+  router.push({
+    path: '/projects/delivery',
+    query: { tab: 'acceptance', project_id: String(projectId.value) },
+  })
 }
 
 function openMilestone() {
@@ -620,8 +727,20 @@ onMounted(loadDetail)
 
 <style scoped>
 .card-header {
+  display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 12px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.muted {
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
 }
 .title-block {
   min-width: 0;
@@ -638,6 +757,12 @@ onMounted(loadDetail)
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+}
+.journey-in-card {
+  margin-bottom: 14px;
+}
+.stack-gap-sm {
+  margin-top: 12px;
 }
 .attach-list {
   display: flex;

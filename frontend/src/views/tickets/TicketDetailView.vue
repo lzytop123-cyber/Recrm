@@ -52,6 +52,13 @@
         <el-descriptions-item label="截止时间">{{ formatTime(item.due_at) }}</el-descriptions-item>
         <el-descriptions-item label="发起人">{{ item.creator_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理人">{{ item.assignee_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item
+          v-if="(item.candidate_names || []).length > 1 || ((item.candidate_names || []).length === 1 && !item.assignee_id)"
+          label="候选处理人"
+          :span="item.assignee_name ? 1 : 1"
+        >
+          {{ (item.candidate_names || []).join('、') }}
+        </el-descriptions-item>
         <el-descriptions-item label="承接部门">{{ item.department_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="挂到项目">
           <el-button
@@ -65,7 +72,10 @@
           <span v-else>-</span>
         </el-descriptions-item>
         <el-descriptions-item label="挂到任务">
-          <span v-if="item.task_id">{{ item.task_no }} · {{ item.task_title }}</span>
+          <template v-if="item.task_id">
+            <span>{{ item.task_no }} · {{ item.task_title }}</span>
+            <div class="field-hint">完成工单不会自动完成该任务，需在交付执行中单独标记任务完成。</div>
+          </template>
           <span v-else>-</span>
         </el-descriptions-item>
         <el-descriptions-item label="SLA">
@@ -476,6 +486,12 @@ onMounted(loadDetail)
   margin-top: 4px;
   color: #606266;
   white-space: pre-wrap;
+}
+.field-hint {
+  margin-top: 4px;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .hint {
   margin: 0 0 12px;

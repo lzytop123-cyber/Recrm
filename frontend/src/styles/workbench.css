@@ -7,6 +7,79 @@
   margin: 0;
 }
 
+/* 一屏工作台：页面本身不滚动，列表/看板在内部滚动 */
+.crm-fit-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+.crm-fit-page > .sales-head,
+.crm-fit-page > .page-head,
+.crm-fit-page > .asset-head,
+.crm-fit-page > .todo-head,
+.crm-fit-page > .approvals-head,
+.crm-fit-page > .crm-stats,
+.crm-fit-page > .sales-tabs,
+.crm-fit-page > .project-tabs,
+.crm-fit-page > .asset-tabs,
+.crm-fit-page > .schedule-toolbar,
+.crm-fit-page > .submode-bar,
+.crm-fit-page > .portfolio-hero,
+.crm-fit-page > .asset-kpis,
+.crm-fit-page > .allocation-summary,
+.crm-fit-page > .sales-quota-strip,
+.crm-fit-page > .task-kpis,
+.crm-fit-page > .task-logic-hint {
+  flex-shrink: 0;
+}
+
+.crm-fit-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-fit-body.is-scroll {
+  overflow: auto;
+}
+
+.crm-fit-panel,
+.crm-fit-page .crm-panel.crm-fit-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin-top: 0;
+}
+
+.crm-fit-panel > .toolbar,
+.crm-fit-panel > .crm-toolbar,
+.crm-fit-panel > .panel-head,
+.crm-fit-panel > .table-footer,
+.crm-fit-panel > .pager,
+.crm-fit-panel > .crm-pager {
+  flex-shrink: 0;
+}
+
+.crm-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.crm-fit-page .crm-panel + .crm-panel,
+.crm-fit-page .crm-panel + .el-card,
+.crm-fit-page .el-card + .crm-panel,
+.crm-fit-page .el-card + .el-card {
+  margin-top: var(--crm-space-3);
+}
+
 .sales-head {
   display: flex;
   align-items: flex-start;

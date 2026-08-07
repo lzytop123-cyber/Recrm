@@ -34,6 +34,8 @@ export interface Ticket {
   content: string
   creator_id: number
   assignee_id?: number | null
+  candidate_ids?: number[]
+  candidate_names?: string[]
   department_id?: number | null
   project_id?: number | null
   task_id?: number | null
@@ -89,6 +91,7 @@ export interface TicketStats {
 export interface AssigneeOption {
   id: number
   name: string
+  department_id?: number | null
 }
 
 export const TICKET_STATUS_LABEL: Record<string, string> = {
@@ -148,8 +151,8 @@ export function scanTicketSla() {
   }>('/tickets/sla/scan')
 }
 
-export function fetchAssigneeOptions() {
-  return request.get<AssigneeOption[]>('/tickets/options/assignees')
+export function fetchAssigneeOptions(params?: { department_id?: number }) {
+  return request.get<AssigneeOption[]>('/tickets/options/assignees', { params })
 }
 
 export function fetchTickets(params: {
@@ -176,6 +179,7 @@ export function createTicket(data: {
   priority?: string
   content: string
   assignee_id?: number
+  assignee_ids?: number[]
   department_id?: number
   project_id?: number
   task_id?: number

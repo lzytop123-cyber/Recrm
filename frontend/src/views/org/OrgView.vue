@@ -1,5 +1,5 @@
 <template>
-  <div class="crm-page org-page">
+  <div class="crm-page org-page crm-fit-page">
     <div class="page-head">
       <div>
         <h1>员工管理</h1>
@@ -124,45 +124,54 @@
           </div>
         </div>
 
-        <el-table :data="employees" v-loading="empLoading" stripe size="small" @row-click="goDetail">
-          <el-table-column label="员工" min-width="160">
-            <template #default="{ row }">
-              <div class="emp-cell">
-                <span class="avatar">{{ (row.real_name || row.username || '?').slice(0, 1) }}</span>
-                <div>
-                  <b>{{ row.real_name || row.username }}</b>
-                  <small>{{ row.employee_no || row.username }}</small>
+        <div class="table-wrap">
+          <el-table
+            :data="employees"
+            v-loading="empLoading"
+            stripe
+            size="small"
+            height="100%"
+            @row-click="goDetail"
+          >
+            <el-table-column label="员工" min-width="160">
+              <template #default="{ row }">
+                <div class="emp-cell">
+                  <span class="avatar">{{ (row.real_name || row.username || '?').slice(0, 1) }}</span>
+                  <div>
+                    <b>{{ row.real_name || row.username }}</b>
+                    <small>{{ row.employee_no || row.username }}</small>
+                  </div>
                 </div>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="department_name" label="部门" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="job_title" label="岗位" width="130" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.job_title || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="今日状态" width="96">
-            <template #default="{ row }">
-              <el-tag size="small" :type="todayTagType(row.today_status)">
-                {{ row.today_status || '—' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="用工" width="88">
-            <template #default="{ row }">
-              <el-tag size="small" :type="employmentTagType(row.employment_status, row.is_active)">
-                {{ row.employment_status || (row.is_active ? '正式' : '离职') }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="canManageOrg" link type="primary" @click.stop="openEmployeeEdit(row)">
-                编辑
-              </el-button>
-              <el-button v-else link type="primary" @click.stop="goDetail(row)">档案</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+              </template>
+            </el-table-column>
+            <el-table-column prop="department_name" label="部门" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="job_title" label="岗位" width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.job_title || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="今日状态" width="96">
+              <template #default="{ row }">
+                <el-tag size="small" :type="todayTagType(row.today_status)">
+                  {{ row.today_status || '—' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="用工" width="88">
+              <template #default="{ row }">
+                <el-tag size="small" :type="employmentTagType(row.employment_status, row.is_active)">
+                  {{ row.employment_status || (row.is_active ? '正式' : '离职') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="canManageOrg" link type="primary" @click.stop="openEmployeeEdit(row)">
+                  编辑
+                </el-button>
+                <el-button v-else link type="primary" @click.stop="goDetail(row)">档案</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
 
         <div class="pager">
           <el-pagination
@@ -696,19 +705,27 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.org-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .page-head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .page-head h1 {
   margin: 0;
   font-size: 22px;
 }
 .page-head p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
@@ -721,20 +738,48 @@ onMounted(async () => {
   margin-left: 4px;
   font-size: 11px;
 }
-.org-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 380px) 1fr;
-  gap: 12px;
-  align-items: start;
+.org-page :deep(.crm-stats) {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+  gap: 10px;
 }
-.org-tree-panel {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 200px);
-  overflow: auto;
+.org-page :deep(.crm-stat-tile) {
+  padding: 12px 14px;
+}
+.org-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+.org-tree-panel,
+.org-list-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.org-tree-panel :deep(.el-card__header) {
+  flex-shrink: 0;
+  padding: 10px 14px;
 }
 .org-tree-panel :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 8px 10px 12px;
+}
+.org-list-panel :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 14px;
 }
 .org-tree-panel :deep(.el-tree-node__content) {
   height: auto;
@@ -745,14 +790,12 @@ onMounted(async () => {
 .org-tree-panel :deep(.el-tree-node__expand-icon) {
   margin-top: 4px;
 }
-.org-list-panel {
-  min-width: 0;
-}
 .toolbar {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 .filters {
   display: flex;
@@ -760,10 +803,16 @@ onMounted(async () => {
   gap: 8px;
   align-items: center;
 }
+.table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .pager {
   display: flex;
   justify-content: flex-end;
-  margin-top: 12px;
+  margin-top: 10px;
+  flex-shrink: 0;
 }
 .card-header {
   display: flex;
@@ -830,12 +879,20 @@ onMounted(async () => {
   box-shadow: inset 0 0 0 1px var(--el-color-primary);
 }
 @media (max-width: 960px) {
+  .org-page {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
   .org-layout {
     grid-template-columns: 1fr;
+    height: auto;
   }
   .org-tree-panel {
-    position: static;
     max-height: 280px;
+  }
+  .table-wrap {
+    min-height: 360px;
   }
 }
 </style>

@@ -216,7 +216,10 @@ async def _sync_feishu_contacts_inner(
     db.flush()
 
     employee_role = db.query(Role).filter(Role.code == "employee").first()
-    seen_open_ids: set[str] = set()
+    # 先按 open_id 去重收集，再按用户自身的 department_ids 解析归属，
+    # 避免「先扫到根部门 0 → 全员挂到总公司 → 后续真实部门被跳过」。
+    pending_users: dict[str, dict[str, Any]] = {}
+    pending_depts: dict[str, Department | None] = {}
 
     for i, feishu_dept_id in enumerate(list(dept_map.keys())):
         if i and i % 5 == 0:
@@ -229,28 +232,27 @@ async def _sync_feishu_contacts_inner(
             result.warnings.append(_fmt_dept_error("拉取部门成员失败", feishu_dept_id, exc))
             continue
 
-        local_dept = root if feishu_dept_id == "0" else dept_map.get(feishu_dept_id)
+        fallback = root if feishu_dept_id == "0" else dept_map.get(feishu_dept_id)
         for item in users:
             open_id = str(item.get("open_id") or "")
             if not open_id:
                 result.skipped += 1
                 continue
-            if open_id in seen_open_ids:
-                continue
-            seen_open_ids.add(open_id)
+            resolved = _pick_department_for_user(item, dept_map, root, fallback)
+            if open_id in pending_users:
+                pending_users[open_id] = item
+                pending_depts[open_id] = _prefer_department(
+                    pending_depts.get(open_id), resolved, root
+                )
+            else:
+                pending_users[open_id] = item
+                pending_depts[open_id] = resolved
             leader = str(item.get("leader_user_id") or "").strip()
             if leader:
                 leader_links[open_id] = leader
-            _upsert_employee(
-                db,
-                item=item,
-                department=local_dept,
-                employee_role=employee_role,
-                result=result,
-            )
 
     for open_id in scope_user_ids:
-        if open_id in seen_open_ids:
+        if open_id in pending_users:
             continue
         try:
             item = await api.get_user(open_id)
@@ -260,25 +262,21 @@ async def _sync_feishu_contacts_inner(
         if not item:
             result.skipped += 1
             continue
-        dept_ids = [str(x) for x in (item.get("department_ids") or [])]
-        local_dept = None
-        for did in dept_ids:
-            if did in dept_map:
-                local_dept = dept_map[did]
-                break
-            if did and did != "0":
+        for did in [str(x) for x in (item.get("department_ids") or [])]:
+            if did and did != "0" and did not in dept_map:
                 name = await _department_display_name(api, did, result)
-                local_dept = _upsert_department(db, did, root, result, name=name)
-                dept_map[did] = local_dept
-                break
-        seen_open_ids.add(open_id)
+                dept_map[did] = _upsert_department(db, did, root, result, name=name)
+        pending_users[open_id] = item
+        pending_depts[open_id] = _pick_department_for_user(item, dept_map, root, root)
         leader = str(item.get("leader_user_id") or "").strip()
         if leader:
             leader_links[open_id] = leader
+
+    for open_id, item in pending_users.items():
         _upsert_employee(
             db,
             item=item,
-            department=local_dept or root,
+            department=pending_depts.get(open_id) or root,
             employee_role=employee_role,
             result=result,
         )
@@ -372,6 +370,41 @@ async def _department_display_name(
     except FeishuAuthError as exc:
         result.warnings.append(f"获取部门名称失败 department_id={department_id}: {exc}")
     return f"飞书部门 {department_id}"
+
+
+def _pick_department_for_user(
+    item: dict[str, Any],
+    dept_map: dict[str, Department],
+    root: Department,
+    fallback: Department | None,
+) -> Department | None:
+    """按飞书用户 department_ids 解析本地部门；主部门优先，跳过根部门 0。"""
+    dept_ids = [str(x) for x in (item.get("department_ids") or []) if x is not None and str(x)]
+    for did in dept_ids:
+        if did == "0":
+            continue
+        if did in dept_map:
+            return dept_map[did]
+    if "0" in dept_ids:
+        return root
+    return fallback
+
+
+def _prefer_department(
+    current: Department | None,
+    candidate: Department | None,
+    root: Department,
+) -> Department | None:
+    """多人多部门命中时，优先保留非总公司的具体部门。"""
+    if candidate is None:
+        return current
+    if current is None:
+        return candidate
+    if current.id == root.id and candidate.id != root.id:
+        return candidate
+    if current.id != root.id and candidate.id == root.id:
+        return current
+    return current
 
 
 def _upsert_department(

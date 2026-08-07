@@ -142,6 +142,7 @@ export interface ProjectTask {
   milestone_name?: string | null
   assignee_name?: string | null
   department_name?: string | null
+  ticket_no?: string | null
   due_status?: string | null
   schedule_booked?: number
   schedule_completed?: number

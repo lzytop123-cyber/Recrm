@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <section class="crm-panel">
+    <section class="crm-panel" :class="{ 'crm-fit-panel': embedded }">
       <div class="toolbar">
         <div class="filters">
           <el-input
@@ -46,7 +46,14 @@
         <el-button v-if="!embedded" type="primary" @click="openCreate">＋ 新建商机</el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" stripe @row-click="goDetail">
+      <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+        <el-table
+          :data="items"
+          v-loading="loading"
+          stripe
+          :height="embedded ? '100%' : undefined"
+          @row-click="goDetail"
+        >
         <el-table-column label="商机" min-width="220">
           <template #default="{ row }">
             <div class="entity">
@@ -89,6 +96,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <div class="table-footer">
         <span>共 {{ total }} 个商机，本页显示 {{ items.length }} 条</span>
@@ -415,5 +423,26 @@ onMounted(() => {
 }
 .embedded .crm-stats {
   margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.embedded.opportunities-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embedded.opportunities-page > .crm-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.embedded.opportunities-page .crm-table-wrap.is-fit {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.embedded.opportunities-page .pager,
+.embedded.opportunities-page .table-footer {
+  flex-shrink: 0;
 }
 </style>

@@ -56,12 +56,12 @@ def test_claim_quota_blocks_over_daily_limit(db_session: Session, monkeypatch) -
     lead1 = lead_service.create_lead(
         db_session,
         user,
-        LeadCreate(name="客户一", company_name="A公司", phone="13800000001"),
+        LeadCreate(name="客户一", company_name="A公司", phone="13800000001", self_follow=False),
     )
     lead2 = lead_service.create_lead(
         db_session,
         user,
-        LeadCreate(name="客户二", company_name="B公司", phone="13800000002"),
+        LeadCreate(name="客户二", company_name="B公司", phone="13800000002", self_follow=False),
     )
     assert lead1.status == LEAD_STATUS_PENDING
 
@@ -82,7 +82,7 @@ def test_return_writes_reason_type(db_session: Session) -> None:
     lead = lead_service.create_lead(
         db_session,
         user,
-        LeadCreate(name="客户三", company_name="C公司", phone="13800000003"),
+        LeadCreate(name="客户三", company_name="C公司", phone="13800000003", self_follow=False),
     )
     claimed = lead_service.claim_lead(db_session, user, lead.id)
     lead_service.return_to_pool(
