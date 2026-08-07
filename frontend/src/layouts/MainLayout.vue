@@ -5,7 +5,10 @@
     <el-aside class="aside" width="220px">
       <div class="brand">
         <img class="brand-mark" src="/ztxd-logo.png" alt="" width="32" height="32" />
-        <span class="brand-text">中泰旭鼎CRM</span>
+        <div class="brand-copy">
+          <span class="brand-eyebrow">经营台</span>
+          <span class="brand-text">中泰旭鼎CRM</span>
+        </div>
       </div>
 
       <nav class="aside-nav" aria-label="主导航">
@@ -13,8 +16,8 @@
           :key="activeMenu"
           :default-active="activeMenu"
           background-color="transparent"
-          text-color="var(--crm-nav-text)"
-          active-text-color="var(--crm-white)"
+          text-color="#5a6b7d"
+          active-text-color="#0f2744"
           router
           @select="onMenuSelect"
         >
@@ -32,10 +35,13 @@
           v-if="userStore.hasPermission('org:view')"
           type="button"
           class="sync-status-btn"
+          :class="syncToneClass"
           :title="syncHint"
           @click="refreshSyncStatus"
         >
-          <span class="sync-icon">↻</span>
+          <span class="sync-icon" aria-hidden="true">
+            <el-icon :size="14"><Refresh /></el-icon>
+          </span>
           <span class="sync-copy">
             <b>{{ syncStatus?.overall_label || '飞书同步' }}</b>
             <small>{{ syncTimeLabel }}</small>
@@ -83,21 +89,23 @@
     </el-aside>
 
     <el-container class="content-shell">
-      <el-header class="header">
+      <el-header class="header" :class="{ 'header--page-headed': hideChromeTitle }">
         <div class="header-left">
           <button type="button" class="menu-toggle" aria-label="打开导航" @click="navOpen = !navOpen">
             <span />
             <span />
             <span />
           </button>
-          <template v-if="salesCrumb">
-            <span class="crumb-muted">销售中心</span>
-            <b class="crumb-sep">/</b>
-            <strong>{{ salesCrumb }}</strong>
-          </template>
-          <template v-else>
-            <strong class="page-title">{{ currentTitle }}</strong>
-          </template>
+          <div v-if="!hideChromeTitle" class="header-title-wrap">
+            <template v-if="salesCrumb">
+              <p class="header-eyebrow">销售中心</p>
+              <strong class="page-title">{{ salesCrumb }}</strong>
+            </template>
+            <template v-else>
+              <p class="header-eyebrow">经营台</p>
+              <strong class="page-title">{{ currentTitle }}</strong>
+            </template>
+          </div>
         </div>
       </el-header>
 
@@ -170,6 +178,14 @@ const syncHint = computed(() => {
   return items.map((x) => `${x.key}: ${x.status}`).join(' · ') || '点击刷新同步状态'
 })
 
+const syncToneClass = computed(() => {
+  const s = syncStatus.value?.overall_status || ''
+  if (s === 'ok') return 'is-ok'
+  if (s === 'error') return 'is-bad'
+  if (s === 'pending') return 'is-pending'
+  return 'is-muted'
+})
+
 async function refreshSyncStatus() {
   if (!userStore.hasPermission('org:view')) return
   try {
@@ -222,6 +238,20 @@ const salesCrumb = computed(() => {
   if (tab === 'customers') return '客户与商机'
   if (tab === 'pool') return '线索总览'
   return '线索总览'
+})
+/** 页内已有完整页头时，隐藏顶栏标题，避免重复 */
+const hideChromeTitle = computed(() => {
+  const path = route.path
+  return (
+    path === '/dashboard' ||
+    path.endsWith('/dashboard') ||
+    path === '/todos' ||
+    path.endsWith('/todos') ||
+    path === '/approvals' ||
+    path.endsWith('/approvals') ||
+    path === '/sales' ||
+    path.startsWith('/sales')
+  )
 })
 
 const avatarChar = computed(() => {
@@ -319,48 +349,104 @@ onUnmounted(() => {
 }
 
 .aside {
+  --side-bg: #f4f7fb;
+  --side-ink: #0f172a;
+  --side-muted: #64748b;
+  --side-faint: #94a3b8;
+  --side-line: #e2e8f0;
+  --side-chip: #ffffff;
+  --side-hover: #eff6ff;
+  --side-accent: #1e40af;
+  --side-blue: #1e40af;
+
   display: flex;
   flex-direction: column;
-  background: var(--crm-nav);
-  border-right: 1px solid var(--crm-nav-border);
+  position: relative;
   overflow: hidden;
   z-index: 40;
+  background:
+    radial-gradient(ellipse 120% 50% at 0% 0%, rgba(27, 79, 138, 0.06), transparent 55%),
+    linear-gradient(180deg, #f8fafc 0%, var(--side-bg) 46%, #eef3f9 100%);
+  border-right: 1px solid var(--side-line);
+  box-shadow: 4px 0 24px rgba(15, 39, 68, 0.04);
+}
+
+.aside::before {
+  content: '';
+  position: absolute;
+  inset: 12% 0 auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(196, 92, 38, 0.22),
+    rgba(27, 79, 138, 0.12),
+    transparent
+  );
+  pointer-events: none;
+  opacity: 0.7;
+  z-index: 0;
 }
 
 .brand {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
-  height: var(--crm-header-height);
-  padding: 0 var(--crm-space-4);
-  border-bottom: 1px solid var(--crm-nav-border);
+  min-height: var(--crm-header-height);
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--side-line);
+  background: color-mix(in oklab, #fff 70%, transparent);
 }
 
 .brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 11px;
   object-fit: cover;
   background: #000;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 18px rgba(15, 39, 68, 0.12),
+    0 0 0 1px rgba(15, 39, 68, 0.06);
+}
+
+.brand-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.brand-eyebrow {
+  color: var(--side-accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
 }
 
 .brand-text {
-  color: var(--crm-white);
-  font-family: var(--crm-font-display);
+  color: var(--side-ink);
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
 .aside-nav {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
-  padding: var(--crm-space-3) 0 var(--crm-space-4);
+  padding: 14px 0 16px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 39, 68, 0.18) transparent;
 }
 
 .aside :deep(.el-menu) {
@@ -370,93 +456,163 @@ onUnmounted(() => {
 }
 
 .aside :deep(.el-menu-item) {
+  position: relative;
   height: 42px;
-  margin: 2px var(--crm-space-3);
-  padding: 0 var(--crm-space-3) !important;
-  border-radius: var(--crm-radius-md);
-  color: var(--crm-nav-text);
+  margin: 4px 12px;
+  padding: 0 12px !important;
+  border-radius: 12px;
+  color: var(--side-muted);
   transition:
-    background-color var(--crm-duration-fast) var(--crm-ease-out),
-    color var(--crm-duration-fast) var(--crm-ease-out);
+    background-color 180ms var(--crm-ease-out),
+    color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out);
 }
 
 .aside :deep(.el-menu-item .el-icon) {
-  margin-right: var(--crm-space-2);
+  margin-right: 10px;
   font-size: 16px;
   color: inherit;
+  opacity: 0.88;
 }
 
 .aside :deep(.el-menu-item span) {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .aside :deep(.el-menu-item:hover) {
-  background: var(--crm-nav-hover) !important;
-  color: var(--crm-white) !important;
+  background: var(--side-hover) !important;
+  color: var(--side-ink) !important;
+}
+
+.aside :deep(.el-menu-item:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--side-blue) 55%, white);
+  outline-offset: 1px;
 }
 
 .aside :deep(.el-menu-item.is-active) {
-  background: var(--crm-primary) !important;
-  color: var(--crm-white) !important;
-  font-weight: 600;
-  box-shadow: 0 6px 16px rgba(27, 79, 138, 0.28);
+  background: var(--side-chip) !important;
+  color: var(--side-ink) !important;
+  font-weight: 650;
+  box-shadow:
+    0 8px 20px rgba(15, 39, 68, 0.08),
+    0 0 0 1px rgba(15, 39, 68, 0.05);
+}
+
+.aside :deep(.el-menu-item.is-active::before) {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #60a5fa, var(--side-accent));
 }
 
 .aside :deep(.el-menu-item.is-active .el-icon) {
-  color: var(--crm-white);
+  color: var(--side-accent);
+  opacity: 1;
 }
 
 .sidebar-foot {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   margin-top: auto;
-  padding: 10px 12px 14px;
-  border-top: 1px solid var(--crm-nav-border);
+  padding: 12px 12px 14px;
+  border-top: 1px solid var(--side-line);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: color-mix(in oklab, #fff 55%, transparent);
 }
 
 .sync-status-btn {
   width: 100%;
-  border: 0;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--crm-nav-text);
-  padding: 8px 10px;
+  border: 1px solid var(--side-line);
+  border-radius: 12px;
+  background: var(--side-chip);
+  color: var(--side-muted);
+  padding: 9px 10px;
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 39, 68, 0.04);
+  transition:
+    background-color 180ms var(--crm-ease-out),
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out);
 }
+
 .sync-status-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  border-color: color-mix(in oklab, var(--side-blue) 25%, var(--side-line));
+  box-shadow: 0 8px 18px rgba(15, 39, 68, 0.07);
 }
+
+.sync-status-btn.is-bad {
+  border-color: color-mix(in oklab, #2563eb 40%, var(--side-line));
+  background: #eff6ff;
+}
+
+.sync-status-btn.is-ok {
+  border-color: color-mix(in oklab, #047857 30%, var(--side-line));
+  background: #ecfdf5;
+}
+
+.sync-status-btn.is-pending {
+  border-color: color-mix(in oklab, var(--side-blue) 28%, var(--side-line));
+  background: #f8fafc;
+}
+
 .sync-icon {
   width: 28px;
   height: 28px;
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--side-hover);
+  color: var(--side-blue);
   flex-shrink: 0;
 }
+
+.sync-status-btn.is-bad .sync-icon {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.sync-status-btn.is-ok .sync-icon {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.sync-status-btn.is-pending .sync-icon {
+  color: var(--side-blue);
+  background: #e2e8f0;
+}
+
 .sync-copy {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
+
 .sync-copy b {
   font-size: 12px;
   font-weight: 650;
+  color: var(--side-ink);
 }
+
 .sync-copy small {
   font-size: 11px;
-  opacity: 0.72;
+  color: var(--side-faint);
 }
 
 .account-wrap {
@@ -465,34 +621,41 @@ onUnmounted(() => {
 
 .user-card {
   width: 100%;
-  min-height: 50px;
-  border: 0;
-  border-radius: 11px;
+  min-height: 52px;
+  border: 1px solid transparent;
+  border-radius: 12px;
   background: transparent;
-  color: var(--crm-nav-text);
-  padding: 8px 6px;
+  color: var(--side-muted);
+  padding: 8px;
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 180ms var(--crm-ease-out),
+    border-color 180ms var(--crm-ease-out);
 }
 
 .user-card:hover,
 .user-card[aria-expanded='true'] {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--side-chip);
+  border-color: var(--side-line);
+  box-shadow: 0 6px 16px rgba(15, 39, 68, 0.06);
 }
 
 .avatar {
   width: 34px;
   height: 34px;
   border-radius: 11px;
-  background: color-mix(in oklab, var(--crm-primary) 22%, #fff);
-  color: var(--crm-primary);
+  background: linear-gradient(145deg, #dbeafe, #eff6ff);
+  color: var(--side-blue);
   display: grid;
   place-items: center;
-  font-weight: 800;
+  font-weight: 700;
+  font-size: 13px;
   flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(30, 64, 175, 0.12);
 }
 
 .user-copy {
@@ -509,7 +672,7 @@ onUnmounted(() => {
 }
 
 .user-copy b {
-  color: #edf6f4;
+  color: var(--side-ink);
   font-size: 13px;
   font-weight: 650;
 }
@@ -517,11 +680,11 @@ onUnmounted(() => {
 .user-copy small {
   font-size: 11px;
   margin-top: 2px;
-  color: color-mix(in oklab, var(--crm-nav-text) 80%, transparent);
+  color: var(--side-faint);
 }
 
 .account-more {
-  color: #7f9692;
+  color: var(--side-faint);
   font-size: 13px;
   letter-spacing: 0.08em;
   flex-shrink: 0;
@@ -609,7 +772,9 @@ onUnmounted(() => {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: var(--crm-canvas);
+  background:
+    radial-gradient(ellipse 80% 40% at 100% 0%, rgba(27, 79, 138, 0.045), transparent 55%),
+    #f3f6fa;
 }
 
 .header {
@@ -619,24 +784,58 @@ onUnmounted(() => {
   gap: var(--crm-space-3);
   height: var(--crm-header-height);
   padding: 0 var(--crm-space-6);
-  background: var(--crm-surface);
-  border-bottom: 1px solid var(--crm-border);
-  box-shadow: 0 1px 2px rgba(15, 39, 68, 0.03);
+  background: color-mix(in oklab, #ffffff 88%, transparent);
+  border-bottom: 1px solid #e4ebf3;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (min-width: 961px) {
+  .header.header--page-headed {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .header.header--page-headed {
+    height: auto;
+    min-height: 48px;
+    padding: 8px var(--crm-space-4);
+  }
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
   color: var(--crm-ink);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+}
+
+.header-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-eyebrow {
+  margin: 0;
+  color: #3b82f6;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
 }
 
 .page-title {
-  font-family: var(--crm-font-display);
+  margin: 0;
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -660,11 +859,12 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   padding: 8px;
-  border: 1px solid var(--crm-border);
-  border-radius: var(--crm-radius-sm);
-  background: var(--crm-surface);
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #fff;
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(15, 39, 68, 0.05);
 }
 
 .menu-toggle span {
@@ -686,7 +886,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   padding: var(--crm-space-5) var(--crm-space-6);
-  background: var(--crm-canvas);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -772,7 +972,8 @@ onUnmounted(() => {
     position: fixed;
     inset: 0;
     z-index: 30;
-    background: rgba(15, 39, 68, 0.4);
+    background: rgba(7, 13, 24, 0.55);
+    backdrop-filter: blur(2px);
   }
 
   .menu-toggle {

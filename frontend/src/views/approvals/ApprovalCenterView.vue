@@ -1,27 +1,42 @@
 <template>
   <div class="crm-page approvals-page crm-fit-page" v-loading="loading">
-    <header class="todo-head approvals-head">
-      <div class="todo-head-copy">
+    <header class="approvals-head">
+      <div class="approvals-head-copy">
+        <p class="approvals-eyebrow">经营台</p>
         <h1>审批中心</h1>
         <p>汇总待我审批、我发起与已处理事项；通过后回各自业务模块生效。</p>
       </div>
+      <div class="approvals-head-actions">
+        <el-button @click="reload">刷新</el-button>
+      </div>
     </header>
 
-    <div class="crm-stats" style="--crm-stats-cols: 3">
+    <section class="approvals-kpis" style="--kpi-cols: 3" aria-label="审批分类">
       <button
         v-for="tab in tabs"
         :key="tab.key"
         type="button"
-        class="crm-stat-tile"
-        :class="{ active: activeTab === tab.key }"
+        class="approvals-kpi"
+        :class="{ active: activeTab === tab.key, accent: tab.key === 'pending' }"
         @click="switchTab(tab.key)"
       >
-        <span>{{ tab.label }}</span>
-        <strong>{{ stats[tab.statKey] ?? 0 }}</strong>
+        <small>{{ tab.label }}</small>
+        <b :class="{ danger: tab.key === 'pending' && (stats[tab.statKey] ?? 0) > 0 }">
+          {{ stats[tab.statKey] ?? 0 }}
+        </b>
+        <span class="approvals-kpi-note">{{ tab.note }}</span>
       </button>
-    </div>
+    </section>
 
-    <section class="crm-panel crm-fit-panel">
+    <section class="crm-panel crm-fit-panel approvals-panel">
+      <div class="approvals-panel-head">
+        <div>
+          <strong>{{ listTitle }}</strong>
+          <p>按提交时间与业务类型筛选处理</p>
+        </div>
+        <span class="approvals-count-chip">{{ total }} 项</span>
+      </div>
+
       <div class="toolbar">
         <div class="filters">
           <el-select v-model="category" clearable placeholder="业务类型" style="width: 140px" @change="reload">
@@ -352,9 +367,9 @@ import {
 const router = useRouter()
 
 const tabs = [
-  { key: 'pending', label: '待我审批', statKey: 'pending' as const },
-  { key: 'initiated', label: '我发起的', statKey: 'initiated' as const },
-  { key: 'processed', label: '已处理', statKey: 'processed' as const },
+  { key: 'pending', label: '待我审批', statKey: 'pending' as const, note: '需尽快处理' },
+  { key: 'initiated', label: '我发起的', statKey: 'initiated' as const, note: '跟踪进度' },
+  { key: 'processed', label: '已处理', statKey: 'processed' as const, note: '历史记录' },
 ]
 
 /** 与后端 category 对齐；目标绩效二期隐藏 */
@@ -375,6 +390,10 @@ const stats = reactive<ApprovalStats>({
   processed: 0,
   cc: 0,
 })
+
+const listTitle = computed(
+  () => tabs.find((t) => t.key === activeTab.value)?.label || '审批列表',
+)
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -650,29 +669,210 @@ onMounted(reload)
 </script>
 
 <style scoped>
+/* 对齐经营总览 · Cool Enterprise Ops Desk */
+.approvals-page {
+  --ap-ink: #0f172a;
+  --ap-ink-soft: #64748b;
+  --ap-ink-faint: #94a3b8;
+  --ap-line: #e2e8f0;
+  --ap-mist: #f1f5f9;
+  --ap-sky: #eff6ff;
+  --ap-sky-mid: #dbeafe;
+  --ap-blue: #1e40af;
+  --ap-blue-mid: #3b82f6;
+  --ap-amber: #d97706;
+  --ap-success: #047857;
+  --ap-danger: #dc2626;
+  --ap-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+  --ap-shadow-hover: 0 14px 28px rgba(15, 23, 42, 0.08);
+
+  gap: 14px;
+}
+
 .approvals-head {
-  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 0;
   flex-shrink: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--ap-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 72% 100% at 0% 0%, rgba(59, 130, 246, 0.1), transparent 52%),
+    radial-gradient(ellipse 50% 80% at 100% 0%, rgba(30, 64, 175, 0.05), transparent 48%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: var(--ap-shadow);
 }
-.approvals-head h1 {
+
+.approvals-eyebrow {
+  margin: 0 0 6px;
+  color: var(--ap-blue-mid);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+}
+
+.approvals-head-copy h1 {
   margin: 0;
-  font-size: 22px;
-  color: var(--crm-ink);
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: var(--ap-ink);
 }
-.approvals-head p {
+
+.approvals-head-copy p:last-child {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--crm-ink-soft);
+  line-height: 1.5;
+  color: var(--ap-ink-soft);
   max-width: 42em;
 }
-.approvals-page :deep(.crm-stats) {
+
+.approvals-head-actions {
   flex-shrink: 0;
-  margin-bottom: 12px;
 }
-.approvals-page .crm-stat-tile.active {
-  border-color: var(--el-color-primary);
-  box-shadow: inset 0 0 0 1px var(--el-color-primary);
+
+.approvals-kpis {
+  display: grid;
+  grid-template-columns: repeat(var(--kpi-cols, 3), minmax(0, 1fr));
+  gap: 12px;
+  flex-shrink: 0;
 }
+
+.approvals-kpi {
+  appearance: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--ap-line);
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 16px 14px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  min-height: 116px;
+  box-shadow: var(--ap-shadow);
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out),
+    background-color 180ms var(--crm-ease-out);
+}
+
+.approvals-kpi:hover {
+  border-color: color-mix(in oklab, var(--ap-blue) 22%, var(--ap-line));
+  box-shadow: var(--ap-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.approvals-kpi:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ap-blue) 50%, white);
+  outline-offset: 2px;
+}
+
+.approvals-kpi.accent:not(.active) {
+  border-color: color-mix(in oklab, var(--ap-blue-mid) 18%, var(--ap-line));
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.55), #fff 58%);
+}
+
+.approvals-kpi.active {
+  border-color: color-mix(in oklab, var(--ap-blue-mid) 28%, var(--ap-line));
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.12);
+}
+
+.approvals-kpi.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #60a5fa, var(--ap-blue));
+}
+
+.approvals-kpi small {
+  display: block;
+  color: var(--ap-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.approvals-kpi b {
+  display: block;
+  font-family: var(--crm-font-data);
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ap-ink);
+}
+
+.approvals-kpi b.danger {
+  color: var(--ap-danger);
+}
+
+.approvals-kpi-note {
+  margin-top: auto;
+  color: var(--ap-ink-faint);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.approvals-panel {
+  border-color: var(--ap-line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--ap-shadow);
+}
+
+.approvals-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.approvals-panel-head strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ap-ink);
+}
+
+.approvals-panel-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ap-ink-faint);
+}
+
+.approvals-count-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ap-sky-mid);
+  border-radius: 999px;
+  background: var(--ap-sky);
+  color: var(--ap-blue);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -681,24 +881,28 @@ onMounted(reload)
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
 .filters {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
 }
+
 .pager {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
   flex-shrink: 0;
 }
+
 .approval-drawer {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 240px;
 }
+
 :deep(.el-drawer__body) {
   display: flex;
   flex-direction: column;
@@ -706,129 +910,159 @@ onMounted(reload)
   overflow: hidden;
   box-sizing: border-box;
 }
+
 .drawer-scroll {
   flex: 1;
   overflow: auto;
   padding-bottom: 12px;
 }
+
 .drawer-hero {
   margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--ap-line);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse 70% 100% at 0% 0%, rgba(59, 130, 246, 0.08), transparent 55%),
+    linear-gradient(180deg, #fff, #f8fafc);
 }
+
 .drawer-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .drawer-hero h2 {
   margin: 10px 0 6px;
   font-size: 18px;
-  font-weight: 600;
-  color: var(--crm-ink);
+  font-weight: 700;
+  color: var(--ap-ink);
   line-height: 1.35;
 }
+
 .drawer-meta,
 .drawer-node {
   margin: 0;
   font-size: 13px;
-  color: var(--crm-ink-soft);
+  color: var(--ap-ink-soft);
   line-height: 1.5;
 }
+
 .drawer-node {
   margin-top: 6px;
-  color: var(--el-color-warning-dark-2, #b88230);
+  color: var(--ap-amber);
 }
+
 .amount-card {
   margin-bottom: 14px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: linear-gradient(145deg, oklch(0.96 0.03 250), oklch(0.98 0.01 250));
-  border: 1px solid oklch(0.9 0.03 250);
+  background: linear-gradient(145deg, var(--ap-sky), #f8fafc);
+  border: 1px solid var(--ap-line);
 }
+
 .amount-card small {
   display: block;
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--ap-ink-faint);
   margin-bottom: 4px;
 }
+
 .amount-card b {
   font-size: 28px;
-  font-weight: 700;
-  color: var(--crm-ink);
+  font-weight: 750;
+  color: var(--ap-ink);
   letter-spacing: -0.02em;
+  font-family: var(--crm-font-data);
 }
+
 .fact-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 18px;
 }
+
 .fact-row {
   padding: 10px 12px;
-  border: 1px solid var(--crm-border);
+  border: 1px solid var(--ap-line);
   border-radius: 10px;
-  background: var(--crm-surface-soft, #f7f8fa);
+  background: var(--ap-mist);
 }
+
 .fact-row.wide {
   grid-column: 1 / -1;
 }
+
 .fact-row small {
   display: block;
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--ap-ink-faint);
   margin-bottom: 4px;
 }
+
 .fact-row b {
   font-size: 14px;
   font-weight: 600;
-  color: var(--crm-ink);
+  color: var(--ap-ink);
   line-height: 1.4;
   word-break: break-word;
 }
+
 .attach-preview {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
 }
+
 .attach-thumb {
   width: 120px;
   height: 120px;
   border-radius: 8px;
-  border: 1px solid var(--crm-border);
+  border: 1px solid var(--ap-line);
   cursor: zoom-in;
   overflow: hidden;
   background: #fff;
 }
+
 .attach-thumb :deep(img) {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+
 .attach-link {
-  color: var(--crm-primary);
+  color: var(--ap-blue);
   font-size: 13px;
   font-weight: 600;
   word-break: break-all;
 }
+
 .attach-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--crm-ink);
+  color: var(--ap-ink);
   word-break: break-all;
 }
+
 .timeline-block {
   margin-top: 4px;
 }
+
 .timeline-block h3 {
   margin: 0 0 10px;
   font-size: 14px;
-  color: var(--crm-ink);
+  color: var(--ap-ink);
 }
+
 .approval-timeline {
   list-style: none;
   margin: 0;
   padding: 0;
 }
+
 .approval-timeline li {
   display: grid;
   grid-template-columns: 16px 1fr;
@@ -836,6 +1070,7 @@ onMounted(reload)
   position: relative;
   padding-bottom: 16px;
 }
+
 .approval-timeline li:not(:last-child)::before {
   content: '';
   position: absolute;
@@ -843,45 +1078,53 @@ onMounted(reload)
   top: 14px;
   bottom: 0;
   width: 2px;
-  background: var(--crm-border);
+  background: var(--ap-line);
 }
+
 .approval-timeline .tl-dot {
   width: 12px;
   height: 12px;
   margin-top: 4px;
   border-radius: 50%;
-  border: 2px solid var(--crm-border);
+  border: 2px solid var(--ap-line);
   background: #fff;
   z-index: 1;
 }
+
 .approval-timeline .is-done .tl-dot {
-  border-color: var(--crm-success, #389e0d);
-  background: var(--crm-success, #389e0d);
+  border-color: var(--ap-success);
+  background: var(--ap-success);
 }
+
 .approval-timeline .is-current .tl-dot {
-  border-color: var(--el-color-warning);
-  background: var(--el-color-warning);
+  border-color: var(--ap-blue-mid);
+  background: var(--ap-blue-mid);
 }
+
 .approval-timeline .is-waiting .tl-dot {
-  border-color: var(--crm-border);
+  border-color: var(--ap-line);
   background: #fff;
 }
+
 .tl-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--crm-ink);
+  color: var(--ap-ink);
 }
+
 .is-waiting .tl-title {
-  color: var(--crm-ink-soft);
+  color: var(--ap-ink-faint);
   font-weight: 500;
 }
+
 .tl-meta,
 .tl-comment {
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--ap-ink-faint);
   margin-top: 2px;
   line-height: 1.4;
 }
+
 .drawer-actions {
   display: flex;
   flex-wrap: wrap;
@@ -889,9 +1132,31 @@ onMounted(reload)
   justify-content: flex-end;
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid var(--crm-border);
+  border-top: 1px solid var(--ap-line);
   background: #fff;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .approvals-kpi {
+    transition: none;
+  }
+
+  .approvals-kpi:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .approvals-head {
+    flex-direction: column;
+    padding: 14px 16px;
+  }
+
+  .approvals-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 560px) {
   .fact-grid {
     grid-template-columns: 1fr;

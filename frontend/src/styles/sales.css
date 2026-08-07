@@ -25,11 +25,12 @@
 
 .allocation-summary article,
 .allocation-summary .overview-card {
-  background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
-  border-radius: 16px;
+  position: relative;
+  background: #fff;
+  border: 1px solid #e4ebf3;
+  border-radius: 14px;
   padding: 16px 18px;
-  box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.04);
+  box-shadow: 0 8px 18px rgba(15, 39, 68, 0.035);
 }
 
 .allocation-summary .overview-card {
@@ -40,22 +41,42 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out),
+    background-color 180ms var(--crm-ease-out);
 }
 
 .allocation-summary .overview-card:hover {
-  border-color: color-mix(in oklab, var(--crm-primary) 45%, var(--crm-border));
+  border-color: color-mix(in oklab, #1b4f8a 22%, #e4ebf3);
+  box-shadow: 0 12px 24px rgba(15, 39, 68, 0.07);
+  transform: translateY(-1px);
 }
 
 .allocation-summary .overview-card.active {
-  border-color: var(--crm-primary);
-  box-shadow: inset 0 0 0 1px var(--crm-primary);
+  border-color: color-mix(in oklab, #c45c26 28%, #e4ebf3);
+  background: linear-gradient(160deg, rgba(248, 235, 227, 0.55), #fff 60%);
+  box-shadow:
+    0 10px 22px rgba(15, 39, 68, 0.06),
+    inset 0 0 0 1px rgba(196, 92, 38, 0.08);
+}
+
+.allocation-summary .overview-card.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #e8925a, #c45c26);
 }
 
 .allocation-summary small,
 .allocation-summary span {
   display: block;
-  color: var(--crm-ink-soft);
+  color: #5a6b7d;
   font-size: 12px;
 }
 
@@ -64,7 +85,10 @@
   font-size: 28px;
   line-height: 1.1;
   margin: 7px 0;
-  color: var(--crm-ink);
+  color: #0f2744;
+  font-family: var(--crm-font-data);
+  font-weight: 750;
+  letter-spacing: -0.03em;
 }
 
 .sales-quota-strip {
@@ -73,21 +97,24 @@
   gap: 12px;
   margin-bottom: 14px;
   padding: 14px 16px;
-  border: 1px solid var(--crm-border);
+  border: 1px solid #e4ebf3;
   border-radius: 14px;
-  background: var(--crm-surface);
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 39, 68, 0.035);
 }
 
 .sales-quota-strip .quota-item small {
   display: block;
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: #5a6b7d;
   margin-bottom: 4px;
 }
 
 .sales-quota-strip .quota-item b {
   font-size: 18px;
-  color: var(--crm-ink);
+  color: #0f2744;
+  font-family: var(--crm-font-data);
+  font-weight: 700;
 }
 
 .entity {
@@ -104,8 +131,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--crm-primary-soft);
-  color: var(--crm-primary);
+  background: #e8f0f8;
+  color: #1b4f8a;
   font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
@@ -122,10 +149,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  color: #0f2744;
 }
 
 .entity-text small {
-  color: var(--crm-ink-soft);
+  color: #8a97a8;
   font-size: 12px;
 }
 

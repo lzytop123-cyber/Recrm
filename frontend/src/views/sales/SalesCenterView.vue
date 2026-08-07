@@ -2,37 +2,49 @@
   <div class="crm-page sales-center crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
+        <p class="sales-eyebrow">经营台</p>
         <h1>销售中心</h1>
         <p>{{ headDesc }}</p>
       </div>
       <div class="sales-head-actions">
         <el-button v-if="tab === 'pool' && canManagePool" @click="onImport">批量录入</el-button>
         <el-button v-if="tab === 'pool' || tab === 'mine'" type="primary" @click="leadCreateTick++">
-          ＋ 录入线索
+          录入线索
         </el-button>
         <el-button v-else-if="tab === 'customers'" type="primary" @click="oppCreateTick++">
-          ＋ 新建商机
+          新建商机
         </el-button>
       </div>
     </header>
 
-    <div class="sales-tabs">
+    <div class="sales-tabs" role="tablist" aria-label="销售中心分区">
       <button
         v-if="canManagePool"
         type="button"
         class="sales-tab"
+        role="tab"
+        :aria-selected="tab === 'pool'"
         :class="{ active: tab === 'pool' }"
         @click="setTab('pool')"
       >
         线索总览
       </button>
-      <button type="button" class="sales-tab" :class="{ active: tab === 'mine' }" @click="setTab('mine')">
+      <button
+        type="button"
+        class="sales-tab"
+        role="tab"
+        :aria-selected="tab === 'mine'"
+        :class="{ active: tab === 'mine' }"
+        @click="setTab('mine')"
+      >
         我的线索
       </button>
       <button
         v-if="canViewOpportunities"
         type="button"
         class="sales-tab"
+        role="tab"
+        :aria-selected="tab === 'customers'"
         :class="{ active: tab === 'customers' }"
         @click="setTab('customers')"
       >
@@ -131,26 +143,53 @@ function onImport() {
 </script>
 
 <style scoped>
+.sales-center {
+  gap: 12px;
+}
+
 .sales-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
   flex-shrink: 0;
+  padding: 18px 20px;
+  border: 1px solid #e4ebf3;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 70% 90% at 0% 0%, rgba(196, 92, 38, 0.07), transparent 50%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 10px 28px rgba(15, 39, 68, 0.04);
 }
+
+.sales-eyebrow {
+  margin: 0 0 6px;
+  color: #c45c26;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+}
+
 .sales-head-copy h1 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-  color: var(--crm-ink);
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: #0f2744;
 }
-.sales-head-copy p {
+
+.sales-head-copy p:last-child {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--crm-ink-soft);
-  max-width: 520px;
+  line-height: 1.5;
+  color: #5a6b7d;
+  max-width: 42em;
 }
+
 .sales-head-actions {
   display: flex;
   align-items: center;
@@ -158,32 +197,79 @@ function onImport() {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
 .sales-tabs {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--crm-border);
-  padding-bottom: 0;
+  gap: 4px;
+  margin-bottom: 0;
+  padding: 4px;
+  border: 1px solid #e4ebf3;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(15, 39, 68, 0.04);
   flex-shrink: 0;
+  width: fit-content;
+  max-width: 100%;
 }
+
 .sales-tab {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--crm-ink-soft);
-  padding: 10px 14px 12px;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  color: #5a6b7d;
+  padding: 9px 14px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  transition:
+    background-color 180ms var(--crm-ease-out),
+    color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out);
 }
+
+.sales-tab:hover {
+  color: #0f2744;
+  background: #f4f7fb;
+}
+
+.sales-tab:focus-visible {
+  outline: 2px solid color-mix(in oklab, #1b4f8a 50%, white);
+  outline-offset: 1px;
+}
+
 .sales-tab.active {
-  color: var(--crm-primary);
-  border-bottom-color: var(--crm-primary);
-  font-weight: 600;
+  color: #0f2744;
+  background: linear-gradient(160deg, rgba(248, 235, 227, 0.7), #fff 70%);
+  font-weight: 650;
+  box-shadow:
+    0 4px 12px rgba(15, 39, 68, 0.06),
+    inset 0 0 0 1px rgba(196, 92, 38, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sales-tab {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .sales-head {
+    flex-direction: column;
+    padding: 14px 16px;
+  }
+
+  .sales-tabs {
+    width: 100%;
+  }
+
+  .sales-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
 }
 </style>

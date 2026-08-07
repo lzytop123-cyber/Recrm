@@ -2,6 +2,7 @@
   <div class="crm-page todo-page" v-loading="loading">
     <header class="todo-head">
       <div class="todo-head-copy">
+        <p class="todo-eyebrow">经营台</p>
         <h1>我的待办</h1>
         <p>审批、工单、线索、任务、档期汇总一处；点击条目进入对应业务页处理。</p>
       </div>
@@ -10,7 +11,7 @@
       </div>
     </header>
 
-    <section class="todo-kpis">
+    <section class="todo-kpis" aria-label="待办分类">
       <button
         type="button"
         class="todo-kpi"
@@ -26,6 +27,7 @@
         type="button"
         class="todo-kpi"
         :class="{ active: category === chip.key }"
+        :data-cat="chip.key"
         @click="category = chip.key"
       >
         <small>{{ chip.label }}</small>
@@ -37,8 +39,11 @@
 
     <section class="todo-panel">
       <div class="todo-panel-head">
-        <strong>{{ listTitle }}</strong>
-        <span>{{ filtered.length }} 项</span>
+        <div>
+          <strong>{{ listTitle }}</strong>
+          <p>按紧急程度与到期时间优先处理</p>
+        </div>
+        <span class="todo-count-chip">{{ filtered.length }} 项</span>
       </div>
 
       <el-alert
@@ -72,7 +77,10 @@
         </button>
       </div>
 
-      <el-empty v-else description="当前没有待办，清闲得很。" :image-size="72" />
+      <div v-else class="todo-empty">
+        <p class="todo-empty-title">暂无待办</p>
+        <p class="todo-empty-desc">当前分类没有需要处理的事项，可切换分类或稍后刷新。</p>
+      </div>
     </section>
   </div>
 </template>
@@ -151,11 +159,30 @@ onMounted(reload)
 </script>
 
 <style scoped>
+/* 对齐经营总览 · Cool Enterprise Ops Desk */
 .todo-page {
+  --td-ink: #0f172a;
+  --td-ink-soft: #64748b;
+  --td-ink-faint: #94a3b8;
+  --td-line: #e2e8f0;
+  --td-mist: #f1f5f9;
+  --td-sky: #eff6ff;
+  --td-sky-mid: #dbeafe;
+  --td-blue: #1e40af;
+  --td-blue-mid: #3b82f6;
+  --td-amber: #d97706;
+  --td-amber-soft: #fffbeb;
+  --td-success: #047857;
+  --td-success-soft: #ecfdf5;
+  --td-danger: #dc2626;
+  --td-danger-soft: #fef2f2;
+  --td-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+  --td-shadow-hover: 0 14px 28px rgba(15, 23, 42, 0.08);
+
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .todo-head {
@@ -163,20 +190,40 @@ onMounted(reload)
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--td-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 72% 100% at 0% 0%, rgba(59, 130, 246, 0.1), transparent 52%),
+    radial-gradient(ellipse 50% 80% at 100% 0%, rgba(30, 64, 175, 0.05), transparent 48%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: var(--td-shadow);
+}
+
+.todo-eyebrow {
+  margin: 0 0 6px;
+  color: var(--td-blue-mid);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
 }
 
 .todo-head-copy h1 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-  color: var(--crm-ink);
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: var(--td-ink);
 }
 
-.todo-head-copy p {
+.todo-head-copy p:last-child {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--crm-ink-soft);
+  color: var(--td-ink-soft);
   max-width: 42em;
 }
 
@@ -192,30 +239,57 @@ onMounted(reload)
 
 .todo-kpi {
   appearance: none;
-  border: 1px solid var(--crm-border);
-  background: var(--crm-surface);
-  border-radius: 12px;
+  position: relative;
+  border: 1px solid var(--td-line);
+  background: #fff;
+  border-radius: 14px;
   padding: 12px 14px;
   text-align: left;
   cursor: pointer;
   min-width: 0;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--td-shadow);
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out),
+    background-color 180ms var(--crm-ease-out);
 }
 
 .todo-kpi:hover {
-  border-color: color-mix(in oklab, var(--crm-primary) 45%, var(--crm-border));
+  border-color: color-mix(in oklab, var(--td-blue) 22%, var(--td-line));
+  box-shadow: var(--td-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.todo-kpi:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--td-blue) 50%, white);
+  outline-offset: 2px;
 }
 
 .todo-kpi.active {
-  border-color: var(--crm-primary);
-  box-shadow: inset 0 0 0 1px var(--crm-primary);
+  border-color: color-mix(in oklab, var(--td-blue-mid) 28%, var(--td-line));
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.12);
+}
+
+.todo-kpi.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #60a5fa, var(--td-blue));
 }
 
 .todo-kpi small {
   display: block;
-  color: var(--crm-ink-soft);
+  color: var(--td-ink-soft);
   font-size: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -225,43 +299,62 @@ onMounted(reload)
   display: block;
   font-family: var(--crm-font-data);
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 750;
+  letter-spacing: -0.03em;
   line-height: 1.1;
-  color: var(--crm-ink);
+  color: var(--td-ink);
 }
 
 .todo-kpi b.danger {
-  color: var(--crm-danger);
+  color: var(--td-danger);
 }
 
 .todo-panel {
-  background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
+  background: #fff;
+  border: 1px solid var(--td-line);
   border-radius: 14px;
-  padding: 14px 16px 12px;
-  min-height: 220px;
+  padding: 16px 18px 14px;
+  min-height: 240px;
+  box-shadow: var(--td-shadow);
 }
 
 .todo-panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 .todo-panel-head strong {
-  font-size: 14px;
-  color: var(--crm-ink);
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--td-ink);
 }
 
-.todo-panel-head span {
+.todo-panel-head p {
+  margin: 4px 0 0;
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--td-ink-faint);
+}
+
+.todo-count-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--td-sky-mid);
+  border-radius: 999px;
+  background: var(--td-sky);
+  color: var(--td-blue);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .todo-partial {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .todo-list {
@@ -277,22 +370,32 @@ onMounted(reload)
   grid-template-columns: 88px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--crm-border);
+  padding: 13px 14px;
+  border: 1px solid var(--td-line);
   border-radius: 12px;
-  background: var(--crm-surface-soft);
+  background: var(--td-mist);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    background-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out);
 }
 
 .todo-row:hover {
-  border-color: color-mix(in oklab, var(--crm-primary) 45%, var(--crm-border));
-  background: var(--crm-primary-soft);
+  border-color: color-mix(in oklab, var(--td-blue) 22%, var(--td-line));
+  background: #fff;
+  box-shadow: var(--td-shadow-hover);
+}
+
+.todo-row:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--td-blue) 50%, white);
+  outline-offset: 2px;
 }
 
 .todo-row.urgent {
-  border-left: 3px solid var(--crm-danger);
+  border-left: 3px solid var(--td-danger);
+  background: color-mix(in oklab, var(--td-danger-soft) 55%, var(--td-mist));
 }
 
 .todo-cat {
@@ -302,42 +405,55 @@ onMounted(reload)
   min-height: 28px;
   padding: 4px 8px;
   border-radius: 8px;
-  background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
-  color: var(--crm-ink-soft);
+  background: #fff;
+  border: 1px solid var(--td-line);
+  color: var(--td-ink-soft);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .todo-cat[data-cat='approval'] {
-  color: var(--crm-danger);
-  border-color: color-mix(in oklab, var(--crm-danger) 30%, var(--crm-border));
-  background: var(--crm-danger-soft);
+  color: var(--td-danger);
+  border-color: color-mix(in oklab, var(--td-danger) 28%, var(--td-line));
+  background: var(--td-danger-soft);
 }
 
 .todo-cat[data-cat='ticket'] {
-  color: var(--crm-primary);
-  border-color: color-mix(in oklab, var(--crm-primary) 30%, var(--crm-border));
-  background: var(--crm-primary-soft);
+  color: var(--td-blue);
+  border-color: color-mix(in oklab, var(--td-blue) 28%, var(--td-line));
+  background: var(--td-sky);
 }
 
 .todo-cat[data-cat='lead'] {
-  color: var(--crm-flow);
-  border-color: color-mix(in oklab, var(--crm-flow) 30%, var(--crm-border));
-  background: var(--crm-flow-soft);
+  color: var(--td-amber);
+  border-color: color-mix(in oklab, var(--td-amber) 28%, var(--td-line));
+  background: var(--td-amber-soft);
+}
+
+.todo-cat[data-cat='task'] {
+  color: var(--td-success);
+  border-color: color-mix(in oklab, var(--td-success) 28%, var(--td-line));
+  background: var(--td-success-soft);
+}
+
+.todo-cat[data-cat='schedule'],
+.todo-cat[data-cat='resource'] {
+  color: var(--td-blue-mid);
+  border-color: color-mix(in oklab, var(--td-blue-mid) 22%, var(--td-line));
+  background: var(--td-sky-mid);
 }
 
 .todo-row-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .todo-row-main strong {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--crm-ink);
+  font-weight: 650;
+  color: var(--td-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -345,7 +461,7 @@ onMounted(reload)
 
 .todo-sub {
   font-size: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--td-ink-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -357,30 +473,60 @@ onMounted(reload)
   justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .todo-status {
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
-  color: var(--crm-ink);
+  background: #fff;
+  border: 1px solid var(--td-line);
+  color: var(--td-ink);
 }
 
 .todo-due {
-  color: var(--crm-ink-soft);
+  color: var(--td-ink-faint);
   font-variant-numeric: tabular-nums;
 }
 
 .todo-go {
-  color: var(--crm-primary);
-  font-weight: 600;
+  color: var(--td-blue);
+  font-weight: 650;
   white-space: nowrap;
 }
 
 .todo-go::after {
   content: ' →';
+}
+
+.todo-empty {
+  padding: 36px 12px 28px;
+  text-align: center;
+}
+
+.todo-empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--td-ink);
+}
+
+.todo-empty-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--td-ink-faint);
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-kpi,
+  .todo-row {
+    transition: none;
+  }
+
+  .todo-kpi:hover {
+    transform: none;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -412,6 +558,7 @@ onMounted(reload)
 @media (max-width: 640px) {
   .todo-head {
     flex-direction: column;
+    padding: 14px 16px;
   }
 
   .todo-kpis {

@@ -1,17 +1,82 @@
-/* 经营总览 */
+/* 经营总览 · Cool Enterprise Ops Desk
+   frontend-design + UI UX Pro Max:
+   slate navy ink · sky soft surfaces · amber only for secondary series */
 
 .overview-page {
+  --ov-ink: #0f172a;
+  --ov-ink-soft: #64748b;
+  --ov-ink-faint: #94a3b8;
+  --ov-line: #e2e8f0;
+  --ov-line-soft: #eef2f7;
+  --ov-mist: #f1f5f9;
+  --ov-sky: #eff6ff;
+  --ov-sky-mid: #dbeafe;
+  --ov-blue: #1e40af;
+  --ov-blue-mid: #3b82f6;
+  --ov-blue-deep: #1e3a8a;
+  --ov-amber: #d97706;
+  --ov-amber-soft: #fffbeb;
+  --ov-surface: #ffffff;
+  --ov-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+  --ov-shadow-hover: 0 14px 28px rgba(15, 23, 42, 0.08);
+  --ov-success: #047857;
+  --ov-success-soft: #ecfdf5;
+  --ov-warning: #b45309;
+  --ov-warning-soft: #fffbeb;
+  --ov-danger: #dc2626;
+  --ov-danger-soft: #fef2f2;
+
+  /* 本页图表/环图跟随冷色主色 */
+  --crm-primary: var(--ov-blue);
+  --crm-primary-soft: var(--ov-sky);
+  --crm-surface-soft: var(--ov-mist);
+
   width: 100%;
   max-width: none;
   margin: 0;
 }
 
+.overview-page .ov-head,
 .overview-page .sales-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--ov-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 72% 100% at 0% 0%, rgba(59, 130, 246, 0.1), transparent 52%),
+    radial-gradient(ellipse 50% 80% at 100% 0%, rgba(30, 64, 175, 0.05), transparent 48%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: var(--ov-shadow);
+}
+
+.overview-page .sales-head-copy h1 {
+  margin: 0;
+  color: var(--ov-ink);
+  font-family: 'Noto Serif SC', 'Songti SC', var(--crm-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.overview-page .sales-head-copy p {
+  margin: 6px 0 0;
+  color: var(--ov-ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ov-eyebrow {
+  margin: 0 0 6px !important;
+  color: var(--ov-blue-mid) !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
 }
 
 .overview-page .sales-head-actions {
@@ -19,6 +84,19 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.ov-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ov-sky-mid);
+  border-radius: 999px;
+  background: var(--ov-sky);
+  color: var(--ov-blue);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .ov-kpi-grid {
@@ -31,25 +109,37 @@
 .ov-kpi {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 108px;
-  padding: 14px 16px;
-  border: 1px solid var(--crm-border);
-  border-radius: 12px;
-  background: var(--crm-surface);
+  gap: 8px;
+  min-height: 116px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--ov-line);
+  border-radius: 14px;
+  background: var(--ov-surface);
   cursor: pointer;
   text-align: left;
   color: inherit;
-  transition: border-color 0.15s ease;
+  box-shadow: var(--ov-shadow);
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out);
 }
 
 .ov-kpi:hover {
-  border-color: var(--crm-border-strong);
+  border-color: color-mix(in oklab, var(--ov-blue) 22%, var(--ov-line));
+  box-shadow: var(--ov-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.ov-kpi:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ov-blue) 50%, white);
+  outline-offset: 2px;
 }
 
 .ov-kpi.accent {
-  border-color: color-mix(in srgb, var(--crm-primary) 35%, var(--crm-border));
-  background: color-mix(in srgb, var(--crm-primary-soft) 55%, var(--crm-surface));
+  border-color: color-mix(in oklab, var(--ov-blue-mid) 28%, var(--ov-line));
+  background:
+    linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
 }
 
 .ov-kpi-top {
@@ -61,36 +151,38 @@
 
 .ov-delta {
   flex-shrink: 0;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--crm-success-soft, #e8f6ee);
-  color: var(--crm-success, #1f8a4c);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ov-success-soft);
+  color: var(--ov-success);
   font-size: 10px;
   font-weight: 650;
 }
 
 .ov-delta.down {
-  background: var(--crm-danger-soft, #fdeceb);
-  color: var(--crm-danger, #c0392b);
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
 }
 
 .ov-kpi-label {
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-soft);
   font-size: 12px;
+  font-weight: 500;
 }
 
 .ov-kpi-value {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 750;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  color: var(--crm-ink);
+  line-height: 1.1;
+  color: var(--ov-ink);
+  font-family: var(--crm-font-data);
 }
 
 .ov-kpi-note {
   margin-top: auto;
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -104,19 +196,20 @@
 }
 
 .ov-card {
-  border: 1px solid var(--crm-border);
-  border-radius: 12px;
-  background: var(--crm-surface);
+  border: 1px solid var(--ov-line);
+  border-radius: 14px;
+  background: var(--ov-surface);
+  box-shadow: var(--ov-shadow);
 }
 
 .ov-card-pad {
-  padding: 16px;
+  padding: 16px 18px;
 }
 
 .ov-chart-card {
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 16px 18px;
   min-height: 0;
 }
 
@@ -135,26 +228,27 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .ov-card-head h2 {
   margin: 0;
   font-size: 15px;
   letter-spacing: -0.01em;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
+  font-weight: 700;
 }
 
 .ov-card-head p {
-  margin: 3px 0 0;
-  color: var(--crm-ink-soft);
+  margin: 4px 0 0;
+  color: var(--ov-ink-faint);
   font-size: 12px;
 }
 
 .ov-chart-legend {
   display: flex;
   gap: 12px;
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-soft);
   font-size: 11px;
 }
 
@@ -168,11 +262,11 @@
 }
 
 .ov-legend-dot.income {
-  background: var(--crm-primary);
+  background: var(--ov-blue);
 }
 
 .ov-legend-dot.cash {
-  background: #fa8c16;
+  background: var(--ov-amber);
 }
 
 .ov-line-chart {
@@ -189,12 +283,12 @@
 }
 
 .ov-grid-line {
-  stroke: rgba(16, 38, 38, 0.07);
+  stroke: rgba(15, 23, 42, 0.07);
   stroke-width: 1;
 }
 
 .ov-axis-label {
-  fill: var(--crm-ink-soft);
+  fill: var(--ov-ink-faint);
   font-size: 10px;
 }
 
@@ -204,27 +298,33 @@
 
 .ov-chart-line {
   fill: none;
-  stroke: var(--crm-primary);
+  stroke: var(--ov-blue);
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .ov-chart-line.cash {
-  stroke: #fa8c16;
+  stroke: var(--ov-amber);
   stroke-width: 2.2;
+  stroke-dasharray: 5 4;
 }
 
 .ov-chart-point {
-  fill: var(--crm-surface);
-  stroke: var(--crm-primary);
+  fill: #fff;
+  stroke: var(--ov-blue);
   stroke-width: 2;
+}
+
+.ov-chart-point.cash {
+  stroke: var(--ov-amber);
+  stroke-width: 1.8;
 }
 
 .ov-funnel {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 12px;
 }
 
 .ov-funnel-row {
@@ -233,25 +333,26 @@
   align-items: center;
   gap: 10px;
   font-size: 12px;
+  color: var(--ov-ink);
 }
 
 .ov-funnel-track {
-  height: 8px;
+  height: 9px;
   overflow: hidden;
-  border-radius: 6px;
-  background: var(--crm-surface-soft);
+  border-radius: 999px;
+  background: var(--ov-mist);
 }
 
 .ov-funnel-fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--crm-primary);
+  background: linear-gradient(90deg, var(--ov-blue-deep), var(--ov-blue-mid));
   transform-origin: left;
-  transition: width 0.5s ease;
+  transition: width 0.5s var(--crm-ease-out);
 }
 
 .ov-funnel-row:nth-child(even) .ov-funnel-fill {
-  background: #69b1ff;
+  background: linear-gradient(90deg, #0369a1, #38bdf8);
 }
 
 .ov-funnel-row b {
@@ -260,30 +361,41 @@
 }
 
 .ov-text-link {
-  padding: 3px;
+  padding: 4px 6px;
   border: 0;
-  color: var(--crm-primary);
+  border-radius: 6px;
+  color: var(--ov-blue);
   font-size: 12px;
   font-weight: 650;
   background: none;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color 160ms var(--crm-ease-out);
+}
+
+.ov-text-link:hover {
+  background: var(--ov-sky);
+}
+
+.ov-text-link:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ov-blue) 50%, white);
+  outline-offset: 1px;
 }
 
 .ov-status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
-  background: var(--crm-danger-soft, #fdeceb);
-  color: var(--crm-danger, #c0392b);
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
   font-size: 11px;
   font-weight: 650;
 }
 
 .ov-status-badge.ok {
-  background: var(--crm-success-soft, #e8f6ee);
-  color: var(--crm-success, #1f8a4c);
+  background: var(--ov-success-soft);
+  color: var(--ov-success);
 }
 
 .ov-alert-list {
@@ -292,8 +404,8 @@
 }
 
 .ov-alert-list--stack .ov-alert-row {
-  padding: 10px 0;
-  border-top: 1px solid var(--crm-border);
+  padding: 11px 0;
+  border-top: 1px solid var(--ov-line-soft);
 }
 
 .ov-alert-list--stack .ov-alert-row:first-child {
@@ -314,14 +426,14 @@
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: var(--crm-warning-soft, #fff4e0);
-  color: var(--crm-warning, #c47d0e);
+  background: var(--ov-warning-soft);
+  color: var(--ov-warning);
   font-size: 12px;
 }
 
 .ov-alert-row.danger .ov-alert-symbol {
-  background: var(--crm-danger-soft, #fdeceb);
-  color: var(--crm-danger, #c0392b);
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
 }
 
 .ov-alert-row b,
@@ -331,12 +443,12 @@
 
 .ov-alert-row b {
   font-size: 12px;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
 }
 
 .ov-alert-row small {
   margin-top: 2px;
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 11px;
 }
 
@@ -351,7 +463,7 @@
   display: grid;
   grid-template-columns: 68px 1fr;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .ov-progress-ring {
@@ -370,7 +482,8 @@
 
 .ov-progress-ring strong {
   font-size: 14px;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .ov-health-list {
@@ -384,7 +497,7 @@
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
 }
 
 .ov-health-row i {
@@ -396,15 +509,15 @@
 }
 
 .ov-health-row i.up {
-  background: var(--crm-success, #1f8a4c);
+  background: var(--ov-success);
 }
 
 .ov-health-row i.warn {
-  background: var(--crm-warning, #c47d0e);
+  background: var(--ov-warning);
 }
 
 .ov-health-row i.down {
-  background: var(--crm-danger, #c0392b);
+  background: var(--ov-danger);
 }
 
 .ov-schedule-list {
@@ -418,43 +531,50 @@
   grid-template-columns: 42px 3px 1fr;
   align-items: stretch;
   gap: 10px;
-  padding: 7px 0;
+  padding: 8px 6px;
+  margin: 0 -6px;
   border: 0;
+  border-radius: 10px;
   background: transparent;
   text-align: left;
   cursor: pointer;
   color: inherit;
+  transition: background-color 160ms var(--crm-ease-out);
+}
+
+.ov-schedule-row:hover {
+  background: var(--ov-sky);
 }
 
 .ov-schedule-time {
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .ov-schedule-bar {
   border-radius: 4px;
-  background: var(--crm-primary);
+  background: var(--ov-blue);
 }
 
 .ov-schedule-row.external .ov-schedule-bar {
-  background: #fa8c16;
+  background: var(--ov-amber);
 }
 
 .ov-schedule-row b {
   display: block;
   font-size: 12px;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
 }
 
 .ov-schedule-row small {
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 10.5px;
 }
 
 .ov-empty-note {
-  padding: 16px 0 4px;
-  color: var(--crm-ink-soft);
+  padding: 20px 0 8px;
+  color: var(--ov-ink-faint);
   font-size: 12px;
   text-align: center;
 }
@@ -475,13 +595,13 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  border: 1px solid var(--crm-border);
-  border-radius: 10px;
-  background: var(--crm-surface-soft);
+  border: 1px solid var(--ov-line);
+  border-radius: 12px;
+  background: var(--ov-mist);
 }
 
 .ov-dept-kpi small {
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 11px;
 }
 
@@ -489,24 +609,38 @@
   font-size: 20px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
-  color: var(--crm-ink);
+  color: var(--ov-ink);
   line-height: 1.2;
+  font-family: var(--crm-font-data);
 }
 
 .ov-dept-kpi span {
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 11px;
 }
 
 .ov-dept-hint {
   margin: 10px 0 0;
-  color: var(--crm-ink-soft);
+  color: var(--ov-ink-faint);
   font-size: 12px;
 }
 
 .ov-danger {
-  color: var(--crm-danger, #c0392b);
+  color: var(--ov-danger);
   font-weight: 650;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-kpi,
+  .ov-funnel-fill,
+  .ov-text-link,
+  .ov-schedule-row {
+    transition: none;
+  }
+
+  .ov-kpi:hover {
+    transform: none;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -539,8 +673,10 @@
 }
 
 @media (max-width: 640px) {
+  .overview-page .ov-head,
   .overview-page .sales-head {
     flex-direction: column;
+    padding: 14px 16px;
   }
 
   .ov-kpi-grid,

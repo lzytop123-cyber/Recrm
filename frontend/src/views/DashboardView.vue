@@ -1,15 +1,16 @@
 <template>
   <div class="overview-page crm-page" v-loading="loading">
-    <header class="sales-head">
+    <header class="sales-head ov-head">
       <div class="sales-head-copy">
+        <p class="ov-eyebrow">经营台</p>
         <h1>经营总览</h1>
         <p>
           {{ greeting }}
-          <template v-if="data?.as_of"> · {{ data.as_of }}</template>
+          <template v-if="data?.as_of"> · 数据截至 {{ data.as_of }}</template>
         </p>
       </div>
       <div class="sales-head-actions">
-        <el-tag size="small" type="info" effect="plain">{{ scopeLabel }}</el-tag>
+        <span class="ov-scope-chip">{{ scopeLabel }}</span>
         <el-button @click="load">刷新</el-button>
         <el-button type="primary" @click="onExport">导出简报</el-button>
       </div>
@@ -66,6 +67,16 @@
             <path class="ov-chart-area" :d="incomeArea" />
             <path class="ov-chart-line" :d="incomePath" />
             <path class="ov-chart-line cash" :d="cashPath" />
+            <circle
+              v-for="pt in chartPoints"
+              :key="`${pt.month}-cash`"
+              class="ov-chart-point cash"
+              :cx="pt.x"
+              :cy="pt.cashY"
+              r="3"
+            >
+              <title>{{ pt.label }} 已回款 {{ pt.cash }} 万元</title>
+            </circle>
             <circle
               v-for="pt in chartPoints"
               :key="pt.month"
