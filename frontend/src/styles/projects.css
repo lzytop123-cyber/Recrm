@@ -1,4 +1,4 @@
-/* 项目交付工作台 */
+/* 项目交付工作台 · Cool Enterprise */
 
 .project-delivery.crm-fit-page > .sales-head,
 .project-delivery.crm-fit-page > .project-tabs {
@@ -16,18 +16,21 @@
 }
 
 .project-delivery .sales-head {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .project-tabs {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   padding: 4px;
   border: 1px solid var(--crm-border);
   border-radius: 12px;
-  background: var(--crm-surface-soft);
+  background: #fff;
+  box-shadow: var(--crm-shadow);
+  width: max-content;
+  max-width: 100%;
 }
 
 .project-tab {
@@ -38,14 +41,26 @@
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
   color: var(--crm-ink-soft);
+  transition:
+    background-color 180ms var(--crm-ease-out),
+    color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out);
+}
+
+.project-tab:hover {
+  color: var(--crm-ink);
+  background: var(--crm-surface-soft);
 }
 
 .project-tab.active {
-  background: var(--crm-surface);
-  color: var(--crm-primary);
-  font-weight: 600;
-  box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.08);
+  color: var(--crm-ink);
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
+  font-weight: 650;
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
 .portfolio-hero {
@@ -60,21 +75,30 @@
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--crm-border);
-  border-radius: 12px;
-  background: var(--crm-surface);
+  border-radius: 14px;
+  background: #fff;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow: var(--crm-shadow);
+  transition:
+    border-color 180ms var(--crm-ease-out),
+    box-shadow 180ms var(--crm-ease-out),
+    transform 180ms var(--crm-ease-out),
+    background-color 180ms var(--crm-ease-out);
 }
 
 button.portfolio-mini:hover {
-  border-color: color-mix(in oklab, var(--crm-primary) 45%, var(--crm-border));
+  border-color: color-mix(in oklab, var(--crm-primary) 22%, var(--crm-border));
+  box-shadow: var(--crm-shadow-hover);
+  transform: translateY(-1px);
 }
 
 button.portfolio-mini.active {
-  border-color: var(--crm-primary);
-  background: color-mix(in oklab, var(--crm-primary) 8%, var(--crm-surface));
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--crm-primary) 25%, transparent);
+  border-color: color-mix(in oklab, #3b82f6 28%, var(--crm-border));
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
 .portfolio-mini small {

@@ -1,31 +1,7 @@
-/* AI 知识库 — 对齐高保真原型 */
+/* AI 知识库 · Cool Enterprise */
 
 .knowledge-workbench .sales-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.knowledge-workbench .sales-head h1 {
-  margin: 0;
-  font-size: 22px;
-  color: var(--crm-ink);
-}
-
-.knowledge-workbench .sales-head p {
-  margin: 6px 0 0;
-  color: var(--crm-ink-soft);
-  font-size: 13px;
-  max-width: 640px;
-  line-height: 1.5;
-}
-
-.knowledge-workbench .sales-head-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
 .knowledge-layout {
@@ -39,7 +15,8 @@
   padding: 16px;
   border: 1px solid var(--crm-border);
   border-radius: 14px;
-  background: var(--crm-surface);
+  background: #fff;
+  box-shadow: var(--crm-shadow);
   position: sticky;
   top: 16px;
 }
@@ -87,7 +64,8 @@
 }
 
 .source-item.active {
-  background: var(--crm-primary-soft);
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
 .source-icon {

@@ -2,6 +2,7 @@
   <div class="crm-page asset-workbench crm-fit-page" v-loading="loading">
     <header class="asset-head">
       <div>
+        <p class="wb-eyebrow">经营台</p>
         <h1>固定资产</h1>
         <p>{{ isEmployee ? '申请借用、查看本人记录与可借器材' : '管库存、审批借用；需要时再入库或扫码' }}</p>
       </div>

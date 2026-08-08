@@ -2,6 +2,7 @@
   <div class="crm-page ticket-workbench" v-loading="loading">
     <header class="sales-head">
       <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
         <h1>协作工单</h1>
         <p>
           跨部门请求：发起 → 分派/接单 → 处理 → 发起人确认关闭。

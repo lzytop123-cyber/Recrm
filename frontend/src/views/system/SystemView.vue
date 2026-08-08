@@ -1,5 +1,13 @@
 <template>
   <div class="crm-page system-page crm-fit-page" v-loading="loading">
+    <header class="page-head">
+      <div>
+        <p class="wb-eyebrow">经营台</p>
+        <h1>系统设置</h1>
+        <p>角色权限、账号绑定与经营台基础配置。</p>
+      </div>
+    </header>
+
     <div class="crm-stats" :style="{ '--crm-stats-cols': String(statCards.length) }">
       <button
         v-for="item in statCards"
@@ -345,9 +353,18 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.system-page {
+  gap: 14px;
+}
+
+.system-page .page-head {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
 .system-page :deep(.crm-stats) {
   flex-shrink: 0;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .system-main-card {

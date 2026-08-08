@@ -1,12 +1,12 @@
-/* 销售中心：对齐高保真原型 lead-allocation / sales panels */
+/* 销售中心：对齐经营总览 · Cool Enterprise Ops Desk */
 
 .sales-center .page-demo-chip {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: var(--crm-primary-soft);
-  color: var(--crm-primary);
+  background: var(--crm-primary-soft, #eff6ff);
+  color: var(--crm-primary, #1e40af);
   font-size: 12px;
   margin-right: 8px;
 }
@@ -15,7 +15,7 @@
   display: grid;
   width: 100%;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
@@ -27,10 +27,10 @@
 .allocation-summary .overview-card {
   position: relative;
   background: #fff;
-  border: 1px solid #e4ebf3;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 16px 18px;
-  box-shadow: 0 8px 18px rgba(15, 39, 68, 0.035);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
 }
 
 .allocation-summary .overview-card {
@@ -49,17 +49,17 @@
 }
 
 .allocation-summary .overview-card:hover {
-  border-color: color-mix(in oklab, #1b4f8a 22%, #e4ebf3);
-  box-shadow: 0 12px 24px rgba(15, 39, 68, 0.07);
+  border-color: color-mix(in oklab, #1e40af 22%, #e2e8f0);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
 
 .allocation-summary .overview-card.active {
-  border-color: color-mix(in oklab, #c45c26 28%, #e4ebf3);
-  background: linear-gradient(160deg, rgba(248, 235, 227, 0.55), #fff 60%);
+  border-color: color-mix(in oklab, #3b82f6 28%, #e2e8f0);
+  background: linear-gradient(160deg, rgba(239, 246, 255, 0.95), #fff 58%);
   box-shadow:
-    0 10px 22px rgba(15, 39, 68, 0.06),
-    inset 0 0 0 1px rgba(196, 92, 38, 0.08);
+    0 10px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
 .allocation-summary .overview-card.active::before {
@@ -70,13 +70,13 @@
   bottom: 12px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #e8925a, #c45c26);
+  background: linear-gradient(180deg, #60a5fa, #1e40af);
 }
 
 .allocation-summary small,
 .allocation-summary span {
   display: block;
-  color: #5a6b7d;
+  color: #64748b;
   font-size: 12px;
 }
 
@@ -85,7 +85,7 @@
   font-size: 28px;
   line-height: 1.1;
   margin: 7px 0;
-  color: #0f2744;
+  color: #0f172a;
   font-family: var(--crm-font-data);
   font-weight: 750;
   letter-spacing: -0.03em;
@@ -97,22 +97,22 @@
   gap: 12px;
   margin-bottom: 14px;
   padding: 14px 16px;
-  border: 1px solid #e4ebf3;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
   background: #fff;
-  box-shadow: 0 8px 18px rgba(15, 39, 68, 0.035);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
 }
 
 .sales-quota-strip .quota-item small {
   display: block;
   font-size: 12px;
-  color: #5a6b7d;
+  color: #64748b;
   margin-bottom: 4px;
 }
 
 .sales-quota-strip .quota-item b {
   font-size: 18px;
-  color: #0f2744;
+  color: #0f172a;
   font-family: var(--crm-font-data);
   font-weight: 700;
 }
@@ -131,8 +131,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e8f0f8;
-  color: #1b4f8a;
+  background: #eff6ff;
+  color: #1e40af;
   font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
@@ -149,11 +149,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: #0f2744;
+  color: #0f172a;
 }
 
 .entity-text small {
-  color: #8a97a8;
+  color: #94a3b8;
   font-size: 12px;
 }
 
@@ -222,6 +222,16 @@
   box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.08);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .allocation-summary .overview-card {
+    transition: none;
+  }
+
+  .allocation-summary .overview-card:hover {
+    transform: none;
+  }
+}
+
 @media (max-width: 900px) {
   .allocation-summary,
   .sales-quota-strip {
@@ -241,4 +251,3 @@
     grid-template-columns: 1fr;
   }
 }
-

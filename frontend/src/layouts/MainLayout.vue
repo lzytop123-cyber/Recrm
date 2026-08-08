@@ -16,8 +16,8 @@
           :key="activeMenu"
           :default-active="activeMenu"
           background-color="transparent"
-          text-color="#5a6b7d"
-          active-text-color="#0f2744"
+          text-color="#64748b"
+          active-text-color="#0f172a"
           router
           @select="onMenuSelect"
         >
@@ -239,19 +239,26 @@ const salesCrumb = computed(() => {
   if (tab === 'pool') return '线索总览'
   return '线索总览'
 })
-/** 页内已有完整页头时，隐藏顶栏标题，避免重复 */
+/** 页内已有完整页头时，隐藏顶栏标题，避免重复（详情页仍保留顶栏标题） */
 const hideChromeTitle = computed(() => {
   const path = route.path
-  return (
-    path === '/dashboard' ||
-    path.endsWith('/dashboard') ||
-    path === '/todos' ||
-    path.endsWith('/todos') ||
-    path === '/approvals' ||
-    path.endsWith('/approvals') ||
-    path === '/sales' ||
-    path.startsWith('/sales')
-  )
+  const headed = new Set([
+    '/dashboard',
+    '/todos',
+    '/approvals',
+    '/sales',
+    '/contracts',
+    '/projects',
+    '/projects/delivery',
+    '/okrs',
+    '/assets',
+    '/knowledge',
+    '/tickets',
+    '/schedules',
+    '/org',
+    '/system',
+  ])
+  return headed.has(path) || path.startsWith('/sales/')
 })
 
 const avatarChar = computed(() => {
@@ -379,8 +386,8 @@ onUnmounted(() => {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(196, 92, 38, 0.22),
-    rgba(27, 79, 138, 0.12),
+    rgba(59, 130, 246, 0.22),
+    rgba(30, 64, 175, 0.12),
     transparent
   );
   pointer-events: none;
@@ -785,7 +792,7 @@ onUnmounted(() => {
   height: var(--crm-header-height);
   padding: 0 var(--crm-space-6);
   background: color-mix(in oklab, #ffffff 88%, transparent);
-  border-bottom: 1px solid #e4ebf3;
+  border-bottom: 1px solid var(--crm-border);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -859,12 +866,12 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   padding: 8px;
-  border: 1px solid #e4ebf3;
+  border: 1px solid var(--crm-border);
   border-radius: 10px;
   background: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(15, 39, 68, 0.05);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
 
 .menu-toggle span {

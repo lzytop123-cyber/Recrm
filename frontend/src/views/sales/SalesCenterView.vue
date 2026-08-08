@@ -19,36 +19,16 @@
 
     <div class="sales-tabs" role="tablist" aria-label="销售中心分区">
       <button
-        v-if="canManagePool"
+        v-for="item in visibleTabs"
+        :key="item.key"
         type="button"
         class="sales-tab"
         role="tab"
-        :aria-selected="tab === 'pool'"
-        :class="{ active: tab === 'pool' }"
-        @click="setTab('pool')"
+        :aria-selected="tab === item.key"
+        :class="{ active: tab === item.key }"
+        @click="setTab(item.key)"
       >
-        线索总览
-      </button>
-      <button
-        type="button"
-        class="sales-tab"
-        role="tab"
-        :aria-selected="tab === 'mine'"
-        :class="{ active: tab === 'mine' }"
-        @click="setTab('mine')"
-      >
-        我的线索
-      </button>
-      <button
-        v-if="canViewOpportunities"
-        type="button"
-        class="sales-tab"
-        role="tab"
-        :aria-selected="tab === 'customers'"
-        :class="{ active: tab === 'customers' }"
-        @click="setTab('customers')"
-      >
-        客户与商机
+        {{ item.label }}
       </button>
     </div>
 
@@ -88,6 +68,14 @@ const canManagePool = computed(
 const canViewOpportunities = computed(
   () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
 )
+
+const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [
+  { key: 'pool', label: '线索总览', visible: () => canManagePool.value },
+  { key: 'mine', label: '我的线索', visible: () => true },
+  { key: 'customers', label: '客户与商机', visible: () => canViewOpportunities.value },
+]
+
+const visibleTabs = computed(() => allTabs.filter((t) => t.visible()))
 
 function normalizeTab(raw?: string | null): SalesTab {
   if (raw === 'pool' && canManagePool.value) return 'pool'
@@ -144,6 +132,22 @@ function onImport() {
 
 <style scoped>
 .sales-center {
+  --sc-ink: #0f172a;
+  --sc-ink-soft: #64748b;
+  --sc-line: #e2e8f0;
+  --sc-mist: #f1f5f9;
+  --sc-sky: #eff6ff;
+  --sc-blue: #1e40af;
+  --sc-blue-mid: #3b82f6;
+  --sc-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+
+  --crm-primary: var(--sc-blue);
+  --crm-primary-soft: var(--sc-sky);
+  --crm-surface-soft: var(--sc-mist);
+  --crm-border: var(--sc-line);
+  --crm-ink: var(--sc-ink);
+  --crm-ink-soft: var(--sc-ink-soft);
+
   gap: 12px;
 }
 
@@ -155,17 +159,18 @@ function onImport() {
   margin-bottom: 0;
   flex-shrink: 0;
   padding: 18px 20px;
-  border: 1px solid #e4ebf3;
+  border: 1px solid var(--sc-line);
   border-radius: 16px;
   background:
-    radial-gradient(ellipse 70% 90% at 0% 0%, rgba(196, 92, 38, 0.07), transparent 50%),
+    radial-gradient(ellipse 72% 100% at 0% 0%, rgba(59, 130, 246, 0.1), transparent 52%),
+    radial-gradient(ellipse 50% 80% at 100% 0%, rgba(30, 64, 175, 0.05), transparent 48%),
     linear-gradient(180deg, #ffffff, #f8fafc);
-  box-shadow: 0 10px 28px rgba(15, 39, 68, 0.04);
+  box-shadow: var(--sc-shadow);
 }
 
 .sales-eyebrow {
   margin: 0 0 6px;
-  color: #c45c26;
+  color: var(--sc-blue-mid);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -179,14 +184,14 @@ function onImport() {
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.2;
-  color: #0f2744;
+  color: var(--sc-ink);
 }
 
 .sales-head-copy p:last-child {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #5a6b7d;
+  color: var(--sc-ink-soft);
   max-width: 42em;
 }
 
@@ -199,62 +204,10 @@ function onImport() {
 }
 
 .sales-tabs {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 0;
-  padding: 4px;
-  border: 1px solid #e4ebf3;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 6px 16px rgba(15, 39, 68, 0.04);
-  flex-shrink: 0;
   width: fit-content;
   max-width: 100%;
-}
-
-.sales-tab {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: #5a6b7d;
-  padding: 9px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition:
-    background-color 180ms var(--crm-ease-out),
-    color 180ms var(--crm-ease-out),
-    box-shadow 180ms var(--crm-ease-out);
-}
-
-.sales-tab:hover {
-  color: #0f2744;
-  background: #f4f7fb;
-}
-
-.sales-tab:focus-visible {
-  outline: 2px solid color-mix(in oklab, #1b4f8a 50%, white);
-  outline-offset: 1px;
-}
-
-.sales-tab.active {
-  color: #0f2744;
-  background: linear-gradient(160deg, rgba(248, 235, 227, 0.7), #fff 70%);
-  font-weight: 650;
-  box-shadow:
-    0 4px 12px rgba(15, 39, 68, 0.06),
-    inset 0 0 0 1px rgba(196, 92, 38, 0.12);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sales-tab {
-    transition: none;
-  }
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {
@@ -267,6 +220,7 @@ function onImport() {
     width: 100%;
   }
 
+  .sales-tabs :deep(.sales-tab),
   .sales-tab {
     flex: 1 1 auto;
     justify-content: center;

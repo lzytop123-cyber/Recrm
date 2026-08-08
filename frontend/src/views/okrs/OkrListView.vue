@@ -1,6 +1,11 @@
 <template>
   <div class="crm-page performance-workbench" v-loading="loading">
     <header class="sales-head">
+      <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
+        <h1>目标绩效</h1>
+        <p>OKR 目标、月度考核、校准申诉与绩效工资批次。</p>
+      </div>
       <div class="sales-head-actions">
         <el-button v-if="tab !== 'bi'" @click="rulesVisible = true">规则版本 V2026.07</el-button>
         <span v-if="tab === 'bi'" class="management-only-chip">管理层专属</span>

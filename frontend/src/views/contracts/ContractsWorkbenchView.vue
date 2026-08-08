@@ -2,6 +2,7 @@
   <div class="crm-page contracts-workbench crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
         <h1>合同回款</h1>
         <p>合同台账、应收计划、到款认领与核销审批。</p>
       </div>
@@ -22,33 +23,3 @@ import ContractListView from '@/views/contracts/ContractListView.vue'
 
 const contractCreateTick = ref(0)
 </script>
-
-<style scoped>
-.sales-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-shrink: 0;
-}
-.sales-head-copy h1 {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-  color: var(--crm-ink);
-}
-.sales-head-copy p {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--crm-ink-soft);
-  max-width: 520px;
-}
-.sales-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-</style>

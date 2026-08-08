@@ -2,6 +2,7 @@
   <div class="crm-page schedule-workbench crm-fit-page" v-loading="loading">
     <header class="sales-head">
       <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
         <h1>排期会议</h1>
         <p>人员档期与冲突一览；可挂交付项目，不影响项目进度。</p>
       </div>

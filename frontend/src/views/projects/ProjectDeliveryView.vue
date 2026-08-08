@@ -2,6 +2,7 @@
   <div class="crm-page project-delivery crm-fit-page">
     <header class="sales-head">
       <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
         <h1>{{ workbench === 'portfolio' ? '项目台账' : '交付执行' }}</h1>
         <p>{{ workbenchDesc }}</p>
       </div>

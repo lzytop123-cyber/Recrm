@@ -2,6 +2,7 @@
   <div class="crm-page org-page crm-fit-page">
     <div class="page-head">
       <div>
+        <p class="wb-eyebrow">经营台</p>
         <h1>员工管理</h1>
         <p>管理入职、档案、转岗、离职、劳动合同和飞书考勤事实。</p>
       </div>
@@ -711,28 +712,11 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  gap: 14px;
 }
 .page-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 0;
   flex-shrink: 0;
-}
-.page-head h1 {
-  margin: 0;
-  font-size: 22px;
-}
-.page-head p {
-  margin: 4px 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .sync-caret {
   margin-left: 4px;

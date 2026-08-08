@@ -1,6 +1,11 @@
 <template>
   <div class="crm-page knowledge-workbench" v-loading="loading">
     <header class="sales-head">
+      <div class="sales-head-copy">
+        <p class="wb-eyebrow">经营台</p>
+        <h1>AI 知识库</h1>
+        <p>按权限检索企业知识，支持来源授权与采集状态查看。</p>
+      </div>
       <div class="sales-head-actions">
         <el-button @click="authVisible = true">来源授权</el-button>
         <el-button v-if="canManage" type="primary" @click="openCreateSource">＋ 添加知识源</el-button>
