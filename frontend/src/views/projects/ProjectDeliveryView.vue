@@ -1092,7 +1092,8 @@
                 <el-button
                   v-else-if="
                     canCompleteProject &&
-                    (row.finance_check_passed || row.finance_check_status === 'approved')
+                    (row.finance_check_passed || row.finance_check_status === 'approved') &&
+                    row.contract_collection_complete
                   "
                   v-perm.any="['project:complete', 'project:manage']"
                   link
@@ -1101,6 +1102,16 @@
                 >
                   结项
                 </el-button>
+                <span
+                  v-else-if="
+                    (row.finance_check_passed || row.finance_check_status === 'approved') &&
+                    !row.contract_collection_complete
+                  "
+                  class="muted text-warn"
+                  :title="financeSettleHint(row)"
+                >
+                  回款未收齐，不可结项
+                </span>
               </template>
               <span v-else-if="row.status === 'completed'" class="muted">已结项</span>
             </template>
@@ -4457,7 +4468,17 @@ async function onComplete(row: Project) {
     ElMessage.warning('遗留问题未关闭，不可结项')
     return
   }
-  await ElMessageBox.confirm(`确认结项「${row.name}」？`, '结项确认', { type: 'warning' })
+  if (!row.contract_collection_complete) {
+    ElMessage.warning(
+      `合同回款尚未收齐（¥${financeMoney(row.contract_paid_amount)} / ¥${financeMoney(row.contract_amount)}），不可结项`,
+    )
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认结项「${row.name}」？\n回款已收齐 ¥${financeMoney(row.contract_paid_amount)} / ¥${financeMoney(row.contract_amount)}`,
+    '结项确认',
+    { type: 'warning' },
+  )
   await completeProject(row.id)
   ElMessage.success('项目已结项')
   await reloadAll()

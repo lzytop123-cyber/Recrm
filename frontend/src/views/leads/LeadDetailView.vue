@@ -34,7 +34,12 @@
             <el-tag v-if="lead.is_protected" type="warning" size="small">保护中</el-tag>
           </div>
         </template>
-        <SalesJourneyBar class="journey-in-card" :lead-id="lead.id" hide-self-lead />
+        <SalesJourneyBar
+          class="journey-in-card"
+          :lead-id="lead.id"
+          :sync-key="lead.status"
+          hide-self-lead
+        />
         <el-descriptions :column="3" border class="stack-gap-sm">
           <el-descriptions-item label="联系人">{{ lead.name }}</el-descriptions-item>
           <el-descriptions-item label="公司">{{ lead.company_name || '-' }}</el-descriptions-item>

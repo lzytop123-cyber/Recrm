@@ -29,6 +29,7 @@
         <SalesJourneyBar
           class="journey-in-card"
           :opportunity-id="opp.id"
+          :sync-key="opp.stage"
           hide-self-opp
         />
       </el-card>

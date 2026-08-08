@@ -491,6 +491,7 @@
           <section class="drawer-section">
             <SalesJourneyBar
               :lead-id="drawerLead.id"
+              :sync-key="drawerLead.status"
               hide-self-lead
               @loaded="onDrawerJourneyLoaded"
             />

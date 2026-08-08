@@ -82,71 +82,8 @@ def _gen_contract_no(db: Session) -> str:
     return f"{prefix}{count + 1:04d}"
 
 
-def is_collection_complete(db: Session, contract: Contract) -> bool:
-    """回款是否收齐：零金额视为已收齐；有应收则以核销覆盖为准，否则看已确认收款。"""
-    if Decimal(str(contract.amount or 0)) <= 0:
-        return True
-    has_new_finance = (
-        db.query(ReceivablePlan.id).filter(ReceivablePlan.contract_id == contract.id).first()
-        or db.query(Receipt.id).filter(Receipt.contract_id == contract.id).first()
-    )
-    if has_new_finance:
-        confirmed_receipt_ids = [
-            row[0]
-            for row in db.query(Receipt.id)
-            .filter(
-                Receipt.contract_id == contract.id,
-                Receipt.status == RECEIPT_STATUS_CONFIRMED,
-            )
-            .all()
-        ]
-        allocated_total = Decimal("0")
-        if confirmed_receipt_ids:
-            allocated_total = Decimal(
-                str(
-                    db.query(func.coalesce(func.sum(ReceiptAllocation.amount), 0))
-                    .filter(
-                        ReceiptAllocation.receipt_id.in_(confirmed_receipt_ids),
-                        ReceiptAllocation.status == ALLOCATION_STATUS_ACTIVE,
-                    )
-                    .scalar()
-                    or 0
-                )
-            )
-        receivable_total = Decimal(
-            str(
-                db.query(func.coalesce(func.sum(ReceivablePlan.amount), 0))
-                .filter(
-                    ReceivablePlan.contract_id == contract.id,
-                    ReceivablePlan.status != RECEIVABLE_STATUS_CANCELLED,
-                )
-                .scalar()
-                or 0
-            )
-        )
-        return receivable_total > 0 and allocated_total >= receivable_total
-    paid = (
-        db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.contract_id == contract.id, Payment.status == PAYMENT_STATUS_CONFIRMED)
-        .scalar()
-    )
-    return Decimal(str(paid or 0)) >= Decimal(str(contract.amount))
-
-
-def _can_complete_contract(user: User) -> bool:
-    """正常完成合同（回款已齐）：contract:complete / contract:manage / admin。"""
-    if user_can(user, "contract:complete") or user_can(user, "contract:manage"):
-        return True
-    return "admin" in {r.code for r in user.roles}
-
-
-def enrich_contract(db: Session, contract: Contract) -> Contract:
-    customer = db.query(Customer).filter(Customer.id == contract.customer_id).first()
-    contract.customer_name = customer.name if customer else None  # type: ignore[attr-defined]
-    contract.owner_name = _user_name(db, contract.owner_id)  # type: ignore[attr-defined]
-    contract.creator_name = _user_name(db, contract.creator_id)  # type: ignore[attr-defined]
-    contract.approved_by_name = _user_name(db, contract.approved_by)  # type: ignore[attr-defined]
-
+def _contract_net_paid(db: Session, contract: Contract) -> Decimal:
+    """合同已确认净到账（确认收款 − 确认退款；无新财务则看旧 Payment）。"""
     has_new_finance = (
         db.query(ReceivablePlan.id).filter(ReceivablePlan.contract_id == contract.id).first()
         or db.query(Receipt.id).filter(Receipt.contract_id == contract.id).first()
@@ -185,7 +122,44 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
                     or 0
                 )
             )
-        paid_amount = max(Decimal("0"), receipt_total - refunded_total)
+        return max(Decimal("0"), receipt_total - refunded_total)
+
+    paid = (
+        db.query(func.coalesce(func.sum(Payment.amount), 0))
+        .filter(Payment.contract_id == contract.id, Payment.status == PAYMENT_STATUS_CONFIRMED)
+        .scalar()
+    )
+    return Decimal(str(paid or 0))
+
+
+def is_collection_complete(db: Session, contract: Contract) -> bool:
+    """回款是否收齐：以合同金额为准，确认净到账 >= 合同金额才算收齐。"""
+    amount = Decimal(str(contract.amount or 0))
+    if amount <= 0:
+        return True
+    return _contract_net_paid(db, contract) >= amount
+
+
+def _can_complete_contract(user: User) -> bool:
+    """正常完成合同（回款已齐）：contract:complete / contract:manage / admin。"""
+    if user_can(user, "contract:complete") or user_can(user, "contract:manage"):
+        return True
+    return "admin" in {r.code for r in user.roles}
+
+
+def enrich_contract(db: Session, contract: Contract) -> Contract:
+    customer = db.query(Customer).filter(Customer.id == contract.customer_id).first()
+    contract.customer_name = customer.name if customer else None  # type: ignore[attr-defined]
+    contract.owner_name = _user_name(db, contract.owner_id)  # type: ignore[attr-defined]
+    contract.creator_name = _user_name(db, contract.creator_id)  # type: ignore[attr-defined]
+    contract.approved_by_name = _user_name(db, contract.approved_by)  # type: ignore[attr-defined]
+
+    has_new_finance = (
+        db.query(ReceivablePlan.id).filter(ReceivablePlan.contract_id == contract.id).first()
+        or db.query(Receipt.id).filter(Receipt.contract_id == contract.id).first()
+    )
+    paid_amount = _contract_net_paid(db, contract)
+    if has_new_finance:
         next_due = (
             db.query(ReceivablePlan.due_date)
             .filter(
@@ -196,12 +170,6 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
             .first()
         )
     else:
-        paid = (
-            db.query(func.coalesce(func.sum(Payment.amount), 0))
-            .filter(Payment.contract_id == contract.id, Payment.status == PAYMENT_STATUS_CONFIRMED)
-            .scalar()
-        )
-        paid_amount = Decimal(str(paid or 0))
         next_due = (
             db.query(Payment.due_date)
             .filter(

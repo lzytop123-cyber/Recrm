@@ -885,6 +885,21 @@ def complete_project(db: Session, user: User, project_id: int) -> Project:
         raise HTTPException(status_code=400, detail="财务核对未通过，不可结项")
     if project.leftover_summary and not project.leftover_closed:
         raise HTTPException(status_code=400, detail="遗留问题未关闭，不可结项")
+    # 双保险：结项时再核一次回款，避免财务核对误通过后欠款仍能结项
+    _, amount, paid, complete = _project_contract_settlement(db, project)
+    if not project.contract_id:
+        raise HTTPException(status_code=400, detail="项目未关联合同，不可结项")
+    if not complete:
+        outstanding = amount - paid
+        if outstanding < 0:
+            outstanding = Decimal("0")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"合同回款尚未收齐，不可结项"
+                f"（已到账 {paid} / 合同金额 {amount}，差额 {outstanding}）"
+            ),
+        )
     return _transition(db, user, project_id, {PROJECT_STATUS_ACCEPTED}, PROJECT_STATUS_COMPLETED)
 
 

@@ -72,6 +72,8 @@ const props = withDefaults(
   defineProps<{
     leadId?: number | null
     opportunityId?: number | null
+    /** 阶段/状态等变化时触发重载，避免详情已更新但旅程仍停在旧节点 */
+    syncKey?: string | number | null
     /** 当前页已是线索时隐藏「线索」链，避免自跳 */
     hideSelfLead?: boolean
     /** 当前页已是商机时隐藏「商机」链 */
@@ -80,6 +82,7 @@ const props = withDefaults(
   {
     leadId: null,
     opportunityId: null,
+    syncKey: null,
     hideSelfLead: false,
     hideSelfOpp: false,
   },
@@ -162,7 +165,7 @@ async function load() {
 }
 
 watch(
-  () => [props.leadId, props.opportunityId] as const,
+  () => [props.leadId, props.opportunityId, props.syncKey] as const,
   () => {
     load()
   },
