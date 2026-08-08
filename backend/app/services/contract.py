@@ -82,7 +82,7 @@ def _gen_contract_no(db: Session) -> str:
     return f"{prefix}{count + 1:04d}"
 
 
-def _is_collection_complete(db: Session, contract: Contract) -> bool:
+def is_collection_complete(db: Session, contract: Contract) -> bool:
     """回款是否收齐：零金额视为已收齐；有应收则以核销覆盖为准，否则看已确认收款。"""
     if Decimal(str(contract.amount or 0)) <= 0:
         return True
@@ -215,7 +215,7 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
         )
     contract.paid_amount = paid_amount  # type: ignore[attr-defined]
     contract.next_due_date = next_due[0] if next_due else None  # type: ignore[attr-defined]
-    if _is_collection_complete(db, contract):
+    if is_collection_complete(db, contract):
         contract.collection_status = "collected"  # type: ignore[attr-defined]
     else:
         contract.collection_status = "collecting"  # type: ignore[attr-defined]
@@ -482,7 +482,7 @@ def complete_contract(db: Session, user: User, contract_id: int) -> Contract:
     if contract.status != CONTRACT_STATUS_ACTIVE:
         raise HTTPException(status_code=400, detail="仅执行中合同可完成")
 
-    if not _is_collection_complete(db, contract):
+    if not is_collection_complete(db, contract):
         raise HTTPException(
             status_code=409,
             detail="回款尚未收齐，不能完成；请先完成到款核销",

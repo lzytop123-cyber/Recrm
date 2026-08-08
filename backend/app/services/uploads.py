@@ -11,7 +11,21 @@ from fastapi import HTTPException, UploadFile
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 
 ALLOWED_CATEGORIES = {"contract_proof", "acceptance_proof"}
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".txt",
+}
 MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -29,7 +43,10 @@ def save_upload(file: UploadFile, *, category: str) -> dict:
 
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="仅支持 PDF / PNG / JPG")
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持 PDF / 图片 / Word / Excel / PPT / TXT",
+        )
 
     data = file.file.read()
     if not data:

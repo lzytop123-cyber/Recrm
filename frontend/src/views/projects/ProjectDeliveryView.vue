@@ -215,18 +215,41 @@
               <h3>{{ row.name }}</h3>
               <p class="sub">{{ row.contract_no || '未关联合同' }} · {{ typeLabel(row.project_type) }}</p>
             </div>
-            <el-tag :type="handoffReady(row) ? 'success' : 'danger'" size="small">
-              {{ handoffReady(row) ? '可发起' : '条件未满足' }}
-            </el-tag>
+            <div class="card-top-tags">
+              <el-tag v-if="deferPending(row)" type="warning" size="small">无到款待审</el-tag>
+              <el-tag v-else-if="deferRejected(row)" type="danger" size="small">无到款驳回</el-tag>
+              <el-tag v-else-if="deferApproved(row) && !paymentOk(row)" type="warning" size="small">
+                待首付款
+              </el-tag>
+              <el-tag :type="handoffReady(row) ? 'success' : 'danger'" size="small">
+                {{ handoffReady(row) ? '可发起' : '条件未满足' }}
+              </el-tag>
+            </div>
           </div>
           <div class="handoff-checks">
             <span :class="{ failed: !row.contract_active_ok }">
               {{ row.contract_active_ok ? '✓' : '⚠' }} 合同已签署
             </span>
-            <span :class="{ failed: !paymentOk(row) }">
-              {{ paymentOk(row) ? '✓' : '⚠' }} 已确认到账
+            <span :class="{ failed: !paymentOk(row) && !deferApproved(row) }">
+              {{
+                paymentOk(row)
+                  ? '✓ 已确认到账'
+                  : deferPending(row)
+                    ? '◇ 无到款待审批'
+                    : deferRejected(row)
+                      ? '⚠ 无到款已驳回'
+                      : deferApproved(row)
+                        ? '◇ 无到款已通过'
+                        : '⚠ 已确认到账'
+              }}
             </span>
           </div>
+          <p v-if="row.payment_deferred && row.payment_deferred_reason" class="sub deferred-reason">
+            例外原因：{{ row.payment_deferred_reason }}
+          </p>
+          <p v-if="deferRejected(row) && row.payment_defer_reject_reason" class="sub deferred-reason">
+            驳回原因：{{ row.payment_defer_reject_reason }}
+          </p>
           <div class="handoff-meta">
             <div>
               <small>商务责任人</small>
@@ -262,7 +285,7 @@
           <div>
             <b>待确认资源</b>
             <span class="muted" style="margin-left: 8px">
-              来自立项时勾选的所需角色，由部门负责人确认成员、投入和排期
+              计划投入即任务工时预算；确认后拆任务合计不可超过各部门投入之和
             </span>
           </div>
           <el-tag :type="resourcePendingCount ? 'warning' : 'success'" size="small">
@@ -394,7 +417,7 @@
             </svg>
             <div>
               <strong>{{ planEffectiveProgress }}%</strong>
-              <small>有效进度</small>
+              <small>{{ planProgressLabel }}</small>
             </div>
           </div>
           <div v-else class="plan-next-chip">
@@ -408,9 +431,16 @@
           <span>未使用计划节点</span>
         </article>
         <article class="portfolio-mini plan-hours-card" @click="goToTasksWorkbench">
-          <small>计划 / 实际工时</small>
-          <strong>{{ formatHours(taskHours.planned) }} / {{ formatHours(taskHours.actual) }}h</strong>
-          <span>{{ taskHours.planned ? '在「任务工时」查看 →' : '尚未拆任务，点此去新建 →' }}</span>
+          <small>任务计划 / 资源承诺</small>
+          <strong :class="{ 'hours-over': hoursBudget?.over_budget }">
+            {{ formatHours(hoursBudget?.task_planned_hours ?? taskHours.planned) }}
+            /
+            {{ formatHours(hoursBudget?.resource_budget_hours) }}h
+          </strong>
+          <span>
+            实际 {{ formatHours(hoursBudget?.task_actual_hours ?? taskHours.actual) }}h
+            · 剩余可拆 {{ formatHours(hoursBudget?.remaining_hours) }}h →
+          </span>
         </article>
       </section>
 
@@ -490,34 +520,62 @@
           </el-table-column>
           <el-table-column label="下一步" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
-              <span :class="{ muted: row.status === 'done' && row.evidence_status === 'confirmed', 'text-warn': row.status === 'done' && row.evidence_status !== 'confirmed' }">
+              <span
+                :class="{
+                  muted: !planInExecution || (row.status === 'done' && row.evidence_status === 'confirmed'),
+                  'text-warn': planInExecution && row.status === 'done' && row.evidence_status !== 'confirmed',
+                }"
+              >
                 {{ row.next_action || '—' }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="操作" width="150" fixed="right">
             <template #default="{ row }">
-              <button
-                v-if="milestonePrimaryActionLabel(row)"
-                type="button"
-                class="text-link"
-                @click="onMilestonePrimaryAction(row)"
-              >
-                {{ milestonePrimaryActionLabel(row) }}
-              </button>
-              <span v-else class="muted">—</span>
+              <div class="ms-row-actions">
+                <button
+                  v-if="milestonePrimaryActionLabel(row)"
+                  type="button"
+                  class="text-link"
+                  @click="onMilestonePrimaryAction(row)"
+                >
+                  {{ milestonePrimaryActionLabel(row) }}
+                </button>
+                <button
+                  v-if="canManagePlan"
+                  type="button"
+                  class="text-link text-danger"
+                  @click="onDeleteMilestone(row)"
+                >
+                  删除
+                </button>
+                <span v-if="!milestonePrimaryActionLabel(row) && !canManagePlan" class="muted">—</span>
+              </div>
             </template>
           </el-table-column>
         </el-table>
-        <div v-if="milestones.length && planBaselineLocked" class="plan-table-footer">
-          <span v-if="planEvidencePendingCount" class="text-warn">
-            有 {{ planEvidencePendingCount }} 个节点证据待确认
-          </span>
-          <span v-else-if="planNodesWithoutTaskCount" class="muted">
-            有节点尚未拆任务，建议先建任务再推进
-          </span>
-          <span v-else class="muted">节点与证据正常</span>
-          <el-button type="primary" link @click="goToTasksWorkbench">去任务工时</el-button>
+        <div v-if="milestones.length" class="plan-table-footer">
+          <template v-if="!planInExecution">
+            <span class="muted">当前仍在计划阶段：节点只作编排，进度不会因定义节点变成 100%</span>
+            <el-button
+              v-if="canManagePlan && !planBaselineLocked"
+              type="primary"
+              link
+              @click="onBaselineAction"
+            >
+              去确认基线
+            </el-button>
+          </template>
+          <template v-else>
+            <span v-if="planEvidencePendingCount" class="text-warn">
+              有 {{ planEvidencePendingCount }} 个节点证据待确认
+            </span>
+            <span v-else-if="planNodesWithoutTaskCount" class="muted">
+              有节点尚未拆任务，建议先建任务再推进
+            </span>
+            <span v-else class="muted">节点与证据正常</span>
+            <el-button type="primary" link @click="goToTasksWorkbench">去任务工时</el-button>
+          </template>
         </div>
       </section>
 
@@ -658,9 +716,18 @@
             {{ taskStats?.overdue ?? 0 }}
           </b>
         </div>
-        <div>
-          <small>计划 / 实际工时</small>
-          <b>{{ formatHours(taskStats?.planned_hours) }} / {{ formatHours(taskStats?.actual_hours) }}h</b>
+        <div :title="taskHoursBudgetHint">
+          <small>{{ taskProjectFilter ? '任务计划 / 资源承诺' : '计划 / 实际工时' }}</small>
+          <b :class="{ 'hours-over': taskProjectFilter && hoursBudget?.over_budget }">
+            <template v-if="taskProjectFilter && hoursBudget">
+              {{ formatHours(hoursBudget.task_planned_hours) }}
+              /
+              {{ formatHours(hoursBudget.resource_budget_hours) }}h
+            </template>
+            <template v-else>
+              {{ formatHours(taskStats?.planned_hours) }} / {{ formatHours(taskStats?.actual_hours) }}h
+            </template>
+          </b>
         </div>
         <div
           class="kpi-clickable"
@@ -673,7 +740,7 @@
       </section>
 
       <p class="task-logic-hint">
-        <b>任务</b>管项目进度与工时；
+        <b>任务计划工时</b>计入立项「资源承诺」预算；合计不可超过各部门计划投入。
         <b>协作工单</b>管跨部门协助（状态独立，关工单不会自动完成任务）。
         点「所属项目」可聚焦到单项目，再看下方关联工单。
       </p>
@@ -924,22 +991,51 @@
               <template v-else>—</template>
             </template>
           </el-table-column>
-          <el-table-column label="财务核对" width="110">
+          <el-table-column label="财务核对" min-width="140">
             <template #default="{ row }">
-              <template v-if="row.finance_check_status === 'pending'">审批中</template>
+              <template v-if="row.finance_check_status === 'pending'">
+                <div>审批中</div>
+                <div class="sub" :class="{ 'text-warn': !row.contract_collection_complete }">
+                  {{ financeSettleHint(row) }}
+                </div>
+              </template>
               <template v-else-if="row.finance_check_passed || row.finance_check_status === 'approved'">
                 已通过
               </template>
-              <template v-else-if="row.finance_check_status === 'rejected'">已驳回</template>
+              <template v-else-if="row.finance_check_status === 'rejected'">
+                <div>已驳回</div>
+                <div class="sub" :class="{ 'text-warn': !row.contract_collection_complete }">
+                  {{ financeSettleHint(row) }}
+                </div>
+              </template>
               <template v-else-if="row.status === 'accepted' || row.status === 'completed'">
-                未提交
+                <div>未提交</div>
+                <div class="sub" :class="{ 'text-warn': !row.contract_collection_complete }">
+                  {{ financeSettleHint(row) }}
+                </div>
               </template>
               <template v-else>—</template>
             </template>
           </el-table-column>
-          <el-table-column label="当前状态" width="100">
+          <el-table-column label="当前状态" width="140">
             <template #default="{ row }">
               <el-tag size="small">{{ PROJECT_STATUS_LABEL[row.status] || row.status }}</el-tag>
+              <el-tag
+                v-if="deferPending(row)"
+                type="warning"
+                size="small"
+                style="margin-left: 4px"
+              >
+                无到款待审
+              </el-tag>
+              <el-tag
+                v-else-if="deferApproved(row) && !paymentOk(row)"
+                type="warning"
+                size="small"
+                style="margin-left: 4px"
+              >
+                待首付款
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="200" fixed="right">
@@ -1029,6 +1125,7 @@
       <template v-if="resourceTarget">
         <p class="dialog-flow-hint">
           核对立项建议后选择处理方式：直接确认、调整后确认，或退回协调。
+          计划投入是后续任务拆解的工时上限。
         </p>
 
         <div class="resource-summary">
@@ -1189,11 +1286,34 @@
               <span :class="{ failed: !initGate.contractOk }">
                 {{ initGate.contractOk ? '✓' : '⚠' }} 合同已签署
               </span>
-              <span :class="{ failed: !initGate.paymentOk }">
-                {{ initGate.paymentOk ? '✓' : '⚠' }} 已确认到账
+              <span :class="{ failed: !initGate.paymentOk && !initForm.payment_deferred }">
+                {{
+                  initGate.paymentOk
+                    ? '✓ 已确认到账'
+                    : initForm.payment_deferred
+                      ? '◇ 无到款例外'
+                      : '⚠ 已确认到账'
+                }}
               </span>
             </div>
-            <div class="sub" style="margin-top: 4px">须已签署合同，且「到款核销」中至少一笔已确认到账。</div>
+            <div class="sub" style="margin-top: 4px">
+              默认须已签署且至少一笔确认到账；先干活后付款可勾选下方例外。
+            </div>
+            <div v-if="initGate.contractOk && !initGate.paymentOk" class="init-defer-box">
+              <el-checkbox v-model="initForm.payment_deferred">
+                无到款立项（先干活后付款，需负责人审批）
+              </el-checkbox>
+              <el-input
+                v-if="initForm.payment_deferred"
+                v-model="initForm.payment_deferred_reason"
+                type="textarea"
+                :rows="2"
+                maxlength="500"
+                show-word-limit
+                placeholder="必填：说明客户约定或业务原因；提交后进审批中心，通过后才能进计划；结项仍须回款收齐"
+                style="margin-top: 8px"
+              />
+            </div>
           </el-form-item>
         </section>
         <section class="form-block">
@@ -1237,6 +1357,7 @@
               <div class="role-assign-head">
                 <span class="role-col-dept">部门</span>
                 <span class="role-col-user">建议对接人</span>
+                <span class="role-col-hours">计划投入(h)</span>
                 <span class="role-col-action" />
               </div>
               <div v-for="(row, idx) in initForm.resource_roles" :key="idx" class="role-assign-row">
@@ -1269,8 +1390,17 @@
                     :key="m.id"
                     :label="memberLabel(m)"
                     :value="m.id"
+                    :disabled="isSuggestedUserTaken(m.id, idx)"
                   />
                 </el-select>
+                <el-input-number
+                  v-model="row.planned_hours"
+                  :min="1"
+                  :max="9999"
+                  :precision="0"
+                  controls-position="right"
+                  class="role-col-hours"
+                />
                 <el-button
                   class="role-col-action"
                   text
@@ -1284,10 +1414,10 @@
               <el-button type="primary" link @click="addRoleRow">+ 添加部门</el-button>
             </div>
             <div class="sub" style="margin-top: 6px">
-              {{
-                roleOptionsHint ||
-                '（N人）为部门在册人数；指定对接人后，提交由该部门确认投入。'
-              }}
+              计划投入合计
+              <b>{{ initResourceHoursTotal }}h</b>
+              ，后续任务拆解的计划工时不可超过此预算。
+              {{ roleOptionsHint || '指定对接人后，提交由该部门确认投入。' }}
             </div>
           </el-form-item>
         </section>
@@ -1298,28 +1428,106 @@
       </template>
     </el-dialog>
 
-    <!-- 里程碑弹窗 -->
-    <el-dialog v-model="msVisible" title="添加里程碑" width="520px" destroy-on-close>
-      <el-form :model="msForm" label-width="100px">
-        <el-form-item label="里程碑名称" required>
-          <el-input v-model="msForm.name" />
-        </el-form-item>
-        <el-form-item label="责任角色">
-          <el-input v-model="msForm.role" placeholder="如：交付经理" />
-        </el-form-item>
-        <el-form-item label="计划日期">
-          <el-date-picker v-model="msForm.deadline" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="必交成果">
-          <el-input v-model="msForm.deliverable" />
-        </el-form-item>
-        <el-form-item label="完成证据">
-          <el-input v-model="msForm.evidence" placeholder="文档/链接说明" />
-        </el-form-item>
+    <!-- 计划节点弹窗 -->
+    <el-dialog
+      v-model="msVisible"
+      width="560px"
+      destroy-on-close
+      class="claim-dialog ms-dialog"
+    >
+      <template #header>
+        <div>
+          <small class="dialog-eyebrow">计划编排</small>
+          <h3 class="dialog-title">添加计划节点</h3>
+        </div>
+      </template>
+      <p class="dialog-flow-hint">
+        现在只定义节点与验收标准；确认基线进入执行后，再挂任务、交证据、算进度
+      </p>
+      <el-form class="ms-dialog-form" :model="msForm" label-position="top">
+        <section class="form-block">
+          <h3><span>1</span>节点是什么</h3>
+          <el-form-item label="节点名称" required>
+            <el-input
+              v-model="msForm.name"
+              maxlength="80"
+              show-word-limit
+              placeholder="如：需求确认、UAT 验收、正式上线"
+            />
+          </el-form-item>
+          <div class="ms-meta-row">
+            <el-form-item label="计划完成日期">
+              <el-date-picker
+                v-model="msForm.deadline"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="选一个目标日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="责任角色">
+              <el-select
+                v-model="msForm.role"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                :loading="resourceLoading"
+                placeholder="从本项目资源安排选择"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="opt in planMilestoneOwnerOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                >
+                  <div class="ms-owner-opt">
+                    <span>{{ opt.label }}</span>
+                    <small>{{ opt.hint }}</small>
+                  </div>
+                </el-option>
+              </el-select>
+            </el-form-item>
+          </div>
+          <p class="sub ms-block-tip">
+            {{
+              planMilestoneOwnerOptions.length > 1
+                ? '选项来自立项时的资源安排（部门/对接人），与待确认资源联动；也可手动输入。'
+                : '暂无本项目资源安排，可手动输入；资源确认后会自动出现可选对接人。'
+            }}
+          </p>
+        </section>
+        <section class="form-block">
+          <h3><span>2</span>怎么算完成</h3>
+          <el-form-item label="必交成果">
+            <el-input
+              v-model="msForm.deliverable"
+              type="textarea"
+              :rows="2"
+              maxlength="200"
+              show-word-limit
+              placeholder="本阶段要交付什么？如：签字版需求说明书、UAT 通过报告"
+            />
+          </el-form-item>
+          <el-form-item label="证据要求">
+            <el-input
+              v-model="msForm.evidence"
+              type="textarea"
+              :rows="2"
+              maxlength="200"
+              show-word-limit
+              placeholder="验收时用什么证明完成？如：客户签字验收单、演示录像链接"
+            />
+            <div class="sub" style="margin-top: 6px">
+              这里写的是「要求」，真正提交证据在节点推进时完成，不是现在上传。
+            </div>
+          </el-form-item>
+        </section>
       </el-form>
       <template #footer>
         <el-button @click="msVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="onAddMilestone">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="onAddMilestone">添加节点</el-button>
       </template>
     </el-dialog>
 
@@ -1547,6 +1755,7 @@
             style="width: 100%"
             :placeholder="taskNodePlaceholder"
             :loading="taskMilestoneLoading"
+            @change="onTaskMilestoneChange"
           >
             <el-option
               v-for="m in taskMilestoneOptions"
@@ -1578,7 +1787,7 @@
             filterable
             remote
             clearable
-            placeholder="默认本人，可改"
+            placeholder="默认带节点责任人，可改"
             :remote-method="searchEmployees"
             style="width: 100%"
           >
@@ -1589,6 +1798,7 @@
               :value="e.id"
             />
           </el-select>
+          <div v-if="taskAssigneeHint" class="muted" style="margin-top: 6px">{{ taskAssigneeHint }}</div>
         </el-form-item>
         <div class="task-form-row">
           <el-form-item label="截止日期" prop="due_date">
@@ -1605,6 +1815,7 @@
                 v-model="taskForm.planned_hours"
                 :min="0"
                 :precision="1"
+                :max="taskHoursMax > 0 ? taskHoursMax : undefined"
                 controls-position="right"
                 class="task-hours-input"
               />
@@ -1612,6 +1823,9 @@
             </div>
           </el-form-item>
         </div>
+        <p v-if="taskFormHoursHint" class="sub task-budget-hint" :class="{ 'hours-over': taskFormOverBudget }">
+          {{ taskFormHoursHint }}
+        </p>
       </el-form>
       <template #footer>
         <el-button @click="taskVisible = false">取消</el-button>
@@ -1630,7 +1844,7 @@
       <template v-if="evidenceTarget">
         <div class="evidence-dialog-meta">
           <div>
-            <small>里程碑</small>
+            <small>计划节点</small>
             <b>{{ evidenceTarget.name }}</b>
           </div>
           <div>
@@ -1645,10 +1859,25 @@
           </div>
         </div>
 
-        <template v-if="evidenceMode === 'review'">
+        <template v-if="!planInExecution">
+          <div class="evidence-review-box">
+            <small>必交成果</small>
+            <p>{{ evidenceTarget.deliverable || '未填写' }}</p>
+            <small style="display: block; margin-top: 10px">证据要求</small>
+            <p>{{ evidenceTarget.remark || '未填写' }}</p>
+          </div>
+          <p class="muted" style="margin: 12px 0 0">
+            当前仍在计划阶段。确认基线进入执行后，再提交完成证据并计入进度。
+          </p>
+        </template>
+        <template v-else-if="evidenceMode === 'review'">
+          <div v-if="evidenceTarget.remark" class="evidence-review-box" style="margin-bottom: 10px">
+            <small>证据要求</small>
+            <p>{{ evidenceTarget.remark }}</p>
+          </div>
           <div class="evidence-review-box">
             <small>证据内容</small>
-            <p>{{ evidenceTarget.evidence }}</p>
+            <p>{{ evidenceTarget.evidence || '尚未提交' }}</p>
             <small v-if="evidenceTarget.evidence_reject_reason" class="evidence-reject">
               上次驳回：{{ evidenceTarget.evidence_reject_reason }}
             </small>
@@ -1657,12 +1886,15 @@
             </small>
           </div>
           <p class="muted" style="margin: 12px 0 0">
-            {{ evidenceTarget.next_action || '确认后，若无未完成关联任务将自动完成里程碑。' }}
+            {{ evidenceTarget.next_action || '确认后，若无未完成关联任务将自动完成节点。' }}
           </p>
         </template>
         <template v-else>
-          <p class="muted" style="margin: 0 0 12px">
+          <p class="muted" style="margin: 0 0 8px">
             提交后由项目负责人确认。可填文档说明或链接。
+          </p>
+          <p v-if="evidenceTarget.remark" class="muted" style="margin: 0 0 12px">
+            证据要求：{{ evidenceTarget.remark }}
           </p>
           <el-input
             v-model="evidenceDraft"
@@ -1680,18 +1912,18 @@
         </template>
       </template>
       <template #footer>
-        <el-button @click="evidenceVisible = false">取消</el-button>
-        <template v-if="evidenceTarget && evidenceMode === 'review' && canConfirmEvidence(evidenceTarget)">
+        <el-button @click="evidenceVisible = false">{{ planInExecution ? '取消' : '关闭' }}</el-button>
+        <template v-if="planInExecution && evidenceTarget && evidenceMode === 'review' && canConfirmEvidence(evidenceTarget)">
           <el-button :loading="saving" @click="rejectEvidence(evidenceTarget)">驳回</el-button>
           <el-button type="primary" :loading="saving" @click="confirmEvidence(evidenceTarget)">
             确认证据
           </el-button>
         </template>
-        <template v-else-if="evidenceMode === 'review'">
+        <template v-else-if="planInExecution && evidenceMode === 'review'">
           <el-button type="primary" @click="evidenceMode = 'fill'">修改并重提</el-button>
         </template>
         <el-button
-          v-else
+          v-else-if="planInExecution"
           type="primary"
           :loading="saving"
           @click="submitMilestoneEvidence"
@@ -1894,24 +2126,48 @@
           />
         </el-form-item>
         <el-form-item label="验收附件" prop="attachment">
-          <div
-            class="upload-box"
-            :class="{ uploaded: !!acceptForm.attachment }"
-            @click="triggerAcceptUpload"
-          >
-            <template v-if="acceptForm.attachment">
-              <b>{{ acceptForm.attachment }}</b>
-              <small>已上传 · 点击可重新选择</small>
+          <div class="accept-attach" :class="{ uploaded: !!acceptForm.attachment }">
+            <template v-if="acceptForm.attachment && acceptAttachUrl">
+              <div class="accept-attach-preview">
+                <el-image
+                  v-if="acceptAttachKind === 'image'"
+                  :src="acceptAttachUrl"
+                  :preview-src-list="[acceptAttachUrl]"
+                  fit="contain"
+                  class="accept-attach-image"
+                  preview-teleported
+                />
+                <iframe
+                  v-else-if="acceptAttachKind === 'pdf'"
+                  :src="acceptAttachUrl"
+                  class="accept-attach-pdf"
+                  title="验收附件预览"
+                />
+                <div v-else class="accept-doc-card">
+                  <span class="accept-doc-ext">{{ acceptAttachExt }}</span>
+                  <div>
+                    <strong>{{ acceptForm.attachment }}</strong>
+                    <small>
+                      {{ acceptAttachKindLabel }}
+                      <template v-if="acceptAttachSizeLabel"> · {{ acceptAttachSizeLabel }}</template>
+                    </small>
+                  </div>
+                </div>
+              </div>
+              <div class="accept-attach-actions">
+                <a :href="acceptAttachUrl" target="_blank" rel="noopener">打开查看</a>
+                <button type="button" class="text-link" @click="triggerAcceptUpload">重新选择</button>
+              </div>
             </template>
-            <template v-else>
+            <button v-else type="button" class="upload-box" @click="triggerAcceptUpload">
               <b>上传内部验收单或评审材料</b>
-              <small>PDF、PNG、JPG · 单文件不超过 20MB</small>
-            </template>
+              <small>支持 PDF、图片、Word、Excel、PPT、TXT · 单文件不超过 20MB</small>
+            </button>
           </div>
           <input
             ref="acceptFileRef"
             type="file"
-            accept=".pdf,.png,.jpg,.jpeg"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
             style="display: none"
             @change="onAcceptFileChange"
           />
@@ -1938,11 +2194,13 @@ import {
   TASK_STATUS_LABEL,
   acceptProject,
   addMilestone,
+  deleteMilestone,
   completeProject,
   confirmProjectResource,
   createProject,
   createProjectTask,
   fetchProjectDetail,
+  fetchProjectHoursBudget,
   fetchProjectResourceNeeds,
   fetchProjectStats,
   fetchProjectTaskStats,
@@ -1958,6 +2216,7 @@ import {
   updateProject,
   updateProjectTask,
   type Project,
+  type ProjectHoursBudget,
   type ProjectMilestone,
   type ProjectResourceNeed,
   type ProjectStats,
@@ -2000,7 +2259,10 @@ const DEPT_HINTS: Record<string, string[]> = {
 type RoleAssignRow = {
   role_name: string
   suggested_user_id?: number
+  planned_hours: number
 }
+
+const DEFAULT_ROLE_HOURS = 40
 
 const route = useRoute()
 const router = useRouter()
@@ -2051,6 +2313,8 @@ const planLoading = ref(false)
 const planSchedules = ref<Schedule[]>([])
 const planSchedulesLoading = ref(false)
 const taskHours = ref({ planned: 0, actual: 0 })
+const hoursBudget = ref<ProjectHoursBudget | null>(null)
+const taskFormBudget = ref<ProjectHoursBudget | null>(null)
 
 const tasks = ref<ProjectTask[]>([])
 const taskStats = ref<ProjectTaskStats | null>(null)
@@ -2143,6 +2407,9 @@ const taskNodePlaceholder = computed(() => {
   return '请选择计划节点'
 })
 const taskMilestoneLoading = ref(false)
+/** 从计划节点「去拆任务」带入的节点 */
+const preferredTaskMilestoneId = ref<number | undefined>()
+const taskAssigneeHint = ref('')
 const completeVisible = ref(false)
 const completeTarget = ref<ProjectTask | null>(null)
 const completeActualHours = ref(0)
@@ -2154,6 +2421,8 @@ const initFormRef = ref<FormInstance>()
 const taskFormRef = ref<FormInstance>()
 const acceptFormRef = ref<FormInstance>()
 const acceptFileRef = ref<HTMLInputElement | null>(null)
+const acceptAttachUrl = ref('')
+const acceptAttachSize = ref(0)
 const contractLoading = ref(false)
 const empLoading = ref(false)
 const contractOptions = ref<Contract[]>([])
@@ -2170,6 +2439,8 @@ const initForm = reactive({
   manager_id: undefined as number | undefined,
   start_date: '',
   end_date: '',
+  payment_deferred: false,
+  payment_deferred_reason: '',
   resource_roles: [] as RoleAssignRow[],
 })
 const initRules: FormRules = {
@@ -2334,9 +2605,19 @@ const planNodesWithoutTaskCount = computed(
   () => milestones.value.filter((m) => !(m.task_total || 0)).length,
 )
 
+/** 与后端生命周期进度一致：规划期固定筹备进度，不按节点完成数直接拉满 */
 const planEffectiveProgress = computed(() => {
-  if (!milestones.value.length) return planProject.value?.progress || 0
-  return Math.round((planMilestoneDoneCount.value * 100) / milestones.value.length)
+  const p = Number(planProject.value?.progress || 0)
+  return Math.min(Math.max(p, 0), 100)
+})
+
+const planInExecution = computed(() =>
+  ['executing', 'accepting', 'accepted', 'completed'].includes(planProject.value?.status || ''),
+)
+
+const planProgressLabel = computed(() => {
+  if (!planInExecution.value) return '筹备进度'
+  return '执行进度'
 })
 
 const hoursUsage = computed(() => {
@@ -2410,6 +2691,55 @@ const baselineReleaseChecks = computed(() => ({
     milestones.value.length === 0 || milestones.value.every((m) => !!m.role),
   tasks: Number(taskHours.value.planned || 0) > 0,
 }))
+
+function clipMilestoneRole(text: string, max = 50) {
+  const t = text.trim()
+  if (!t) return ''
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
+/** 计划节点责任角色：联动本项目资源安排 + 项目负责人 */
+const planMilestoneOwnerOptions = computed(() => {
+  const opts: { value: string; label: string; hint: string }[] = []
+  const seen = new Set<string>()
+  const push = (value: string, label: string, hint: string) => {
+    const v = clipMilestoneRole(value)
+    if (!v || seen.has(v)) return
+    seen.add(v)
+    opts.push({ value: v, label, hint })
+  }
+
+  const project = planProject.value
+  if (project?.manager_name) {
+    push(
+      `项目负责人 · ${project.manager_name}`,
+      `项目负责人 · ${project.manager_name}`,
+      '项目经理',
+    )
+  } else {
+    push('项目负责人', '项目负责人', '项目经理')
+  }
+
+  const pid = planProjectId.value
+  for (const need of resourceNeeds.value) {
+    if (pid && need.project_id !== pid) continue
+    const dept = (need.department_name || need.role_name || '').trim()
+    if (!dept) continue
+    const person = (need.confirmed_user_name || need.suggested_user_name || '').trim()
+    const status =
+      need.status === 'accepted'
+        ? '已确认投入'
+        : need.status === 'rejected'
+          ? '已退回'
+          : '待确认'
+    if (person) {
+      push(`${person} · ${dept}`, `${dept} · ${person}`, status)
+    } else {
+      push(dept, dept, `${status} · 对接人待指定`)
+    }
+  }
+  return opts
+})
 
 const acceptanceRows = computed(() =>
   projects.value.filter((p) =>
@@ -2541,6 +2871,67 @@ function formatHours(v?: number | string | null) {
   return Number.isFinite(n) ? (n % 1 === 0 ? String(n) : n.toFixed(1)) : '0'
 }
 
+const initResourceHoursTotal = computed(() =>
+  initForm.resource_roles.reduce((s, r) => s + Number(r.planned_hours || 0), 0),
+)
+
+const taskHoursBudgetHint = computed(() => {
+  if (!taskProjectFilter.value || !hoursBudget.value) return ''
+  const b = hoursBudget.value
+  return `资源承诺 ${formatHours(b.resource_budget_hours)}h · 任务计划 ${formatHours(b.task_planned_hours)}h · 剩余 ${formatHours(b.remaining_hours)}h`
+})
+
+const taskHoursMax = computed(() => {
+  const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+  if (budget <= 0) return 0
+  const remaining = Number(taskFormBudget.value?.remaining_hours || 0)
+  return Math.max(0, Math.round(remaining * 10) / 10)
+})
+
+const taskFormOverBudget = computed(() => {
+  const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+  if (budget <= 0) return false
+  return Number(taskForm.planned_hours || 0) > taskHoursMax.value + 1e-9
+})
+
+const taskFormHoursHint = computed(() => {
+  const b = taskFormBudget.value
+  if (!b) return ''
+  const budget = Number(b.resource_budget_hours || 0)
+  if (budget <= 0) return '该项目尚未设置资源投入，创建任务后将无法与立项预算对照。'
+  const remain = Number(b.remaining_hours || 0)
+  if (taskFormOverBudget.value) {
+    return `超出可拆额度：资源承诺 ${formatHours(budget)}h，已拆 ${formatHours(b.task_planned_hours)}h，最多还可填 ${formatHours(remain)}h。`
+  }
+  return `资源承诺 ${formatHours(budget)}h · 已拆任务 ${formatHours(b.task_planned_hours)}h · 本任务最多 ${formatHours(remain)}h。`
+})
+
+async function loadHoursBudget(projectId?: number | null) {
+  if (!projectId) {
+    hoursBudget.value = null
+    return
+  }
+  try {
+    const { data } = await fetchProjectHoursBudget(projectId)
+    hoursBudget.value = data
+  } catch {
+    hoursBudget.value = null
+  }
+}
+
+async function loadTaskFormBudget(projectId?: number | null) {
+  if (!projectId) {
+    taskFormBudget.value = null
+    return
+  }
+  try {
+    const { data } = await fetchProjectHoursBudget(projectId)
+    taskFormBudget.value = data
+  } catch {
+    taskFormBudget.value = null
+  }
+}
+
 function formatRate(v?: number | string | null) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? (n % 1 === 0 ? String(n) : n.toFixed(1)) : '0'
@@ -2550,8 +2941,20 @@ function paymentOk(row: Project) {
   return !!(row.payment_received_ok ?? row.payment_verified)
 }
 
+function deferPending(row: Project) {
+  return !!(row.payment_deferred && row.payment_defer_status === 'pending' && !paymentOk(row))
+}
+
+function deferApproved(row: Project) {
+  return !!(row.payment_deferred && row.payment_defer_status === 'approved')
+}
+
+function deferRejected(row: Project) {
+  return !!(row.payment_deferred && row.payment_defer_status === 'rejected' && !paymentOk(row))
+}
+
 function handoffReady(row: Project) {
-  return !!(row.contract_active_ok && paymentOk(row))
+  return !!(row.contract_active_ok && (paymentOk(row) || deferApproved(row)))
 }
 
 const initGate = computed(() => {
@@ -2632,6 +3035,7 @@ function goToTasksWorkbench() {
   syncExecuteRoute('tasks')
   loadTasks()
   loadTaskStats()
+  loadHoursBudget(planProjectId.value)
 }
 
 function goCreateScheduleForProject() {
@@ -2707,6 +3111,7 @@ async function loadPlanDetail() {
     milestones.value = []
     planSchedules.value = []
     taskHours.value = { planned: 0, actual: 0 }
+    hoursBudget.value = null
     return
   }
   planLoading.value = true
@@ -2734,6 +3139,7 @@ async function loadPlanDetail() {
       actual: t.items.reduce((s, x) => s + Number(x.actual_hours || 0), 0),
     }
     planSchedules.value = schedules.items || []
+    await loadHoursBudget(planProjectId.value)
   } finally {
     planLoading.value = false
     planSchedulesLoading.value = false
@@ -2811,6 +3217,7 @@ function filterTasksByProject(row: ProjectTask) {
   syncExecuteRoute('tasks')
   loadTasks()
   loadTaskStats()
+  loadHoursBudget(row.project_id)
 }
 
 async function countOpenTickets(projectId: number) {
@@ -2883,6 +3290,9 @@ function onContractPicked(id: number) {
     initForm.project_type = c.contract_type
     onProjectTypeChange(c.contract_type)
   }
+  // 换合同后重置例外勾选，避免误带到有到款的合同
+  initForm.payment_deferred = false
+  initForm.payment_deferred_reason = ''
 }
 
 function memberLabel(m: ResourceRoleMember) {
@@ -2917,11 +3327,15 @@ function buildDefaultRoleRows(type: string): RoleAssignRow[] {
     )
     if (match) {
       used.add(match.role_name)
-      picked.push({ role_name: match.role_name, suggested_user_id: undefined })
+      picked.push({
+        role_name: match.role_name,
+        suggested_user_id: undefined,
+        planned_hours: DEFAULT_ROLE_HOURS,
+      })
     }
   }
   if (picked.length) return picked
-  return [{ role_name: '', suggested_user_id: undefined }]
+  return [{ role_name: '', suggested_user_id: undefined, planned_hours: DEFAULT_ROLE_HOURS }]
 }
 
 async function loadRoleOptions() {
@@ -2937,6 +3351,13 @@ async function loadRoleOptions() {
   }
 }
 
+function isSuggestedUserTaken(userId: number | undefined, currentIdx: number) {
+  if (!userId) return false
+  return initForm.resource_roles.some(
+    (r, i) => i !== currentIdx && r.suggested_user_id === userId,
+  )
+}
+
 function onRoleNameChange(row: RoleAssignRow) {
   const members = membersForRole(row.role_name)
   if (row.suggested_user_id && !members.some((m) => m.id === row.suggested_user_id)) {
@@ -2945,7 +3366,11 @@ function onRoleNameChange(row: RoleAssignRow) {
 }
 
 function addRoleRow() {
-  initForm.resource_roles.push({ role_name: '', suggested_user_id: undefined })
+  initForm.resource_roles.push({
+    role_name: '',
+    suggested_user_id: undefined,
+    planned_hours: DEFAULT_ROLE_HOURS,
+  })
 }
 
 function removeRoleRow(idx: number) {
@@ -2964,6 +3389,8 @@ async function openInitiation() {
   initForm.manager_id = userStore.user?.id
   initForm.start_date = ''
   initForm.end_date = ''
+  initForm.payment_deferred = false
+  initForm.payment_deferred_reason = ''
   await Promise.all([searchContracts(''), searchEmployees(''), loadRoleOptions()])
   initForm.resource_roles = buildDefaultRoleRows('ai_custom')
   initVisible.value = true
@@ -2980,18 +3407,37 @@ async function onCreateProject() {
     ElMessage.warning('合同须已签署后才能立项')
     return
   }
-  if (!initGate.value.paymentOk) {
-    ElMessage.warning('合同须有确认到账后才能立项，请先到「合同回款」完成到款认领与财务复核')
+  const useDefer = !initGate.value.paymentOk && initForm.payment_deferred
+  if (!initGate.value.paymentOk && !useDefer) {
+    ElMessage.warning(
+      '合同尚无确认到账：请先完成到款认领与财务复核，或勾选「无到款立项」并填写原因',
+    )
+    return
+  }
+  if (useDefer && !initForm.payment_deferred_reason.trim()) {
+    ElMessage.warning('无到款立项须填写原因')
     return
   }
   const roles = initForm.resource_roles
     .map((r) => ({
       role_name: (r.role_name || '').trim(),
       suggested_user_id: r.suggested_user_id,
+      planned_hours: Number(r.planned_hours || 0),
     }))
     .filter((r) => r.role_name)
   if (!roles.length) {
     ElMessage.warning('请至少添加一个所需部门')
+    return
+  }
+  if (roles.some((r) => !(r.planned_hours > 0))) {
+    ElMessage.warning('请为每个部门填写大于 0 的计划投入工时')
+    return
+  }
+  const suggestedIds = roles
+    .map((r) => r.suggested_user_id)
+    .filter((id): id is number => id != null)
+  if (new Set(suggestedIds).size !== suggestedIds.length) {
+    ElMessage.warning('对接人不能重复')
     return
   }
   saving.value = true
@@ -3006,8 +3452,14 @@ async function onCreateProject() {
       end_date: initForm.end_date || undefined,
       business_owner_id: userStore.user?.id,
       resource_roles: roles,
+      payment_deferred: useDefer,
+      payment_deferred_reason: useDefer ? initForm.payment_deferred_reason.trim() : undefined,
     })
-    ElMessage.success('立项申请已提交，请在下方确认部门资源')
+    ElMessage.success(
+      useDefer
+        ? '已提交无到款立项，请到审批中心处理；通过后并可确认资源后进入计划'
+        : '立项申请已提交，请在下方确认部门资源',
+    )
     initVisible.value = false
     setTab('initiation')
     await reloadAll()
@@ -3033,7 +3485,11 @@ async function advanceInitiating(row: Project) {
   if (!handoffReady(row)) {
     const missing: string[] = []
     if (!row.contract_active_ok) missing.push('合同已签署')
-    if (!paymentOk(row)) missing.push('已确认到账（请先完成到款认领与财务复核）')
+    if (!paymentOk(row)) {
+      if (deferPending(row)) missing.push('无到款立项审批通过（请到审批中心处理）')
+      else if (deferRejected(row)) missing.push('到款认领（无到款立项已被驳回）')
+      else missing.push('已确认到账（或申请无到款立项并获审批）')
+    }
     ElMessage.warning(`缺失：${missing.join('、')}`)
     return
   }
@@ -3254,6 +3710,9 @@ function submitRisk() {
 }
 
 function evidenceStatusLabel(row: ProjectMilestone) {
+  if (!planInExecution.value) {
+    return row.remark ? '已定要求' : '待定要求'
+  }
   const s = row.evidence_status || 'none'
   if (s === 'confirmed') return '已确认'
   if (s === 'rejected') return '已驳回'
@@ -3262,6 +3721,7 @@ function evidenceStatusLabel(row: ProjectMilestone) {
 }
 
 function evidenceTone(row: ProjectMilestone) {
+  if (!planInExecution.value) return row.remark ? '' : 'warn'
   const s = row.evidence_status || 'none'
   if (s === 'confirmed') return 'good'
   if (s === 'rejected') return 'bad'
@@ -3283,27 +3743,29 @@ function canManagePlanForProject(project?: Project | null) {
 const canManagePlan = computed(() => canManagePlanForProject(planProject.value))
 
 function canConfirmEvidence(row: ProjectMilestone) {
-  if (!planProject.value || !row.evidence) return false
+  if (!planInExecution.value || !planProject.value || !row.evidence) return false
   if (row.evidence_status !== 'pending') return false
   return canManagePlan.value
 }
 
 const evidenceDialogTitle = computed(() => {
+  if (!planInExecution.value) return '查看节点要求'
   if (evidenceMode.value === 'review') return '审核完成证据'
   return evidenceTarget.value?.evidence ? '修改完成证据' : '提交完成证据'
 })
 
 function milestonePrimaryActionLabel(row: ProjectMilestone) {
+  if (!planInExecution.value) return '查看要求'
   if (row.status === 'done' && canConfirmEvidence(row)) return '审核证据'
   if (row.status === 'done') return '查看证据'
+  // 常规：无任务时优先去拆任务；纯验收节点仍可直接交证据
+  if (!(row.task_total || 0) && !row.evidence) return '去拆任务'
+  if ((row.task_total || 0) > (row.task_done || 0) && !row.evidence) return '去完成任务'
   if (!row.evidence) return '提交证据'
   if (row.evidence_status === 'rejected') return '重提证据'
   if (canConfirmEvidence(row)) return '审核证据'
   if (row.can_complete && canManagePlan.value) return '标记完成'
-  if (
-    (row.task_total || 0) > (row.task_done || 0) &&
-    row.evidence_status === 'confirmed'
-  ) {
+  if ((row.task_total || 0) > (row.task_done || 0) && row.evidence_status === 'confirmed') {
     return '去完成任务'
   }
   if (row.evidence_status === 'pending') return '查看证据'
@@ -3311,6 +3773,7 @@ function milestonePrimaryActionLabel(row: ProjectMilestone) {
 }
 
 function goToMilestoneTasks(row: ProjectMilestone) {
+  preferredTaskMilestoneId.value = row.id
   taskProjectFilter.value = planProjectId.value
   taskKeyword.value = ''
   taskStatus.value = undefined
@@ -3318,25 +3781,31 @@ function goToMilestoneTasks(row: ProjectMilestone) {
   syncExecuteRoute('tasks')
   loadTasks()
   loadTaskStats()
-  ElMessage.info(`已切换到任务工时：请完成「${row.name}」剩余任务`)
+  loadHoursBudget(planProjectId.value)
+  openTaskCreate()
 }
 
 function clearTaskProjectFilter() {
   taskProjectFilter.value = undefined
+  hoursBudget.value = null
   syncExecuteRoute('tasks')
   loadTasks()
 }
 
 function onMilestonePrimaryAction(row: ProjectMilestone) {
+  if (!planInExecution.value) {
+    openEvidencePanel(row)
+    return
+  }
   if (row.can_complete && row.status !== 'done' && canManagePlan.value) {
     markMilestoneDone(row)
     return
   }
-  if (
-    (row.task_total || 0) > (row.task_done || 0) &&
-    row.evidence_status === 'confirmed' &&
-    row.status !== 'done'
-  ) {
+  const needTasksFirst =
+    (!(row.task_total || 0) && !row.evidence) ||
+    ((row.task_total || 0) > (row.task_done || 0) && !row.evidence) ||
+    ((row.task_total || 0) > (row.task_done || 0) && row.evidence_status === 'confirmed' && row.status !== 'done')
+  if (needTasksFirst) {
     goToMilestoneTasks(row)
     return
   }
@@ -3346,7 +3815,9 @@ function onMilestonePrimaryAction(row: ProjectMilestone) {
 function openEvidencePanel(row: ProjectMilestone) {
   evidenceTarget.value = row
   evidenceDraft.value = row.evidence || ''
-  if (!row.evidence || row.evidence_status === 'rejected') {
+  if (!planInExecution.value) {
+    evidenceMode.value = 'review'
+  } else if (!row.evidence || row.evidence_status === 'rejected') {
     evidenceMode.value = 'fill'
   } else if (canConfirmEvidence(row) || row.evidence_status === 'pending' || row.evidence_status === 'confirmed') {
     evidenceMode.value = 'review'
@@ -3449,30 +3920,68 @@ async function submitMilestoneEvidence() {
   }
 }
 
-function openMilestone() {
+async function openMilestone() {
   if (!planProjectId.value) return ElMessage.warning('请先选择项目')
   msForm.name = ''
   msForm.role = ''
   msForm.deadline = ''
   msForm.deliverable = ''
   msForm.evidence = ''
+  const hasPlanResources = resourceNeeds.value.some((n) => n.project_id === planProjectId.value)
+  if (!hasPlanResources) {
+    await loadResourceNeeds()
+  }
   msVisible.value = true
 }
 
 async function onAddMilestone() {
-  if (!planProjectId.value || !msForm.name.trim()) return
+  if (!planProjectId.value) return ElMessage.warning('请先选择项目')
+  if (!msForm.name.trim()) return ElMessage.warning('请填写节点名称')
   saving.value = true
   try {
     await addMilestone(planProjectId.value, {
       name: msForm.name.trim(),
-      role: msForm.role || undefined,
+      role: msForm.role.trim() || undefined,
       deadline: msForm.deadline || undefined,
-      deliverable: msForm.deliverable || undefined,
-      evidence: msForm.evidence || undefined,
+      deliverable: msForm.deliverable.trim() || undefined,
+      // 证据要求写入 remark；真正完成证据在执行阶段再提交
+      remark: msForm.evidence.trim() || undefined,
     })
-    ElMessage.success('里程碑已添加')
+    ElMessage.success('计划节点已添加')
     msVisible.value = false
     await loadPlanDetail()
+    await loadProjects()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onDeleteMilestone(row: ProjectMilestone) {
+  if (!planProjectId.value) return
+  if (!canManagePlan.value) {
+    ElMessage.warning('仅部门负责人或系统管理员可删除计划节点')
+    return
+  }
+  const taskHint = row.task_total
+    ? `该节点下有 ${row.task_total} 个任务，删除后任务会保留但不再挂在此节点下。`
+    : '删除后不可恢复。'
+  try {
+    await ElMessageBox.confirm(`确认删除计划节点「${row.name}」？${taskHint}`, '删除计划节点', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    await deleteMilestone(planProjectId.value, row.id)
+    ElMessage.success('计划节点已删除')
+    await loadPlanDetail()
+    await loadProjects()
+  } catch {
+    /* interceptor */
   } finally {
     saving.value = false
   }
@@ -3490,11 +3999,137 @@ async function loadTaskMilestones(projectId?: number) {
   }
 }
 
+function findTaskMilestone(milestoneId?: number) {
+  if (!milestoneId) return undefined
+  return (
+    taskMilestoneOptions.value.find((m) => m.id === milestoneId) ||
+    milestones.value.find((m) => m.id === milestoneId)
+  )
+}
+
+/** 从节点责任角色解析责任人：资源安排对接人 / 项目负责人 / 姓名匹配 */
+function resolveAssigneeFromMilestone(ms?: ProjectMilestone | null): {
+  id?: number
+  name?: string
+  source?: string
+} {
+  if (!ms?.role?.trim()) return {}
+  const role = ms.role.trim()
+  const pid = taskForm.project_id || planProjectId.value
+  const project =
+    (pid && projects.value.find((p) => p.id === pid)) || planProject.value || null
+
+  if (role.includes('项目负责人') && project?.manager_id) {
+    return {
+      id: project.manager_id,
+      name: project.manager_name || undefined,
+      source: '节点责任方（项目负责人）',
+    }
+  }
+
+  for (const need of resourceNeeds.value) {
+    if (pid && need.project_id !== pid) continue
+    const uid = need.confirmed_user_id || need.suggested_user_id || undefined
+    if (!uid) continue
+    const person = (need.confirmed_user_name || need.suggested_user_name || '').trim()
+    const dept = (need.department_name || need.role_name || '').trim()
+    const full = person && dept ? `${person} · ${dept}` : ''
+    const hit =
+      (full && (role === clipMilestoneRole(full) || role === full)) ||
+      (person && role.includes(person)) ||
+      (dept && role.includes(dept))
+    if (hit) {
+      return {
+        id: uid,
+        name: person || undefined,
+        source: `节点责任方（${dept || person || '资源安排'}）`,
+      }
+    }
+  }
+
+  const personName = role.split(/\s*[·•・]\s*/)[0]?.trim()
+  if (personName && personName !== role) {
+    const emp = employees.value.find(
+      (e) => (e.real_name || e.username) === personName || e.real_name === personName,
+    )
+    if (emp) {
+      return {
+        id: emp.id,
+        name: emp.real_name || emp.username,
+        source: '节点责任方',
+      }
+    }
+    return { name: personName, source: '节点责任方' }
+  }
+  return {}
+}
+
+async function ensureAssigneeOption(userId: number, name?: string) {
+  if (employees.value.some((e) => e.id === userId)) return
+  if (name) await searchEmployees(name)
+  if (employees.value.some((e) => e.id === userId)) return
+  employees.value = [
+    {
+      id: userId,
+      username: name || String(userId),
+      real_name: name || String(userId),
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    } as Employee,
+    ...employees.value,
+  ]
+}
+
+async function applyAssigneeFromMilestone() {
+  const ms = findTaskMilestone(taskForm.milestone_id)
+  const resolved = resolveAssigneeFromMilestone(ms)
+  if (resolved.id) {
+    await ensureAssigneeOption(resolved.id, resolved.name)
+    taskForm.assignee_id = resolved.id
+    taskAssigneeHint.value = resolved.source
+      ? `已按${resolved.source}带出，可改`
+      : '已按节点责任方带出，可改'
+    return
+  }
+  if (resolved.name) {
+    await searchEmployees(resolved.name)
+    const emp = employees.value.find(
+      (e) => (e.real_name || e.username) === resolved.name,
+    )
+    if (emp) {
+      taskForm.assignee_id = emp.id
+      taskAssigneeHint.value = '已按节点责任方带出，可改'
+      return
+    }
+  }
+  // 无节点责任人时回退本人
+  taskForm.assignee_id = userStore.user?.id
+  taskAssigneeHint.value = ms?.role
+    ? `未匹配到「${ms.role}」对应人员，已填当前账号，请手动选择`
+    : '未选节点责任方，已填当前账号，可改'
+}
+
+async function onTaskMilestoneChange() {
+  const ms = findTaskMilestone(taskForm.milestone_id)
+  if (ms?.deadline) {
+    taskForm.due_date = ms.deadline
+  }
+  await applyAssigneeFromMilestone()
+}
+
 async function onTaskProjectChange(projectId: number) {
   taskForm.milestone_id = undefined
-  await loadTaskMilestones(projectId)
+  preferredTaskMilestoneId.value = undefined
+  await Promise.all([loadTaskMilestones(projectId), loadTaskFormBudget(projectId)])
   const open = taskMilestoneOptions.value.find((m) => m.status !== 'done')
   if (open) taskForm.milestone_id = open.id
+  const remain = Number(taskFormBudget.value?.remaining_hours || 0)
+  const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+  if (budget > 0 && remain >= 0) {
+    taskForm.planned_hours = Math.min(Number(taskForm.planned_hours || 8), remain)
+  }
+  await onTaskMilestoneChange()
 }
 
 async function openTaskCreate() {
@@ -3502,18 +4137,38 @@ async function openTaskCreate() {
   taskForm.milestone_id = undefined
   taskForm.title = ''
   taskForm.criteria = ''
-  taskForm.assignee_id = userStore.user?.id
+  taskForm.assignee_id = undefined
   taskForm.due_date = ''
   taskForm.planned_hours = 8
-  await searchEmployees('')
+  taskAssigneeHint.value = ''
+  const preferredId = preferredTaskMilestoneId.value
+  preferredTaskMilestoneId.value = undefined
+  await Promise.all([searchEmployees(''), loadResourceNeeds()])
   if (taskForm.project_id) {
     if (planProjectId.value === taskForm.project_id && milestones.value.length) {
       taskMilestoneOptions.value = milestones.value
     } else {
       await loadTaskMilestones(taskForm.project_id)
     }
-    const open = taskMilestoneOptions.value.find((m) => m.status !== 'done')
-    if (open) taskForm.milestone_id = open.id
+    await loadTaskFormBudget(taskForm.project_id)
+    const preferred = preferredId
+      ? taskMilestoneOptions.value.find((m) => m.id === preferredId && m.status !== 'done')
+      : undefined
+    const open = preferred || taskMilestoneOptions.value.find((m) => m.status !== 'done')
+    if (open) {
+      taskForm.milestone_id = open.id
+      if (open.deadline) taskForm.due_date = open.deadline
+    }
+    const remain = Number(taskFormBudget.value?.remaining_hours || 0)
+    const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+    if (budget > 0) {
+      taskForm.planned_hours = Math.min(8, Math.max(0, remain))
+    }
+    await applyAssigneeFromMilestone()
+  } else {
+    taskFormBudget.value = null
+    taskForm.assignee_id = userStore.user?.id
+    taskAssigneeHint.value = '已填当前账号，可改'
   }
   taskVisible.value = true
 }
@@ -3521,6 +4176,10 @@ async function openTaskCreate() {
 async function onCreateTask() {
   const ok = await taskFormRef.value?.validate().catch(() => false)
   if (!ok || !taskForm.project_id) return
+  if (taskFormOverBudget.value) {
+    ElMessage.warning(taskFormHoursHint.value || '计划工时超出资源承诺预算')
+    return
+  }
   saving.value = true
   try {
     await createProjectTask({
@@ -3536,6 +4195,9 @@ async function onCreateTask() {
     taskVisible.value = false
     await loadTasks()
     await loadTaskStats()
+    if (taskProjectFilter.value === taskForm.project_id) {
+      await loadHoursBudget(taskForm.project_id)
+    }
     if (planProjectId.value === taskForm.project_id) await loadPlanDetail()
   } finally {
     saving.value = false
@@ -3621,6 +4283,8 @@ function openAcceptance(row?: Project) {
   acceptForm.leftover_summary = ''
   acceptForm.attachment = ''
   acceptForm.attachment_path = ''
+  acceptAttachUrl.value = ''
+  acceptAttachSize.value = 0
   acceptVisible.value = true
   void warnOpenTickets(target.id, target.name)
 }
@@ -3642,6 +4306,42 @@ function onAcceptResultChange() {
   acceptFormRef.value?.clearValidate(['leftover_summary'])
 }
 
+function acceptUploadsUrl(path?: string | null) {
+  const p = (path || '').trim().replace(/^\/+/, '')
+  if (!p) return ''
+  if (/^https?:\/\//i.test(p) || p.startsWith('/uploads/')) return p
+  return `/uploads/${p}`
+}
+
+function acceptFileKind(name: string): 'image' | 'pdf' | 'doc' | 'other' {
+  const n = (name || '').toLowerCase()
+  if (/\.(jpe?g|png|gif|webp|bmp)$/.test(n)) return 'image'
+  if (n.endsWith('.pdf')) return 'pdf'
+  if (/\.(docx?|xlsx?|pptx?|txt)$/.test(n)) return 'doc'
+  return 'other'
+}
+
+const acceptAttachKind = computed(() => acceptFileKind(acceptForm.attachment))
+const acceptAttachExt = computed(() => {
+  const name = acceptForm.attachment || ''
+  const ext = name.includes('.') ? name.split('.').pop() : ''
+  return (ext || 'FILE').toUpperCase()
+})
+const acceptAttachKindLabel = computed(() => {
+  const kind = acceptAttachKind.value
+  if (kind === 'image') return '图片预览'
+  if (kind === 'pdf') return 'PDF 预览'
+  if (kind === 'doc') return '办公文档'
+  return '附件'
+})
+const acceptAttachSizeLabel = computed(() => {
+  const n = acceptAttachSize.value
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+})
+
 function triggerAcceptUpload() {
   acceptFileRef.value?.click()
 }
@@ -3656,6 +4356,8 @@ async function onAcceptFileChange(ev: Event) {
     const { data } = await uploadFile(file, 'acceptance_proof')
     acceptForm.attachment = data.filename
     acceptForm.attachment_path = data.path
+    acceptAttachUrl.value = data.url || acceptUploadsUrl(data.path)
+    acceptAttachSize.value = Number(data.size || file.size || 0)
     acceptFormRef.value?.validateField('attachment')
   } finally {
     saving.value = false
@@ -3689,18 +4391,40 @@ async function onAccept() {
   }
 }
 
+function financeMoney(v?: number | string | null) {
+  const n = Number(v || 0)
+  if (Number.isNaN(n)) return '0.00'
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function financeSettleHint(row: Project) {
+  const paid = financeMoney(row.contract_paid_amount)
+  const amount = financeMoney(row.contract_amount)
+  if (row.contract_collection_complete) return `回款已收齐 ¥${paid}`
+  return `未收齐 ¥${paid} / ¥${amount}`
+}
+
 async function onFinanceCheck(row: Project) {
   if (row.finance_check_status === 'pending') {
     ElMessage.warning('财务核对已在审批中')
     return
   }
-  await ElMessageBox.confirm(
-    `确认提交「${row.name}」财务核对到审批中心？`,
-    '提交财务核对',
-    { type: 'warning', confirmButtonText: '提交审批', cancelButtonText: '取消' },
-  )
+  const paid = financeMoney(row.contract_paid_amount)
+  const amount = financeMoney(row.contract_amount)
+  const complete = !!row.contract_collection_complete
+  const message = complete
+    ? `合同回款已收齐（¥${paid} / ¥${amount}）。\n确认提交「${row.name}」财务核对到审批中心？`
+    : `合同回款尚未收齐（已到账 ¥${paid} / 合同金额 ¥${amount}）。\n仍可提交，但财务审批时未收齐将无法通过。\n确认提交「${row.name}」？`
+  await ElMessageBox.confirm(message, '提交财务核对', {
+    type: complete ? 'info' : 'warning',
+    confirmButtonText: '提交审批',
+    cancelButtonText: '取消',
+    dangerouslyUseHTMLString: false,
+  })
   await setProjectFinanceCheck(row.id)
-  ElMessage.success('财务核对已提交，请到审批中心处理')
+  ElMessage.success(
+    complete ? '财务核对已提交，请到审批中心处理' : '已提交；回款未收齐时财务无法通过，请先完成到款核销',
+  )
   await reloadAll()
 }
 
@@ -3907,16 +4631,72 @@ async function applyRouteTabAndLoad() {
   flex: 1;
   min-width: 0;
 }
+.role-col-hours {
+  flex: 0 0 120px;
+  width: 120px;
+}
 .role-col-action {
   flex: 0 0 44px;
   width: 44px;
   padding: 0 !important;
   justify-content: center;
 }
+.hours-over {
+  color: oklch(0.5 0.16 25);
+}
+.task-budget-hint {
+  margin: -4px 0 0;
+  line-height: 1.4;
+}
 .dialog-flow-hint {
   margin: 0 0 12px;
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.ms-dialog-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.ms-dialog-form :deep(.form-block) {
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+}
+.ms-dialog-form :deep(.form-block h3) {
+  margin-bottom: 10px;
+}
+.ms-meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.ms-block-tip {
+  margin: -4px 0 0;
+  line-height: 1.45;
+}
+.ms-owner-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.ms-owner-opt small {
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  flex: none;
+}
+.ms-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ms-row-actions .text-danger {
+  color: #c45656;
+}
+@media (max-width: 640px) {
+  .ms-meta-row {
+    grid-template-columns: 1fr;
+  }
 }
 .init-date-row {
   display: grid;
@@ -3973,6 +4753,24 @@ async function applyRouteTabAndLoad() {
 .init-dialog-form :deep(.form-block h3) {
   margin-bottom: 8px;
 }
+.init-defer-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--crm-surface-soft, #f7f7f7);
+  border: 1px dashed var(--el-color-warning-light-5, #f3d19e);
+}
+.card-top-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.deferred-reason {
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
 .health-hint {
   margin-top: 8px;
   padding: 10px 12px;
@@ -3980,6 +4778,86 @@ async function applyRouteTabAndLoad() {
   background: var(--crm-surface-soft, #f7f7f7);
   font-size: 12px;
   color: var(--crm-ink-soft);
+}
+.accept-attach {
+  width: 100%;
+}
+.accept-attach.uploaded {
+  border: 1px solid var(--el-color-success-light-5, #b3e19d);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fff6;
+}
+.accept-attach-preview {
+  width: 100%;
+  min-height: 160px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--crm-border, #ebeef5);
+}
+.accept-attach-image {
+  width: 100%;
+  height: 220px;
+  display: block;
+  cursor: zoom-in;
+  background: #f5f7fa;
+}
+.accept-attach-image :deep(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.accept-attach-pdf {
+  width: 100%;
+  height: 280px;
+  border: 0;
+  display: block;
+  background: #f5f7fa;
+}
+.accept-doc-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 120px;
+  padding: 18px 16px;
+}
+.accept-doc-ext {
+  flex: none;
+  min-width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(145deg, #3b6ef5, #1f4fd6);
+}
+.accept-doc-card strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-all;
+}
+.accept-doc-card small {
+  display: block;
+  margin-top: 6px;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+}
+.accept-attach-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+.accept-attach-actions a {
+  color: var(--el-color-primary);
+  font-size: 13px;
+  font-weight: 600;
 }
 .upload-box {
   border: 1.5px dashed var(--crm-border, #dcdfe6);
@@ -3989,13 +4867,12 @@ async function applyRouteTabAndLoad() {
   cursor: pointer;
   background: var(--crm-surface-soft, #f7f7f7);
   width: 100%;
+  display: block;
+  color: inherit;
+  font: inherit;
 }
 .upload-box:hover {
   border-color: var(--el-color-primary);
-}
-.upload-box.uploaded {
-  border-style: solid;
-  border-color: var(--el-color-success);
 }
 .upload-box b {
   display: block;

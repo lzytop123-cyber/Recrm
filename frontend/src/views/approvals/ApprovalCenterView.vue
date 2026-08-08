@@ -215,6 +215,36 @@
               </div>
             </div>
 
+            <!-- 无到款立项 -->
+            <div v-else-if="detail.type === 'project_payment_defer'" class="fact-grid">
+              <div class="fact-row wide">
+                <small>项目</small>
+                <b>
+                  {{
+                    detailProject
+                      ? `${detailProject.project_no} · ${detailProject.name}`
+                      : detail.source_id || detail.title
+                  }}
+                </b>
+              </div>
+              <div class="fact-row">
+                <small>合同金额</small>
+                <b>¥{{ financeMoney(detailProject?.contract_amount ?? factValue('合同金额')) }}</b>
+              </div>
+              <div class="fact-row">
+                <small>已确认到账</small>
+                <b>¥{{ financeMoney(detailProject?.contract_paid_amount ?? factValue('已确认到账')) }}</b>
+              </div>
+              <div class="fact-row wide">
+                <small>申请原因</small>
+                <b>{{ detailProject?.payment_deferred_reason || factValue('申请原因') || '—' }}</b>
+              </div>
+              <div class="fact-row wide">
+                <small>说明</small>
+                <b>通过后可在无到款情况下进入计划；结项财务核对仍须回款收齐。</b>
+              </div>
+            </div>
+
             <!-- 财务核对 -->
             <div v-else-if="detail.type === 'project_finance'" class="fact-grid">
               <div class="fact-row wide">
@@ -228,6 +258,20 @@
                 </b>
               </div>
               <div class="fact-row">
+                <small>合同金额</small>
+                <b>¥{{ financeMoney(detailProject?.contract_amount ?? factValue('合同金额')) }}</b>
+              </div>
+              <div class="fact-row">
+                <small>已确认到账</small>
+                <b>¥{{ financeMoney(detailProject?.contract_paid_amount ?? factValue('已确认到账')) }}</b>
+              </div>
+              <div class="fact-row wide">
+                <small>回款状态</small>
+                <b :class="{ 'text-warn': !financeCollectionComplete }">
+                  {{ financeCollectionLabel }}
+                </b>
+              </div>
+              <div class="fact-row">
                 <small>核对结论</small>
                 <b>
                   <template v-if="detailProject?.finance_check_status === 'pending'">待核对</template>
@@ -236,6 +280,9 @@
                   <template v-else>{{ detail.status_label || '—' }}</template>
                 </b>
               </div>
+              <p v-if="!financeCollectionComplete" class="finance-settle-warn">
+                回款未收齐时系统不允许通过；请先到「合同回款」完成到款核销，或驳回本次核对。
+              </p>
             </div>
 
             <!-- 资产借用 -->
@@ -404,6 +451,7 @@ const detailTitle = computed(() => {
   if (!detail.value) return '审批详情'
   if (detail.value.type === 'project_acceptance') return '内部验收'
   if (detail.value.type === 'project_finance') return '财务核对'
+  if (detail.value.type === 'project_payment_defer') return '无到款立项'
   if (detail.value.type === 'asset_borrow') return '资产借用审批'
   if (detail.value.type === 'contract') return '合同审批'
   if (detail.value.type === 'receipt') return '到款复核'
@@ -423,6 +471,29 @@ const detailHeadline = computed(() => {
 
 const acceptanceResultKey = computed(() => {
   return detailProject.value?.acceptance_result || factValue('验收结果') || ''
+})
+
+function financeMoney(v?: number | string | null) {
+  const n = Number(v || 0)
+  if (Number.isNaN(n)) return '0.00'
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const financeCollectionComplete = computed(() => {
+  if (detailProject.value) return !!detailProject.value.contract_collection_complete
+  const label = factValue('回款状态')
+  return label.includes('已收齐')
+})
+
+const financeCollectionLabel = computed(() => {
+  if (detailProject.value) {
+    const paid = financeMoney(detailProject.value.contract_paid_amount)
+    const amount = financeMoney(detailProject.value.contract_amount)
+    return detailProject.value.contract_collection_complete
+      ? `已收齐（¥${paid} / ¥${amount}）`
+      : `未收齐（¥${paid} / ¥${amount}）`
+  }
+  return factValue('回款状态') || '—'
 })
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp)$/i
@@ -498,7 +569,9 @@ const deepLinkLabel = computed(() => {
   if (t === 'receipt') return '查看到款合同'
   if (t === 'allocation') return '查看合同'
   if (t === 'contract') return '查看合同'
-  if (t === 'project_acceptance' || t === 'project_finance') return '查看项目'
+  if (t === 'project_acceptance' || t === 'project_finance' || t === 'project_payment_defer') {
+    return '查看项目'
+  }
   if (t === 'asset_borrow') return '打开借用单'
   return '查看原单'
 })
@@ -548,7 +621,11 @@ async function openItem(row: ApprovalItem) {
   try {
     const { data } = await fetchApprovalDetail(row.id)
     detail.value = data
-    if (data.type === 'project_acceptance' || data.type === 'project_finance') {
+    if (
+      data.type === 'project_acceptance' ||
+      data.type === 'project_finance' ||
+      data.type === 'project_payment_defer'
+    ) {
       const id = entityId(data)
       if (id) {
         const { data: project } = await fetchProjectDetail(id)
@@ -1008,6 +1085,22 @@ onMounted(reload)
   color: var(--ap-ink);
   line-height: 1.4;
   word-break: break-word;
+}
+
+.fact-row b.text-warn,
+.text-warn {
+  color: #c45656;
+}
+
+.finance-settle-warn {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #a15c00;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .attach-preview {

@@ -163,11 +163,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button v-if="canManageOrg" link type="primary" @click.stop="openEmployeeEdit(row)">
-                  编辑
-                </el-button>
+                <template v-if="canManageOrg">
+                  <el-button link type="primary" @click.stop="openEmployeeEdit(row)">编辑</el-button>
+                  <el-button link type="primary" @click.stop="openPasswordReset(row)">修改密码</el-button>
+                </template>
                 <el-button v-else link type="primary" @click.stop="goDetail(row)">档案</el-button>
               </template>
             </el-table-column>
@@ -287,6 +288,38 @@
         <el-button type="primary" :loading="saving" @click="saveEmployee">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="pwdVisible"
+      :title="pwdTarget ? `修改密码 · ${pwdTarget.real_name || pwdTarget.username}` : '修改密码'"
+      width="420px"
+      destroy-on-close
+    >
+      <el-form label-width="90px" @submit.prevent>
+        <el-form-item label="新密码" required>
+          <el-input
+            v-model="pwdForm.password"
+            type="password"
+            show-password
+            placeholder="至少 6 位"
+            autocomplete="new-password"
+          />
+        </el-form-item>
+        <el-form-item label="确认密码" required>
+          <el-input
+            v-model="pwdForm.confirm"
+            type="password"
+            show-password
+            placeholder="再次输入新密码"
+            autocomplete="new-password"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="submitPasswordReset">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -302,6 +335,7 @@ import {
   fetchEmployees,
   fetchOrgRoles,
   fetchOrgStats,
+  resetEmployeePassword,
   syncFeishuAttendanceApi,
   syncFeishuContactsApi,
   updateDepartment,
@@ -349,6 +383,13 @@ const total = ref(0)
 
 const deptVisible = ref(false)
 const empVisible = ref(false)
+const pwdVisible = ref(false)
+const pwdSaving = ref(false)
+const pwdTarget = ref<Employee | null>(null)
+const pwdForm = reactive({
+  password: '',
+  confirm: '',
+})
 const deptForm = reactive({
   id: 0,
   name: '',
@@ -613,6 +654,36 @@ function openEmployeeEdit(row: Employee) {
     role_ids: (row.roles || []).map((r) => r.id),
   })
   empVisible.value = true
+}
+
+function openPasswordReset(row: Employee) {
+  pwdTarget.value = row
+  pwdForm.password = ''
+  pwdForm.confirm = ''
+  pwdVisible.value = true
+}
+
+async function submitPasswordReset() {
+  if (!pwdTarget.value) return
+  const password = pwdForm.password.trim()
+  if (password.length < 6) {
+    ElMessage.warning('密码至少 6 位')
+    return
+  }
+  if (password !== pwdForm.confirm) {
+    ElMessage.warning('两次输入的密码不一致')
+    return
+  }
+  pwdSaving.value = true
+  try {
+    await resetEmployeePassword(pwdTarget.value.id, password)
+    pwdVisible.value = false
+    ElMessage.success('密码已更新')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || e?.message || '修改密码失败')
+  } finally {
+    pwdSaving.value = false
+  }
 }
 
 async function saveEmployee() {

@@ -19,6 +19,9 @@ class ProjectCreate(BaseModel):
     scope_desc: Optional[str] = None
     remark: Optional[str] = None
     payment_verified: bool = False
+    # 例外：合同已签但尚未到款，允许先立项（须填原因）
+    payment_deferred: bool = False
+    payment_deferred_reason: Optional[str] = Field(None, max_length=500)
     handoff_complete: bool = False
     contact_confirmed: bool = False
     business_owner_id: Optional[int] = None
@@ -68,6 +71,10 @@ class ProjectFinanceCheckRequest(BaseModel):
 
 
 class ProjectFinanceCheckReviewRequest(BaseModel):
+    remark: Optional[str] = None
+
+
+class ProjectPaymentDeferReviewRequest(BaseModel):
     remark: Optional[str] = None
 
 
@@ -218,6 +225,14 @@ class ProjectOut(BaseModel):
     terminate_reason: Optional[str] = None
     remark: Optional[str] = None
     payment_verified: bool = False
+    payment_deferred: bool = False
+    payment_deferred_reason: Optional[str] = None
+    payment_defer_status: str = "none"
+    payment_defer_submitted_by: Optional[int] = None
+    payment_defer_submitted_at: Optional[datetime] = None
+    payment_defer_approved_by: Optional[int] = None
+    payment_defer_approved_at: Optional[datetime] = None
+    payment_defer_reject_reason: Optional[str] = None
     handoff_complete: bool = False
     contact_confirmed: bool = False
     business_owner_id: Optional[int] = None
@@ -258,6 +273,9 @@ class ProjectOut(BaseModel):
     # 派生
     contract_active_ok: bool = False
     payment_received_ok: bool = False
+    contract_amount: Decimal = Decimal("0")
+    contract_paid_amount: Decimal = Decimal("0")
+    contract_collection_complete: bool = False
     health: Optional[str] = None  # normal/attention/risk
     next_node: Optional[str] = None
     milestone_done: int = 0

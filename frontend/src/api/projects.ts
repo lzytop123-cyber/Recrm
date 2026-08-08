@@ -56,6 +56,14 @@ export interface Project {
   terminate_reason?: string | null
   remark?: string | null
   payment_verified?: boolean
+  payment_deferred?: boolean
+  payment_deferred_reason?: string | null
+  payment_defer_status?: 'none' | 'pending' | 'approved' | 'rejected' | string
+  payment_defer_submitted_by?: number | null
+  payment_defer_submitted_at?: string | null
+  payment_defer_approved_by?: number | null
+  payment_defer_approved_at?: string | null
+  payment_defer_reject_reason?: string | null
   handoff_complete?: boolean
   contact_confirmed?: boolean
   business_owner_id?: number | null
@@ -81,6 +89,9 @@ export interface Project {
   finance_check_approved_by?: number | null
   finance_check_approved_at?: string | null
   finance_check_reject_reason?: string | null
+  contract_amount?: number | string
+  contract_paid_amount?: number | string
+  contract_collection_complete?: boolean
   leftover_closed?: boolean
   created_at: string
   updated_at: string
@@ -329,6 +340,10 @@ export function updateMilestone(
   return request.patch<ProjectMilestone>(`/projects/${projectId}/milestones/${milestoneId}`, data)
 }
 
+export function deleteMilestone(projectId: number, milestoneId: number) {
+  return request.delete<void>(`/projects/${projectId}/milestones/${milestoneId}`)
+}
+
 export function reviewMilestoneEvidence(
   projectId: number,
   milestoneId: number,
@@ -413,6 +428,16 @@ export interface ResourceRoleAssignment {
   planned_hours?: number | null
 }
 
+export interface ProjectHoursBudget {
+  project_id: number
+  resource_budget_hours: number | string
+  resource_accepted_hours: number | string
+  task_planned_hours: number | string
+  task_actual_hours: number | string
+  remaining_hours: number | string
+  over_budget: boolean
+}
+
 export function fetchResourceRoleOptions() {
   return request.get<ResourceRoleOptions>('/projects/resource-role-options')
 }
@@ -434,6 +459,10 @@ export function confirmProjectResource(
   },
 ) {
   return request.post<ProjectResourceNeed>(`/projects/resource-needs/${id}/confirm`, data)
+}
+
+export function fetchProjectHoursBudget(projectId: number) {
+  return request.get<ProjectHoursBudget>(`/projects/${projectId}/hours-budget`)
 }
 
 export function createProjectTask(data: {

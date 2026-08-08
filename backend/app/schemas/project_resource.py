@@ -70,3 +70,15 @@ class ProjectResourceNeedListOut(BaseModel):
     items: List[ProjectResourceNeedOut]
     total: int
     pending_count: int
+
+
+class ProjectHoursBudgetOut(BaseModel):
+    """资源承诺工时 vs 任务计划/实际工时。"""
+
+    project_id: int
+    resource_budget_hours: Decimal = Field(description="未拒绝的资源计划投入合计")
+    resource_accepted_hours: Decimal = Field(description="已确认的资源计划投入合计")
+    task_planned_hours: Decimal = Field(description="任务计划工时合计")
+    task_actual_hours: Decimal = Field(description="任务实际工时合计")
+    remaining_hours: Decimal = Field(description="资源预算剩余（可再拆任务）")
+    over_budget: bool = Field(description="任务计划是否已超过资源承诺")

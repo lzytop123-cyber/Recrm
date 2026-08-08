@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.department import Department
@@ -22,6 +23,7 @@ from app.models.project import (
     SCHEDULE_CHECK_PENDING,
     Project,
     ProjectResourceNeed,
+    ProjectTask,
 )
 from app.models.schedule import SCHEDULE_ACTIVE_STATUSES, Schedule
 from app.models.user import User
@@ -285,6 +287,15 @@ def seed_resource_needs(
         templates = ROLE_TEMPLATES.get(project.project_type) or ROLE_TEMPLATES["other"]
         assignments = [ResourceRoleAssignment(role_name=t["role_name"]) for t in templates]
 
+    seen_users: set[int] = set()
+    for asg in assignments:
+        uid = asg.suggested_user_id
+        if uid is None:
+            continue
+        if uid in seen_users:
+            raise HTTPException(status_code=400, detail="对接人不能重复")
+        seen_users.add(uid)
+
     created: list[ProjectResourceNeed] = []
     for asg in assignments:
         role_name = asg.role_name.strip()
@@ -386,6 +397,10 @@ def confirm_resource(
     if action == "reject":
         if len(note) < 2:
             raise HTTPException(status_code=400, detail="拒绝时请填写说明")
+        # 拒绝后该条不再计入预算，须仍覆盖已拆任务
+        assert_resource_budget_covers_tasks(
+            db, need.project_id, exclude_need_id=need.id, override_hours=None
+        )
         need.status = RESOURCE_NEED_REJECTED
         need.note = note
     elif action == "accept":
@@ -402,6 +417,12 @@ def confirm_resource(
         if payload.planned_hours is not None:
             if payload.planned_hours <= 0:
                 raise HTTPException(status_code=400, detail="计划投入须大于 0")
+            assert_resource_budget_covers_tasks(
+                db,
+                need.project_id,
+                exclude_need_id=need.id,
+                override_hours=payload.planned_hours,
+            )
             need.planned_hours = payload.planned_hours
         need.confirmed_user_id = member_id
         need.suggested_user_id = member_id
@@ -422,4 +443,127 @@ def assert_resources_ready(db: Session, project_id: int) -> None:
         raise HTTPException(
             status_code=400,
             detail=f"仍有 {pending} 项资源待部门确认，请先完成「待确认资源」",
+        )
+
+
+def sum_resource_budget_hours(
+    db: Session,
+    project_id: int,
+    *,
+    exclude_need_id: Optional[int] = None,
+    override_hours: Optional[Decimal] = None,
+) -> Decimal:
+    """未拒绝的资源计划投入合计；可用于模拟单条调整/拒绝后的预算。"""
+    rows = (
+        db.query(ProjectResourceNeed.id, ProjectResourceNeed.planned_hours, ProjectResourceNeed.status)
+        .filter(ProjectResourceNeed.project_id == project_id)
+        .all()
+    )
+    total = Decimal("0")
+    for need_id, hours, status in rows:
+        if status == RESOURCE_NEED_REJECTED:
+            continue
+        if exclude_need_id is not None and need_id == exclude_need_id:
+            if override_hours is None:
+                continue
+            total += Decimal(str(override_hours))
+        else:
+            total += Decimal(str(hours or 0))
+    return total
+
+
+def sum_task_planned_hours(
+    db: Session, project_id: int, *, exclude_task_id: Optional[int] = None
+) -> Decimal:
+    q = db.query(func.coalesce(func.sum(ProjectTask.planned_hours), 0)).filter(
+        ProjectTask.project_id == project_id
+    )
+    if exclude_task_id is not None:
+        q = q.filter(ProjectTask.id != exclude_task_id)
+    return Decimal(str(q.scalar() or 0))
+
+
+def sum_task_actual_hours(db: Session, project_id: int) -> Decimal:
+    total = (
+        db.query(func.coalesce(func.sum(ProjectTask.actual_hours), 0))
+        .filter(ProjectTask.project_id == project_id)
+        .scalar()
+    )
+    return Decimal(str(total or 0))
+
+
+def get_hours_budget(db: Session, project_id: int) -> dict:
+    budget = sum_resource_budget_hours(db, project_id)
+    accepted = (
+        db.query(func.coalesce(func.sum(ProjectResourceNeed.planned_hours), 0))
+        .filter(
+            ProjectResourceNeed.project_id == project_id,
+            ProjectResourceNeed.status == RESOURCE_NEED_ACCEPTED,
+        )
+        .scalar()
+    )
+    task_planned = sum_task_planned_hours(db, project_id)
+    task_actual = sum_task_actual_hours(db, project_id)
+    accepted_dec = Decimal(str(accepted or 0))
+    remaining = budget - task_planned
+    return {
+        "project_id": project_id,
+        "resource_budget_hours": budget,
+        "resource_accepted_hours": accepted_dec,
+        "task_planned_hours": task_planned,
+        "task_actual_hours": task_actual,
+        "remaining_hours": remaining,
+        "over_budget": bool(budget > 0 and task_planned > budget),
+    }
+
+
+def assert_task_hours_within_budget(
+    db: Session,
+    project_id: int,
+    new_planned_hours: Decimal,
+    *,
+    exclude_task_id: Optional[int] = None,
+) -> None:
+    """任务计划工时合计不得超过立项资源承诺（未拒绝项）。无资源需求时不约束。"""
+    budget = sum_resource_budget_hours(db, project_id)
+    if budget <= 0:
+        return
+    other = sum_task_planned_hours(db, project_id, exclude_task_id=exclude_task_id)
+    total = other + Decimal(str(new_planned_hours or 0))
+    if total > budget:
+        remaining = budget - other
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"任务计划工时合计将达 {total}h，超出资源承诺 {budget}h"
+                f"（还可拆 {max(remaining, Decimal('0'))}h）。"
+                "请下调本任务工时，或先在资源确认中调高部门计划投入。"
+            ),
+        )
+
+
+def assert_resource_budget_covers_tasks(
+    db: Session,
+    project_id: int,
+    *,
+    exclude_need_id: Optional[int] = None,
+    override_hours: Optional[Decimal] = None,
+) -> None:
+    """降低/拒绝资源投入后，预算仍须覆盖已拆任务计划工时。"""
+    task_planned = sum_task_planned_hours(db, project_id)
+    if task_planned <= 0:
+        return
+    budget = sum_resource_budget_hours(
+        db,
+        project_id,
+        exclude_need_id=exclude_need_id,
+        override_hours=override_hours,
+    )
+    if budget < task_planned:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"调整后资源承诺仅 {budget}h，低于已拆任务计划 {task_planned}h。"
+                "请先下调任务计划工时，或保留足够投入后再确认/拒绝。"
+            ),
         )

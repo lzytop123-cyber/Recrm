@@ -1,7 +1,7 @@
 """项目管理 API。"""
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker
@@ -20,6 +20,7 @@ from app.schemas.project import (
     ProjectFinanceCheckRequest,
     ProjectFinanceCheckReviewRequest,
     ProjectLeftoverCloseRequest,
+    ProjectPaymentDeferReviewRequest,
     ProjectListOut,
     ProjectOut,
     ProjectStatsOut,
@@ -32,6 +33,7 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.schemas.project_resource import (
+    ProjectHoursBudgetOut,
     ProjectResourceNeedListOut,
     ProjectResourceNeedOut,
     ResourceConfirmRequest,
@@ -195,6 +197,20 @@ def get_project(
     return ProjectDetailOut.model_validate(project)
 
 
+@router.get(
+    "/{project_id}/hours-budget",
+    response_model=ProjectHoursBudgetOut,
+    summary="资源承诺 vs 任务工时",
+)
+def get_project_hours_budget(
+    project_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectHoursBudgetOut:
+    project = project_service.get_project_detail(db, current_user, project_id)
+    return ProjectHoursBudgetOut(**resource_service.get_hours_budget(db, project.id))
+
+
 @router.patch("/{project_id}", response_model=ProjectOut, summary="编辑项目")
 def update_project(
     project_id: int,
@@ -334,6 +350,42 @@ def reject_finance_check(
 
 
 @router.post(
+    "/{project_id}/payment-defer/confirm",
+    response_model=ProjectOut,
+    summary="通过无到款立项审批",
+)
+def confirm_payment_defer(
+    project_id: int,
+    payload: ProjectPaymentDeferReviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectOut:
+    return ProjectOut.model_validate(
+        project_service.review_payment_defer(
+            db, current_user, project_id, payload, approve=True
+        )
+    )
+
+
+@router.post(
+    "/{project_id}/payment-defer/reject",
+    response_model=ProjectOut,
+    summary="驳回无到款立项审批",
+)
+def reject_payment_defer(
+    project_id: int,
+    payload: ProjectPaymentDeferReviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectOut:
+    return ProjectOut.model_validate(
+        project_service.review_payment_defer(
+            db, current_user, project_id, payload, approve=False
+        )
+    )
+
+
+@router.post(
     "/{project_id}/leftover-close",
     response_model=ProjectOut,
     summary="关闭遗留问题",
@@ -395,6 +447,20 @@ def update_milestone(
 ) -> MilestoneOut:
     ms = project_service.update_milestone(db, current_user, project_id, milestone_id, payload)
     return MilestoneOut.model_validate(ms)
+
+
+@router.delete(
+    "/{project_id}/milestones/{milestone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除计划节点",
+)
+def delete_milestone(
+    project_id: int,
+    milestone_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> None:
+    project_service.delete_milestone(db, current_user, project_id, milestone_id)
 
 
 @router.post(

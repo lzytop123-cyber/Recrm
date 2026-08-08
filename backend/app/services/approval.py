@@ -32,7 +32,11 @@ from app.models.project import (
     FINANCE_CHECK_APPROVED,
     FINANCE_CHECK_PENDING,
     FINANCE_CHECK_REJECTED,
+    PAYMENT_DEFER_APPROVED,
+    PAYMENT_DEFER_PENDING,
+    PAYMENT_DEFER_REJECTED,
     PROJECT_STATUS_ACCEPTING,
+    PROJECT_STATUS_TERMINATED,
     Project,
 )
 from app.models.timesheet import TIMESHEET_STATUS_SUBMITTED, Timesheet
@@ -53,10 +57,19 @@ from app.schemas.approval import (
 from app.schemas.asset import BorrowRejectRequest
 from app.schemas.finance import AllocationReviewRequest, ReceiptReviewRequest
 from app.schemas.performance import AppealResolveRequest
-from app.schemas.project import ProjectAcceptanceReviewRequest, ProjectFinanceCheckReviewRequest
+from app.schemas.project import (
+    ProjectAcceptanceReviewRequest,
+    ProjectFinanceCheckReviewRequest,
+    ProjectPaymentDeferReviewRequest,
+)
 from app.schemas.timesheet import TimesheetRejectRequest
 from app.services.asset import can_manage_assets
-from app.services.project import can_approve_acceptance, can_review_finance_check
+from app.services.project import (
+    _project_contract_settlement,
+    can_approve_acceptance,
+    can_review_finance_check,
+    can_review_payment_defer,
+)
 from app.services.timesheet import can_approve as can_approve_timesheet
 
 
@@ -402,6 +415,11 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for p in rows:
+            _, amount, paid, complete = _project_contract_settlement(db, p)
+            outstanding = amount - paid
+            if outstanding < 0:
+                outstanding = paid * 0
+            settle_label = "已收齐" if complete else f"未收齐（差额 {outstanding}）"
             items.append(
                 _item(
                     id=f"project_finance:{p.id}",
@@ -416,12 +434,59 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
                     status=p.finance_check_status,
                     status_label="待审批",
                     node="财务审批核对",
-                    summary="结项前财务核对",
+                    summary="已收齐，可核对通过" if complete else "回款未收齐，暂不可通过",
                     facts=[
                         ApprovalFact(label="项目编号", value=p.project_no or "—"),
                         ApprovalFact(label="验收结果", value=p.acceptance_result or "—"),
+                        ApprovalFact(label="合同金额", value=str(amount)),
+                        ApprovalFact(label="已确认到账", value=str(paid)),
+                        ApprovalFact(label="回款状态", value=settle_label),
                     ],
                     deep_link=f"/projects/{p.id}",
+                    can_act=True,
+                    actions=["approve", "reject", "open"],
+                    meta={"entity_id": p.id, "collection_complete": complete},
+                )
+            )
+
+    if can_review_payment_defer(user):
+        rows = (
+            db.query(Project)
+            .filter(
+                Project.payment_deferred.is_(True),
+                Project.payment_defer_status == PAYMENT_DEFER_PENDING,
+                Project.status != PROJECT_STATUS_TERMINATED,
+            )
+            .order_by(Project.payment_defer_submitted_at.desc().nullslast(), Project.id.desc())
+            .limit(100)
+            .all()
+        )
+        for p in rows:
+            _, amount, paid, _complete = _project_contract_settlement(db, p)
+            items.append(
+                _item(
+                    id=f"project_payment_defer:{p.id}",
+                    type="project_payment_defer",
+                    category="项目交付",
+                    source="无到款立项",
+                    source_id=p.project_no or str(p.id),
+                    title=f"无到款立项 {p.name}",
+                    applicant_name=_user_name(
+                        db, p.payment_defer_submitted_by or p.creator_id or p.manager_id
+                    ),
+                    department_name=_dept_name(db, p.department_id),
+                    submitted_at=p.payment_defer_submitted_at or p.created_at,
+                    status=p.payment_defer_status,
+                    status_label="待审批",
+                    node="部门负责人 / 管理员审批",
+                    summary=(p.payment_deferred_reason or "申请先干活后付款")[:80],
+                    facts=[
+                        ApprovalFact(label="项目编号", value=p.project_no or "—"),
+                        ApprovalFact(label="合同金额", value=str(amount)),
+                        ApprovalFact(label="已确认到账", value=str(paid)),
+                        ApprovalFact(label="申请原因", value=p.payment_deferred_reason or "—"),
+                    ],
+                    deep_link="/projects/delivery?tab=initiation",
                     can_act=True,
                     actions=["approve", "reject", "open"],
                     meta={"entity_id": p.id},
@@ -668,6 +733,43 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
                 can_act=False,
                 actions=["open"],
                 meta={"entity_id": t.id},
+            )
+        )
+
+    rows = (
+        db.query(Project)
+        .filter(
+            Project.payment_deferred.is_(True),
+            Project.payment_defer_status == PAYMENT_DEFER_PENDING,
+            Project.payment_defer_submitted_by == user.id,
+        )
+        .order_by(Project.payment_defer_submitted_at.desc().nullslast(), Project.id.desc())
+        .limit(50)
+        .all()
+    )
+    for p in rows:
+        items.append(
+            _item(
+                id=f"project_payment_defer:{p.id}",
+                type="project_payment_defer",
+                category="项目交付",
+                source="无到款立项",
+                source_id=p.project_no or str(p.id),
+                title=f"无到款立项 {p.name}",
+                applicant_name=_user_name(db, user.id),
+                department_name=_dept_name(db, p.department_id),
+                submitted_at=p.payment_defer_submitted_at or p.created_at,
+                status=p.payment_defer_status,
+                status_label="待审批",
+                node="等待部门负责人 / 管理员",
+                summary=(p.payment_deferred_reason or "")[:80],
+                facts=[
+                    ApprovalFact(label="申请原因", value=p.payment_deferred_reason or "—"),
+                ],
+                deep_link="/projects/delivery?tab=initiation",
+                can_act=False,
+                actions=["open"],
+                meta={"entity_id": p.id},
             )
         )
 
@@ -937,6 +1039,50 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
                 can_act=False,
                 actions=["open"],
                 meta={"entity_id": t.id},
+            )
+        )
+
+    rows = (
+        db.query(Project)
+        .filter(
+            Project.payment_defer_approved_by == user.id,
+            Project.payment_defer_status.in_(
+                [PAYMENT_DEFER_APPROVED, PAYMENT_DEFER_REJECTED]
+            ),
+        )
+        .order_by(Project.payment_defer_approved_at.desc().nullslast())
+        .limit(50)
+        .all()
+    )
+    for p in rows:
+        label = (
+            "已通过" if p.payment_defer_status == PAYMENT_DEFER_APPROVED else "已驳回"
+        )
+        items.append(
+            _item(
+                id=f"project_payment_defer:{p.id}:done",
+                type="project_payment_defer",
+                category="项目交付",
+                source="无到款立项",
+                source_id=p.project_no or str(p.id),
+                title=f"无到款立项 {p.name}",
+                applicant_name=_user_name(
+                    db, p.payment_defer_submitted_by or p.creator_id or p.manager_id
+                ),
+                department_name=_dept_name(db, p.department_id),
+                submitted_at=p.payment_defer_approved_at or p.updated_at,
+                status=p.payment_defer_status,
+                status_label=label,
+                node="无到款立项审批完成",
+                summary=(p.payment_deferred_reason or p.payment_defer_reject_reason or "")[:80],
+                facts=[
+                    ApprovalFact(label="申请原因", value=p.payment_deferred_reason or "—"),
+                    ApprovalFact(label="驳回原因", value=p.payment_defer_reject_reason or "—"),
+                ],
+                deep_link="/projects/delivery?tab=initiation",
+                can_act=False,
+                actions=["open"],
+                meta={"entity_id": p.id},
             )
         )
 
@@ -1342,6 +1488,16 @@ def _dispatch_approve_reject(
             user,
             entity_id,
             ProjectFinanceCheckReviewRequest(remark=remark),
+            approve=approve,
+        )
+        return
+
+    if biz_type == "project_payment_defer":
+        project_service.review_payment_defer(
+            db,
+            user,
+            entity_id,
+            ProjectPaymentDeferReviewRequest(remark=remark),
             approve=approve,
         )
         return

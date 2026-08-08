@@ -100,6 +100,11 @@ ACCEPTANCE_APPROVAL_NONE = "none"
 ACCEPTANCE_APPROVAL_PENDING = "pending"
 ACCEPTANCE_APPROVAL_APPROVED = "approved"
 ACCEPTANCE_APPROVAL_REJECTED = "rejected"
+
+PAYMENT_DEFER_NONE = "none"
+PAYMENT_DEFER_PENDING = "pending"
+PAYMENT_DEFER_APPROVED = "approved"
+PAYMENT_DEFER_REJECTED = "rejected"
 ACCEPTANCE_APPROVAL_STATUSES = {
     ACCEPTANCE_APPROVAL_NONE,
     ACCEPTANCE_APPROVAL_PENDING,
@@ -159,6 +164,38 @@ class Project(Base):
     # 立项前确认（商务交接检查项）
     payment_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", comment="收款条件已核验"
+    )
+    payment_deferred: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        comment="无到款立项（先干活后付款）",
+    )
+    payment_deferred_reason: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True, comment="无到款立项原因"
+    )
+    payment_defer_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=PAYMENT_DEFER_NONE,
+        server_default=PAYMENT_DEFER_NONE,
+        index=True,
+        comment="none/pending/approved/rejected",
+    )
+    payment_defer_submitted_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
+    payment_defer_submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    payment_defer_approved_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
+    payment_defer_approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    payment_defer_reject_reason: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
     )
     handoff_complete: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", comment="线索交接已完整"

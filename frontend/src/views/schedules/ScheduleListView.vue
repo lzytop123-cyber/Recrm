@@ -4,7 +4,7 @@
       <div class="sales-head-copy">
         <p class="wb-eyebrow">经营台</p>
         <h1>排期会议</h1>
-        <p>人员档期与冲突一览；可挂交付项目，不影响项目进度。</p>
+        <p>一张表看档期：点色块处理；已取消不占格子；同人时间重叠才算冲突。</p>
       </div>
       <div class="sales-head-actions">
         <el-button type="primary" @click="openCreate()">＋ 新建排期</el-button>
@@ -12,21 +12,33 @@
     </header>
 
     <div class="schedule-toolbar">
-      <div class="schedule-tabs">
+      <div class="schedule-tabs" aria-label="视图">
         <button
-          v-for="item in tabs"
+          v-for="item in viewModes"
           :key="item.key"
           type="button"
           class="schedule-tab"
-          :class="{ active: tab === item.key }"
-          @click="setTab(item.key)"
+          :class="{ active: viewMode === item.key }"
+          @click="viewMode = item.key"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <div class="schedule-tabs role-tabs" aria-label="角色筛选">
+        <button
+          v-for="item in roleFilters"
+          :key="item.key"
+          type="button"
+          class="schedule-tab"
+          :class="{ active: roleFilter === item.key }"
+          @click="roleFilter = item.key"
         >
           {{ item.label }}
         </button>
       </div>
       <section class="schedule-summary" aria-label="当前范围统计">
         <div>
-          <small>{{ tab === 'month' ? '本月' : '本周' }}</small>
+          <small>{{ viewMode === 'month' ? '有效事项' : '本周有效' }}</small>
           <b>{{ scopeStats.total }}</b>
         </div>
         <div>
@@ -37,16 +49,16 @@
           <small>冲突</small>
           <b class="danger">{{ scopeStats.conflict_count }}</b>
         </div>
-        <div>
-          <small>与我相关</small>
-          <b>{{ scopeStats.mine }}</b>
-        </div>
       </section>
     </div>
 
-    <div class="crm-fit-body" :class="{ 'is-scroll': tab !== 'week' && tab !== 'month' }">
+    <div class="crm-fit-body" :class="{ 'is-scroll': viewMode === 'month' }">
     <!-- 周视图 -->
-    <div v-if="tab === 'week'" class="calendar-shell" :class="{ 'drawer-open': drawerVisible }">
+    <div
+      v-if="viewMode === 'week'"
+      class="calendar-shell"
+      :class="{ 'drawer-open': drawerVisible }"
+    >
       <div class="calendar-main">
         <div class="calendar-nav">
           <el-button @click="shiftWeek(-1)">上一周</el-button>
@@ -56,75 +68,111 @@
             <el-button @click="shiftWeek(1)">下一周</el-button>
           </div>
         </div>
-        <div class="week-grid">
-          <div class="corner"></div>
-          <div v-for="d in weekDays" :key="d.key" class="day-head">
-            <span>{{ d.weekday }}</span>
-            <b>{{ d.day }}</b>
-          </div>
-          <template v-for="hour in workHours" :key="hour">
-            <div class="hour-label">{{ String(hour).padStart(2, '0') }}:00</div>
-            <div v-for="d in weekDays" :key="`${d.key}-${hour}`" class="day-col">
-              <button
-                v-for="lay in eventsAt(d.date, hour)"
-                :key="lay.ev.id"
-                type="button"
-                class="cal-event"
-                :class="[
-                  lay.ev.status,
-                  {
-                    conflict: lay.ev.has_conflict,
-                    capped: lay.capped,
-                    narrow: lay.cols >= 3,
-                  },
-                ]"
-                :style="eventStyle(lay, hour)"
-                :title="eventTooltip(lay)"
-                @click="openDrawer(lay.ev)"
-              >
-                <b>{{ lay.ev.title }}</b>
-                <span class="cal-event-meta">
-                  <template v-if="lay.capped">
-                    {{ formatHm(lay.visStart) }}起 · 共{{ lay.totalHours }}h
-                  </template>
-                  <template v-else>
-                    {{ formatHm(lay.visStart) }}–{{ formatHm(lay.visEnd) }}
-                  </template>
-                </span>
-                <span v-if="!lay.narrow" class="cal-event-who">{{ lay.ev.employee_name }}</span>
-              </button>
+        <div class="week-grid-wrap">
+          <div class="week-grid">
+            <div class="corner"></div>
+            <div
+              v-for="d in weekDays"
+              :key="d.key"
+              class="day-head"
+              :class="{ weekend: d.weekend }"
+            >
+              <span>{{ d.weekday }}</span>
+              <b>{{ d.day }}</b>
             </div>
-          </template>
+            <template v-for="hour in workHours" :key="hour">
+              <div class="hour-label">{{ String(hour).padStart(2, '0') }}:00</div>
+              <div
+                v-for="d in weekDays"
+                :key="`${d.key}-${hour}`"
+                class="day-col"
+                :class="{ weekend: d.weekend }"
+              >
+                <button
+                  v-for="lay in eventsAt(d.date, hour)"
+                  :key="lay.ev.id"
+                  type="button"
+                  class="cal-event"
+                  :class="[
+                    lay.ev.status,
+                    {
+                      conflict: rowHasConflict(lay.ev),
+                      capped: lay.capped,
+                      narrow: lay.cols >= 3,
+                    },
+                  ]"
+                  :style="eventStyle(lay, hour)"
+                  :title="eventTooltip(lay)"
+                  @click="openDrawer(lay.ev)"
+                >
+                  <b>{{ lay.ev.title }}</b>
+                  <span class="cal-event-meta">
+                    <template v-if="lay.capped">
+                      {{ formatHm(lay.visStart) }}起 · 共{{ lay.totalHours }}h
+                    </template>
+                    <template v-else>
+                      {{ formatHm(lay.visStart) }}–{{ formatHm(lay.visEnd) }}
+                    </template>
+                  </span>
+                  <span v-if="lay.cols < 3" class="cal-event-who">{{ lay.ev.employee_name }}</span>
+                </button>
+              </div>
+            </template>
+          </div>
+          <div v-if="!weekHasVisibleEvents" class="week-empty">
+            {{
+              roleFilter === 'all'
+                ? '本周暂无有效排期，可点右上角新建。'
+                : `本周暂无「${roleFilterLabel}」排期，可点右上角新建。`
+            }}
+          </div>
         </div>
       </div>
       <aside v-show="!drawerVisible" class="calendar-side">
         <div class="side-card">
-          <h3>冲突提醒</h3>
-          <button
-            v-for="c in conflictItems.slice(0, 5)"
-            :key="c.id"
-            type="button"
-            class="side-row side-row-btn"
-            @click="openDrawer(c)"
-          >
-            <span>{{ c.title }}</span>
-            <b>{{ c.employee_name }}</b>
-          </button>
-          <div v-if="!conflictItems.length" class="side-row"><span>当前范围无冲突</span><b>—</b></div>
+          <h3>需关注</h3>
+          <template v-if="attentionItems.length">
+            <button
+              v-for="c in attentionItems"
+              :key="`${c.kind}-${c.item.id}`"
+              type="button"
+              class="side-row side-row-btn"
+              @click="openDrawer(c.item)"
+            >
+              <span>
+                <i class="side-kind" :class="c.kind">{{ c.kind === 'conflict' ? '冲突' : '待确认' }}</i>
+                {{ c.item.title }}
+              </span>
+              <b>{{ c.item.employee_name }}</b>
+            </button>
+          </template>
+          <div v-else class="side-row">
+            <span>暂无冲突或待确认</span>
+            <b>—</b>
+          </div>
         </div>
         <div class="side-card">
-          <h3>人员负载（本周）</h3>
-          <div v-for="r in resourceLoads.slice(0, 5)" :key="r.employee_id" class="side-row">
-            <span>{{ r.employee_name }}</span>
-            <b>{{ r.load_percent }}%</b>
+          <h3>人员负载</h3>
+          <div v-for="r in sideLoads.slice(0, 6)" :key="r.employee_id" class="side-load">
+            <div class="side-row">
+              <span>{{ r.employee_name }}</span>
+              <b>{{ r.load_percent }}%</b>
+            </div>
+            <div class="load-meter" :class="{ high: r.load_percent >= 85 }">
+              <i :style="{ width: `${Math.min(100, r.load_percent)}%` }"></i>
+            </div>
+            <div class="side-load-meta">{{ r.planned_hours }}h · {{ r.item_count }} 项</div>
           </div>
-          <div v-if="!resourceLoads.length" class="side-row"><span>暂无负载数据</span><b>—</b></div>
+          <div v-if="!sideLoads.length" class="side-row">
+            <span>暂无负载</span>
+            <b>—</b>
+          </div>
         </div>
       </aside>
     </div>
 
     <!-- 月视图 -->
-    <div v-else-if="tab === 'month'" class="calendar-main">
+    <div v-else class="calendar-main">
       <div class="calendar-nav">
         <el-button @click="shiftMonth(-1)">上一月</el-button>
         <h2>{{ monthLabel }}</h2>
@@ -147,7 +195,7 @@
             :key="ev.id"
             type="button"
             class="month-event"
-            :class="[ev.status, { conflict: ev.has_conflict }]"
+            :class="[ev.status, { conflict: rowHasConflict(ev) }]"
             @click="openDrawer(ev)"
           >
             {{ ev.title }}
@@ -158,56 +206,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 讲师 / 主播 / 拍摄剪辑 -->
-    <template v-else-if="isResourceTab(tab)">
-      <div class="calendar-main" style="margin-bottom: 14px">
-        <div class="calendar-nav">
-          <el-button @click="shiftWeek(-1)">上一周</el-button>
-          <h2>{{ weekLabel }}</h2>
-          <div>
-            <el-button @click="goThisWeek">本周</el-button>
-            <el-button @click="shiftWeek(1)">下一周</el-button>
-          </div>
-        </div>
-      </div>
-      <div class="resource-load">
-        <article v-for="r in resourceLoads" :key="r.employee_id" class="resource-card">
-          <div class="top">
-            <b>{{ r.employee_name }}</b>
-            <span>{{ r.load_percent }}%</span>
-          </div>
-          <div class="load-meter" :class="{ high: r.load_percent >= 85 }">
-            <i :style="{ width: `${r.load_percent}%` }"></i>
-          </div>
-          <div style="margin-top: 8px; font-size: 12px; color: var(--crm-ink-soft)">
-            {{ r.planned_hours }}h · {{ r.item_count }} 项
-          </div>
-        </article>
-        <div v-if="!resourceLoads.length" style="color: var(--crm-ink-soft); font-size: 13px">
-          当前范围暂无{{ resourceTabLabel(tab) }}排期
-        </div>
-      </div>
-      <el-table :data="resourceRows" stripe @row-click="openDrawer">
-        <el-table-column prop="title" label="排期事项" min-width="160" />
-        <el-table-column prop="employee_name" label="人员" width="100" />
-        <el-table-column label="时间" min-width="220">
-          <template #default="{ row }">{{ formatRange(row) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag size="small">{{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}</el-tag>
-            <el-tag v-if="row.has_conflict" type="danger" size="small" style="margin-left: 4px">冲突</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="关联" min-width="140">
-          <template #default="{ row }">{{ relationText(row) }}</template>
-        </el-table-column>
-      </el-table>
-      <p v-if="weekendCount > 0" class="schedule-weekend-hint">
-        本周含 {{ weekendCount }} 条周末排期（统一周视图仅展示周一至周五，完整列表见本表）。
-      </p>
-    </template>
     </div>
 
     <!-- 详情抽屉 -->
@@ -226,7 +224,7 @@
                 <el-tag :type="statusTagType(drawer.status)" effect="light" size="small">
                   {{ SCHEDULE_STATUS_LABEL[drawer.status] || drawer.status }}
                 </el-tag>
-                <el-tag v-if="drawer.has_conflict" type="danger" effect="light" size="small">冲突</el-tag>
+                <el-tag v-if="rowHasConflict(drawer)" type="danger" effect="light" size="small">冲突</el-tag>
                 <el-tag type="info" effect="plain" size="small">{{ typeLabel(drawer.schedule_type) }}</el-tag>
               </div>
               <button type="button" class="sch-drawer-close" aria-label="关闭" @click="drawerVisible = false">
@@ -245,19 +243,22 @@
           </header>
 
           <div class="sch-drawer-body">
-            <div v-if="drawer.has_conflict" class="sch-conflict">
-              <div class="sch-conflict-title">时间冲突</div>
+            <div v-if="rowHasConflict(drawer)" class="sch-conflict">
+              <div class="sch-conflict-title">时间冲突（同一人有效档期重叠）</div>
+              <p class="sch-conflict-desc">请改时间、换人，或取消其中一条。已取消/已完成不参与冲突。</p>
               <button
-                v-for="c in drawer.conflicts || []"
+                v-for="c in activeConflicts(drawer)"
                 :key="c.id"
                 type="button"
                 class="sch-conflict-row"
                 @click="openConflict(c)"
               >
-                <span>{{ c.title }}</span>
+                <span>
+                  {{ c.title }}
+                  <small>{{ formatTime(c.start_time) }} ~ {{ formatTime(c.end_time) }}</small>
+                </span>
                 <b>{{ SCHEDULE_STATUS_LABEL[c.status] || c.status }}</b>
               </button>
-              <div v-if="!(drawer.conflicts || []).length" class="sch-conflict-empty">存在冲突，可打开完整详情查看</div>
             </div>
 
             <dl class="sch-kv">
@@ -459,56 +460,46 @@ import {
   fetchResourceLoad,
   fetchResourceOptions,
   fetchScheduleDetail,
-  fetchScheduleStats,
   fetchSchedules,
   startSchedule,
   type ResourceLoad,
   type ResourceOption,
   type Schedule,
   type ScheduleConflict,
-  type ScheduleStats,
 } from '@/api/schedules'
 import { fetchProjects, fetchProjectTasks, type Project, type ProjectTask } from '@/api/projects'
-import { useUserStore } from '@/stores/user'
 
-type TabKey = 'week' | 'month' | 'instructor' | 'streamer' | 'shooting_edit'
-type ResourceTabKey = 'instructor' | 'streamer' | 'shooting_edit'
+type ViewMode = 'week' | 'month'
+type RoleFilter = 'all' | 'instructor' | 'streamer' | 'shooting_edit'
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'week', label: '周视图' },
-  { key: 'month', label: '月视图' },
-  { key: 'instructor', label: '讲师档期' },
-  { key: 'streamer', label: '主播档期' },
-  { key: 'shooting_edit', label: '拍摄剪辑档期' },
+const viewModes: { key: ViewMode; label: string }[] = [
+  { key: 'week', label: '周' },
+  { key: 'month', label: '月' },
 ]
 
-const RESOURCE_TAB_LABELS: Record<ResourceTabKey, string> = {
-  instructor: '讲师',
-  streamer: '主播',
-  shooting_edit: '拍摄剪辑',
-}
-
-function isResourceTab(key: TabKey): key is ResourceTabKey {
-  return key === 'instructor' || key === 'streamer' || key === 'shooting_edit'
-}
-
-function resourceTabLabel(key: TabKey) {
-  return isResourceTab(key) ? RESOURCE_TAB_LABELS[key] : ''
-}
+const roleFilters: { key: RoleFilter; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'instructor', label: '讲师' },
+  { key: 'streamer', label: '主播' },
+  { key: 'shooting_edit', label: '拍摄剪辑' },
+]
 
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const projectLoading = ref(false)
-const tab = ref<TabKey>('week')
+const viewMode = ref<ViewMode>('week')
+const roleFilter = ref<RoleFilter>('all')
 const items = ref<Schedule[]>([])
-const stats = ref<ScheduleStats | null>(null)
-const userStore = useUserStore()
 const resourceLoads = ref<ResourceLoad[]>([])
 const resources = ref<ResourceOption[]>([])
 const projectOptions = ref<Project[]>([])
 const taskOptions = ref<ProjectTask[]>([])
 const anchor = ref(startOfDay(new Date()))
+
+const roleFilterLabel = computed(
+  () => roleFilters.find((x) => x.key === roleFilter.value)?.label || '',
+)
 
 const drawerVisible = ref(false)
 const drawer = ref<Schedule | null>(null)
@@ -547,13 +538,15 @@ const hourEnd = workHours[workHours.length - 1]
 
 const weekDays = computed(() => {
   const monday = startOfWeek(anchor.value)
-  return Array.from({ length: 5 }, (_, i) => {
+  const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  return Array.from({ length: 7 }, (_, i) => {
     const d = addDays(monday, i)
     return {
       key: fmtDate(d),
       date: d,
-      weekday: ['周一', '周二', '周三', '周四', '周五'][i],
+      weekday: labels[i],
       day: `${d.getMonth() + 1}/${d.getDate()}`,
+      weekend: i >= 5,
     }
   })
 })
@@ -579,7 +572,7 @@ const monthCells = computed(() => {
       key,
       day: d.getDate(),
       inMonth: d.getMonth() === month,
-      events: items.value.filter((x) => {
+      events: visibleItems.value.filter((x) => {
         const s = parseDt(x.start_time)
         const e = parseDt(x.end_time)
         return s < dayEnd && e > dayStart
@@ -588,31 +581,100 @@ const monthCells = computed(() => {
   })
 })
 
+/** 有效排期：已取消不进表、不算冲突 */
+const visibleItems = computed(() => items.value.filter((x) => x.status !== 'cancelled'))
+
+function activeConflicts(row: Schedule): ScheduleConflict[] {
+  return (row.conflicts || []).filter(
+    (c) => c.status !== 'cancelled' && c.status !== 'completed',
+  )
+}
+
+function rowHasConflict(row: Schedule) {
+  if (row.status === 'cancelled' || row.status === 'completed') return false
+  return activeConflicts(row).length > 0
+}
+
+function conflictHint(row: Schedule) {
+  const cs = activeConflicts(row)
+  if (!cs.length) return ''
+  if (cs.length === 1) return `⚠ 与「${cs[0].title}」重叠`
+  return `⚠ 与「${cs[0].title}」等 ${cs.length} 项重叠`
+}
+
 /** 顶部 KPI 按当前视图已加载数据统计，避免与周/月网格不一致 */
 const scopeStats = computed(() => {
-  const list = items.value
-  const myId = userStore.user?.id
+  const list = visibleItems.value
   return {
     total: list.length,
     pending: list.filter((x) => x.status === 'pending').length,
-    conflict_count: list.filter((x) => x.has_conflict).length,
-    mine: list.filter(
-      (x) => x.employee_id === myId || x.creator_id === myId,
-    ).length,
+    conflict_count: list.filter((x) => rowHasConflict(x)).length,
   }
 })
 
-const conflictItems = computed(() => items.value.filter((x) => x.has_conflict))
-const resourceRows = computed(() =>
-  isResourceTab(tab.value) ? items.value.filter((x) => x.resource_type === tab.value) : [],
-)
-const weekendCount = computed(
-  () =>
-    resourceRows.value.filter((x) => {
-      const day = parseDt(x.start_time).getDay()
-      return day === 0 || day === 6
-    }).length,
-)
+const attentionItems = computed(() => {
+  const out: { kind: 'conflict' | 'pending'; item: Schedule }[] = []
+  const seen = new Set<number>()
+  for (const x of visibleItems.value) {
+    if (rowHasConflict(x) && !seen.has(x.id)) {
+      out.push({ kind: 'conflict', item: x })
+      seen.add(x.id)
+    }
+  }
+  for (const x of visibleItems.value) {
+    if (x.status === 'pending' && !seen.has(x.id)) {
+      out.push({ kind: 'pending', item: x })
+      seen.add(x.id)
+    }
+    if (out.length >= 8) break
+  }
+  return out.slice(0, 8)
+})
+
+/** 侧栏负载：有角色筛选且接口有数据时用接口；否则按当前事项汇总 */
+const sideLoads = computed((): ResourceLoad[] => {
+  if (roleFilter.value !== 'all' && resourceLoads.value.length) {
+    return resourceLoads.value
+  }
+  const capacity = 40
+  const buckets = new Map<
+    number,
+    { employee_id: number; employee_name: string; planned_hours: number; item_count: number }
+  >()
+  for (const x of visibleItems.value) {
+    const cur = buckets.get(x.employee_id) || {
+      employee_id: x.employee_id,
+      employee_name: x.employee_name || `#${x.employee_id}`,
+      planned_hours: 0,
+      item_count: 0,
+    }
+    const named = Number(x.planned_hours)
+    const fromRange =
+      (parseDt(x.end_time).getTime() - parseDt(x.start_time).getTime()) / 3600000
+    const hours =
+      Number.isFinite(named) && named > 0
+        ? named
+        : Number.isFinite(fromRange) && fromRange > 0
+          ? fromRange
+          : 0.5
+    cur.planned_hours += hours
+    cur.item_count += 1
+    buckets.set(x.employee_id, cur)
+  }
+  return [...buckets.values()]
+    .map((b) => {
+      const hours = Math.round(b.planned_hours * 10) / 10
+      return {
+        employee_id: b.employee_id,
+        employee_name: b.employee_name,
+        resource_type: roleFilter.value === 'all' ? 'other' : roleFilter.value,
+        planned_hours: hours,
+        load_percent: Math.min(100, Math.round((hours * 100) / capacity)),
+        item_count: b.item_count,
+      }
+    })
+    .sort((a, b) => b.load_percent - a.load_percent)
+})
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
@@ -738,7 +800,7 @@ function formatHm(d: Date) {
 
 function layoutDay(day: Date): DayLayout[] {
   const segs: DayLayout[] = []
-  for (const ev of items.value) {
+  for (const ev of visibleItems.value) {
     const seg = segmentOnDay(ev, day)
     if (!seg) continue
     const totalHours = Math.max(
@@ -789,6 +851,13 @@ const weekLayouts = computed(() => {
   return map
 })
 
+const weekHasVisibleEvents = computed(() => {
+  for (const lays of weekLayouts.value.values()) {
+    if (lays.length) return true
+  }
+  return false
+})
+
 function eventsAt(day: Date, hour: number) {
   return (weekLayouts.value.get(fmtDate(day)) || []).filter((x) => x.renderHour === hour)
 }
@@ -796,8 +865,9 @@ function eventsAt(day: Date, hour: number) {
 function eventTooltip(lay: DayLayout) {
   const range = `${formatTime(lay.ev.start_time)} ~ ${formatTime(lay.ev.end_time)}`
   const who = lay.ev.employee_name || ''
-  const conflict = lay.ev.has_conflict ? '（冲突）' : ''
-  return `${lay.ev.title}${conflict}\n${range}\n${who}`.trim()
+  const status = SCHEDULE_STATUS_LABEL[lay.ev.status] || lay.ev.status
+  const conflict = rowHasConflict(lay.ev) ? `\n${conflictHint(lay.ev)}` : ''
+  return `${lay.ev.title}\n${status} · ${range}\n${who}${conflict}`.trim()
 }
 
 function eventStyle(lay: DayLayout, hour: number) {
@@ -847,16 +917,9 @@ function statusTagType(status?: string | null) {
   return undefined
 }
 
-function relationText(row: Schedule) {
-  if (row.task_no) return `任务 · ${row.task_no}`
-  if (row.ticket_no) return `工单 · ${row.ticket_no}`
-  if (row.project_name) return `项目 · ${row.project_name}`
-  return '—'
-}
-
 function rangeParams() {
-  // 列表/负载按自然周周一～周日，避免周六日新建的排期在「本周」表格里消失
-  if (tab.value === 'month') {
+  // 列表/负载按自然周周一～周日
+  if (viewMode.value === 'month') {
     const y = anchor.value.getFullYear()
     const m = anchor.value.getMonth()
     const from = new Date(y, m, 1, 0, 0, 0)
@@ -875,16 +938,11 @@ function rangeParams() {
   }
 }
 
-async function loadStats() {
-  const { data } = await fetchScheduleStats()
-  stats.value = data
-}
-
 async function fetchScheduleItems() {
   loading.value = true
   try {
     const range = rangeParams()
-    const resourceType = isResourceTab(tab.value) ? tab.value : undefined
+    const resourceType = roleFilter.value === 'all' ? undefined : roleFilter.value
     const { data } = await fetchSchedules({
       ...range,
       resource_type: resourceType,
@@ -892,14 +950,15 @@ async function fetchScheduleItems() {
       page_size: 100,
     })
     items.value = data.items
-    if (tab.value === 'week' || isResourceTab(tab.value)) {
-      const rt = isResourceTab(tab.value) ? tab.value : 'instructor'
+    if (viewMode.value === 'week' && roleFilter.value !== 'all') {
       const { data: load } = await fetchResourceLoad({
-        resource_type: rt,
+        resource_type: roleFilter.value,
         date_from: range.date_from,
         date_to: range.date_to,
       })
       resourceLoads.value = load.items
+    } else {
+      resourceLoads.value = []
     }
   } finally {
     loading.value = false
@@ -907,11 +966,7 @@ async function fetchScheduleItems() {
 }
 
 async function reload() {
-  await Promise.all([loadStats(), fetchScheduleItems()])
-}
-
-function setTab(key: TabKey) {
-  tab.value = key
+  await fetchScheduleItems()
 }
 
 function shiftWeek(n: number) {
@@ -973,7 +1028,7 @@ async function onProjectChange(pid?: number) {
 async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.schedule_type = 'internal_training'
-  form.resource_type = isResourceTab(tab.value) ? tab.value : 'instructor'
+  form.resource_type = roleFilter.value === 'all' ? 'instructor' : roleFilter.value
   form.employee_id = resources.value[0]?.id
   form.project_id = undefined
   form.project_task_id = undefined
@@ -1033,10 +1088,13 @@ async function onCreate() {
     if (!Number.isNaN(start.getTime())) {
       anchor.value = startOfDay(start)
     }
-    if (isResourceTab(tab.value) && data.resource_type !== tab.value) {
-      ElMessage.info(
-        `当前在「${resourceTabLabel(tab.value)}排期」页，该条资源角色为「${resourceLabel(data.resource_type)}」，请切换对应页签查看`,
-      )
+    if (
+      roleFilter.value !== 'all' &&
+      data.resource_type &&
+      data.resource_type !== roleFilter.value
+    ) {
+      roleFilter.value = data.resource_type as RoleFilter
+      ElMessage.info(`已切换到「${resourceLabel(data.resource_type)}」筛选以便查看刚创建的排期`)
     }
     await reload()
     openDrawer(data)
@@ -1127,7 +1185,7 @@ async function onCancel() {
   }
 }
 
-watch([tab, anchor], () => {
+watch([viewMode, roleFilter, anchor], () => {
   reload()
 })
 

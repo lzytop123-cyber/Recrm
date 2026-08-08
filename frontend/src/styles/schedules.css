@@ -15,6 +15,36 @@
   min-height: 0;
 }
 
+.role-tabs {
+  flex: 0 1 auto;
+}
+
+.week-grid .day-head.weekend,
+.week-grid .day-col.weekend {
+  background: oklch(0.98 0.01 250);
+}
+
+.side-kind {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.6;
+}
+
+.side-kind.conflict {
+  color: var(--crm-danger, #c0392b);
+  background: var(--crm-danger-soft, #fdecea);
+}
+
+.side-kind.pending {
+  color: oklch(0.45 0.1 70);
+  background: oklch(0.96 0.04 70);
+}
+
 .schedule-workbench .sales-head {
   margin-bottom: 14px;
 }
@@ -164,13 +194,63 @@
   font-size: 15px;
 }
 
+.resource-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--crm-border);
+  background: var(--crm-surface-soft, #f7f8fa);
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+  flex-shrink: 0;
+}
+
+.resource-filter-bar b {
+  color: var(--crm-ink);
+  font-weight: 650;
+}
+
+.resource-filter-warn {
+  color: var(--el-color-warning-dark-2, #b88230);
+  font-weight: 550;
+}
+
+.week-grid-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .week-grid {
   display: grid;
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  grid-template-columns: 56px repeat(5, minmax(0, 1fr));
+  /* 时间列 + 周一至周日 */
+  grid-template-columns: 48px repeat(7, minmax(0, 1fr));
+}
+
+.week-empty {
+  position: absolute;
+  inset: 48px 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: oklch(1 0 0 / 0.82);
+  color: var(--crm-ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .week-grid .corner,
@@ -214,7 +294,7 @@
   right: 4px;
   border: 0;
   border-radius: 6px;
-  padding: 3px 5px;
+  padding: 3px 5px 3px 8px;
   text-align: left;
   cursor: pointer;
   font-size: 11px;
@@ -222,30 +302,46 @@
   color: #fff;
   overflow: hidden;
   z-index: 2;
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.35);
+  /* 统一底色：状态用左侧色条区分，不再整块换色 */
+  background: var(--crm-primary, #3b82f6);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.28);
 }
 
-.cal-event.pending {
-  background: oklch(0.55 0.12 70);
+.cal-event::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: oklch(1 0 0 / 0.55);
 }
 
-.cal-event.confirmed,
-.cal-event.in_progress {
-  background: var(--crm-primary);
+.cal-event.pending::before {
+  background: oklch(0.82 0.14 75);
 }
 
-.cal-event.completed {
-  background: var(--crm-success);
+.cal-event.confirmed::before,
+.cal-event.in_progress::before {
+  background: oklch(1 0 0 / 0.85);
+}
+
+.cal-event.completed::before {
+  background: #4ade80;
 }
 
 .cal-event.cancelled {
-  background: oklch(0.6 0.02 250);
+  background: #94a3b8;
+}
+
+.cal-event.cancelled::before {
+  background: #cbd5e1;
 }
 
 .cal-event.conflict {
   box-shadow:
-    0 0 0 1px oklch(1 0 0 / 0.35),
-    inset 0 0 0 2px oklch(0.55 0.18 25);
+    0 0 0 1px oklch(1 0 0 / 0.28),
+    inset 0 0 0 1.5px #ef4444;
 }
 
 .cal-event.capped {
@@ -253,12 +349,14 @@
 }
 
 .cal-event.narrow {
-  padding: 2px 3px;
+  padding: 2px 3px 2px 7px;
   font-size: 10px;
 }
 
 .cal-event b {
   display: block;
+  color: #fff;
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,7 +365,7 @@
 .cal-event-meta,
 .cal-event-who {
   display: block;
-  opacity: 0.92;
+  color: rgba(255, 255, 255, 0.78);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -317,13 +415,14 @@
   display: block;
   width: 100%;
   border: 0;
-  border-radius: 6px;
+  border-left: 3px solid var(--crm-primary, #3b82f6);
+  border-radius: 4px;
   padding: 2px 6px;
   margin-bottom: 3px;
   font-size: 11px;
   text-align: left;
   cursor: pointer;
-  background: oklch(0.94 0.03 230);
+  background: oklch(0.95 0.03 250);
   color: var(--crm-ink);
   white-space: nowrap;
   overflow: hidden;
@@ -331,12 +430,16 @@
 }
 
 .month-event.pending {
-  background: oklch(0.94 0.05 70);
+  border-left-color: oklch(0.72 0.14 75);
+}
+
+.month-event.confirmed,
+.month-event.in_progress {
+  border-left-color: var(--crm-primary, #3b82f6);
 }
 
 .month-event.conflict {
-  background: oklch(0.94 0.05 25);
-  color: oklch(0.45 0.16 25);
+  box-shadow: inset 0 0 0 1px #ef4444;
 }
 
 .calendar-side {
@@ -397,6 +500,83 @@
 
 .side-row-btn:hover span {
   color: var(--crm-primary);
+}
+
+.side-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--crm-ink-soft);
+}
+
+.side-load + .side-load {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--crm-border);
+}
+
+.side-load .side-row {
+  padding: 0 0 6px;
+  border-bottom: 0;
+}
+
+.side-load-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--crm-ink-soft);
+}
+
+.resource-list-panel {
+  border: 1px solid var(--crm-border);
+  border-radius: 14px;
+  background: var(--crm-surface);
+  padding: 12px 14px 14px;
+  box-shadow: var(--crm-shadow);
+}
+
+.resource-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.resource-list-head b {
+  margin-right: 8px;
+  font-size: 14px;
+}
+
+.resource-list-head .muted {
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+}
+
+.conflict-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--crm-danger, #c0392b);
+}
+
+.sub.text-warn {
+  color: var(--el-color-warning-dark-2, #b88230);
+  font-size: 11px;
+}
+
+.sch-conflict-desc {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+  line-height: 1.4;
+}
+
+.sch-conflict-row span small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--crm-ink-soft);
+  font-weight: 400;
 }
 
 .resource-load {
@@ -742,7 +922,7 @@
   }
 
   .week-grid {
-    grid-template-columns: 48px repeat(5, minmax(72px, 1fr));
+    grid-template-columns: 40px repeat(7, minmax(64px, 1fr));
     overflow-x: auto;
   }
 }

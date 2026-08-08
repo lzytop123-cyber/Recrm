@@ -37,7 +37,13 @@ from app.models.project import (
     FINANCE_CHECK_PENDING,
     FINANCE_CHECK_REJECTED,
     MILESTONE_STATUS_DONE,
+    MILESTONE_STATUS_DOING,
+    MILESTONE_STATUS_PENDING,
     MILESTONE_STATUSES,
+    PAYMENT_DEFER_APPROVED,
+    PAYMENT_DEFER_NONE,
+    PAYMENT_DEFER_PENDING,
+    PAYMENT_DEFER_REJECTED,
     PROJECT_STATUS_ACCEPTED,
     PROJECT_STATUS_ACCEPTING,
     PROJECT_STATUS_COMPLETED,
@@ -64,6 +70,7 @@ from app.schemas.project import (
     ProjectFinanceCheckRequest,
     ProjectFinanceCheckReviewRequest,
     ProjectLeftoverCloseRequest,
+    ProjectPaymentDeferReviewRequest,
     ProjectTaskCreate,
     ProjectTaskUpdate,
     ProjectTerminateRequest,
@@ -146,18 +153,42 @@ def _contract_confirmed_paid(db: Session, contract_id: int) -> Decimal:
     return Decimal(str(total or 0))
 
 
-def assert_contract_ready_for_initiation(db: Session, contract: Contract) -> None:
-    """立项硬门槛：合同已签署，且至少有一笔确认到账。"""
+def assert_contract_ready_for_initiation(
+    db: Session,
+    contract: Contract,
+    *,
+    allow_unpaid: bool = False,
+) -> None:
+    """立项硬门槛：合同已签署；默认还须至少一笔确认到账（无到款例外可跳过）。"""
     if contract.status not in _INITIATION_CONTRACT_STATUSES:
         raise HTTPException(
             status_code=400,
             detail="合同须已签署（或执行中/已完成）后才能立项",
         )
+    if allow_unpaid:
+        return
     if _contract_confirmed_paid(db, contract.id) <= 0:
         raise HTTPException(
             status_code=400,
-            detail="合同须有确认到账后才能立项（请先完成到款认领并经财务复核）",
+            detail="合同须有确认到账后才能立项（请先完成到款认领并经财务复核；或勾选无到款立项）",
         )
+
+
+def _project_contract_settlement(
+    db: Session, project: Project
+) -> tuple[Optional[Contract], Decimal, Decimal, bool]:
+    """项目关联合同的回款结清情况：(合同, 合同金额, 已确认到账, 是否收齐)。"""
+    from app.services.contract import enrich_contract, is_collection_complete
+
+    if not project.contract_id:
+        return None, Decimal("0"), Decimal("0"), False
+    contract = db.query(Contract).filter(Contract.id == project.contract_id).first()
+    if not contract:
+        return None, Decimal("0"), Decimal("0"), False
+    enrich_contract(db, contract)
+    amount = Decimal(str(contract.amount or 0))
+    paid = Decimal(str(getattr(contract, "paid_amount", 0) or 0))
+    return contract, amount, paid, is_collection_complete(db, contract)
 
 
 def enrich_project(db: Session, project: Project) -> Project:
@@ -195,8 +226,28 @@ def enrich_project(db: Session, project: Project) -> Project:
     )
     payment_ok = paid > 0
     project.payment_received_ok = payment_ok  # type: ignore[attr-defined]
+    _, contract_amount, contract_paid, collection_complete = _project_contract_settlement(
+        db, project
+    )
+    project.contract_amount = contract_amount  # type: ignore[attr-defined]
+    project.contract_paid_amount = contract_paid  # type: ignore[attr-defined]
+    project.contract_collection_complete = collection_complete  # type: ignore[attr-defined]
     project.health = compute_health(project)  # type: ignore[attr-defined]
     if (
+        project.status == PROJECT_STATUS_INITIATING
+        and project.payment_deferred
+        and project.payment_defer_status == PAYMENT_DEFER_PENDING
+        and not payment_ok
+    ):
+        project.next_node = "等待无到款立项审批"  # type: ignore[attr-defined]
+    elif (
+        project.status == PROJECT_STATUS_INITIATING
+        and project.payment_deferred
+        and project.payment_defer_status == PAYMENT_DEFER_REJECTED
+        and not payment_ok
+    ):
+        project.next_node = "无到款立项已驳回，请先到款"  # type: ignore[attr-defined]
+    elif (
         project.status == PROJECT_STATUS_ACCEPTING
         and project.acceptance_approval_status == ACCEPTANCE_APPROVAL_PENDING
     ):
@@ -303,7 +354,22 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(status_code=400, detail="合同不存在")
-    assert_contract_ready_for_initiation(db, contract)
+
+    payment_deferred = bool(payload.payment_deferred)
+    deferred_reason = (payload.payment_deferred_reason or "").strip() or None
+    if payment_deferred:
+        if not deferred_reason:
+            raise HTTPException(
+                status_code=400,
+                detail="无到款立项须填写原因（如客户约定先干活后付款）",
+            )
+        if _contract_confirmed_paid(db, contract.id) > 0:
+            # 已有到款则不必走例外
+            payment_deferred = False
+            deferred_reason = None
+    assert_contract_ready_for_initiation(
+        db, contract, allow_unpaid=payment_deferred
+    )
     existing = (
         db.query(Project)
         .filter(
@@ -330,6 +396,12 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
     if not manager:
         raise HTTPException(status_code=400, detail="负责人不存在")
 
+    remark = payload.remark
+    if payment_deferred and deferred_reason:
+        tag = f"[无到款立项待审] {deferred_reason}"
+        remark = f"{tag}\n{remark}" if remark else tag
+
+    now = datetime.now(timezone.utc)
     project = Project(
         project_no=_gen_project_no(db),
         name=payload.name.strip(),
@@ -337,15 +409,20 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
         customer_id=customer_id,
         project_type=project_type,
         status=PROJECT_STATUS_INITIATING,
-        progress=0,
+        progress=5,
         manager_id=manager_id,
         creator_id=user.id,
         department_id=manager.department_id or user.department_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
         scope_desc=payload.scope_desc,
-        remark=payload.remark,
-        payment_verified=True,
+        remark=remark,
+        payment_verified=not payment_deferred,
+        payment_deferred=payment_deferred,
+        payment_deferred_reason=deferred_reason,
+        payment_defer_status=PAYMENT_DEFER_PENDING if payment_deferred else PAYMENT_DEFER_NONE,
+        payment_defer_submitted_by=user.id if payment_deferred else None,
+        payment_defer_submitted_at=now if payment_deferred else None,
         handoff_complete=payload.handoff_complete,
         contact_confirmed=payload.contact_confirmed,
         business_owner_id=payload.business_owner_id or user.id,
@@ -481,10 +558,58 @@ def _transition(
         raise HTTPException(status_code=400, detail="当前状态不可流转到目标状态")
     project.status = to_status
     if to_status == PROJECT_STATUS_COMPLETED:
-        project.progress = 100
         project.actual_end_date = date.today()
-    elif to_status == PROJECT_STATUS_ACCEPTED and project.progress < 90:
-        project.progress = max(project.progress, 90)
+    recalculate_project_progress(db, project)
+    db.commit()
+    db.refresh(project)
+    return enrich_project(db, project)
+
+
+def is_payment_defer_approved(project: Project) -> bool:
+    return bool(project.payment_deferred) and project.payment_defer_status == PAYMENT_DEFER_APPROVED
+
+
+def can_review_payment_defer(user: User) -> bool:
+    if user_can(user, "project:manage"):
+        return True
+    return bool({"admin", "dept_head"} & {r.code for r in user.roles})
+
+
+def review_payment_defer(
+    db: Session,
+    user: User,
+    project_id: int,
+    payload: ProjectPaymentDeferReviewRequest,
+    *,
+    approve: bool,
+) -> Project:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    assert_can_view(user, project)
+    if not can_review_payment_defer(user):
+        raise HTTPException(status_code=403, detail="无权审批无到款立项")
+    if not project.payment_deferred:
+        raise HTTPException(status_code=400, detail="该项目未申请无到款立项")
+    if project.payment_defer_status != PAYMENT_DEFER_PENDING:
+        raise HTTPException(status_code=409, detail="仅待审批的无到款立项可以处理")
+
+    project.payment_defer_approved_by = user.id
+    project.payment_defer_approved_at = datetime.now(timezone.utc)
+    if approve:
+        project.payment_defer_status = PAYMENT_DEFER_APPROVED
+        project.payment_defer_reject_reason = None
+        if payload.remark:
+            note = f"[无到款立项通过] {payload.remark.strip()}"
+            project.remark = f"{(project.remark or '').strip()}\n{note}".strip()
+    else:
+        reason = (payload.remark or "").strip()
+        if not reason:
+            raise HTTPException(status_code=400, detail="驳回请填写原因")
+        project.payment_defer_status = PAYMENT_DEFER_REJECTED
+        project.payment_defer_reject_reason = reason
+        note = f"[无到款立项驳回] {reason}"
+        project.remark = f"{(project.remark or '').strip()}\n{note}".strip()
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
@@ -501,7 +626,23 @@ def start_planning(db: Session, user: User, project_id: int) -> Project:
     contract = db.query(Contract).filter(Contract.id == project.contract_id).first()
     if not contract:
         raise HTTPException(status_code=400, detail="关联合同不存在")
-    assert_contract_ready_for_initiation(db, contract)
+    paid = _contract_confirmed_paid(db, contract.id) > 0
+    if not paid and project.payment_deferred:
+        if project.payment_defer_status == PAYMENT_DEFER_PENDING:
+            raise HTTPException(
+                status_code=400,
+                detail="无到款立项审批中，通过后方可进入计划（或先完成到款认领）",
+            )
+        if project.payment_defer_status == PAYMENT_DEFER_REJECTED:
+            raise HTTPException(
+                status_code=400,
+                detail="无到款立项已驳回，请先完成到款认领后再进入计划",
+            )
+        if project.payment_defer_status != PAYMENT_DEFER_APPROVED:
+            raise HTTPException(status_code=400, detail="无到款立项尚未审批通过")
+    allow_unpaid = (not paid) and is_payment_defer_approved(project)
+    assert_contract_ready_for_initiation(db, contract, allow_unpaid=allow_unpaid)
+    # 无到款例外：进计划时仍标记已核验「可开工条件」，真实到账看 payment_received_ok
     project.payment_verified = True
     resource_service.seed_resource_needs(db, project)
     resource_service.assert_resources_ready(db, project_id)
@@ -682,9 +823,21 @@ def review_finance_check(
     if project.finance_check_status != FINANCE_CHECK_PENDING:
         raise HTTPException(status_code=409, detail="仅待审批的财务核对可以处理")
 
-    project.finance_check_approved_by = user.id
-    project.finance_check_approved_at = datetime.now(timezone.utc)
     if approve:
+        _, amount, paid, complete = _project_contract_settlement(db, project)
+        if not project.contract_id:
+            raise HTTPException(status_code=400, detail="项目未关联合同，无法核对回款，不能通过")
+        if not complete:
+            outstanding = amount - paid
+            if outstanding < 0:
+                outstanding = Decimal("0")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"合同回款尚未收齐，不能通过财务核对"
+                    f"（已到账 {paid} / 合同金额 {amount}，差额 {outstanding}）"
+                ),
+            )
         project.finance_check_status = FINANCE_CHECK_APPROVED
         project.finance_check_passed = True
     else:
@@ -694,6 +847,8 @@ def review_finance_check(
         project.finance_check_status = FINANCE_CHECK_REJECTED
         project.finance_check_passed = False
         project.finance_check_reject_reason = reason
+    project.finance_check_approved_by = user.id
+    project.finance_check_approved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
@@ -751,6 +906,60 @@ def terminate_project(
     return enrich_project(db, project)
 
 
+def _milestone_fully_done(ms: ProjectMilestone) -> bool:
+    """节点真正完成：状态 done 且完成证据已确认。"""
+    return (
+        ms.status == MILESTONE_STATUS_DONE
+        and (ms.evidence_status or EVIDENCE_STATUS_NONE) == EVIDENCE_STATUS_CONFIRMED
+        and bool((ms.evidence or "").strip())
+    )
+
+
+def recalculate_project_progress(db: Session, project: Project) -> None:
+    """按生命周期计算进度：规划期不算节点完成度，执行期封顶 80%，留验收/结项空间。"""
+    status = project.status
+    if status == PROJECT_STATUS_TERMINATED:
+        return
+    if status == PROJECT_STATUS_COMPLETED:
+        project.progress = 100
+        return
+    if status == PROJECT_STATUS_ACCEPTED:
+        project.progress = max(int(project.progress or 0), 90)
+        return
+    if status == PROJECT_STATUS_ACCEPTING:
+        project.progress = max(int(project.progress or 0), 85)
+        return
+    if status == PROJECT_STATUS_INITIATING:
+        project.progress = 5
+        return
+    if status == PROJECT_STATUS_PLANNING:
+        # 规划期只表示筹备，节点定义/误标完成都不抬到执行进度
+        project.progress = 10
+        return
+
+    # executing
+    milestones = (
+        db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project.id).all()
+    )
+    if milestones:
+        done = sum(1 for m in milestones if _milestone_fully_done(m))
+        # 进入执行至少 15%；全部节点闭环到 80%
+        project.progress = 15 + int(done * 65 / len(milestones))
+        return
+
+    tasks = db.query(ProjectTask).filter(ProjectTask.project_id == project.id).all()
+    if not tasks:
+        project.progress = 15
+        return
+    done = sum(1 for t in tasks if t.status == TASK_STATUS_DONE)
+    project.progress = 15 + int(done * 65 / len(tasks))
+
+
+def _sync_project_progress_from_milestones(db: Session, project: Project) -> None:
+    """兼容旧调用点：统一走生命周期进度计算。"""
+    recalculate_project_progress(db, project)
+
+
 def enrich_milestone(db: Session, ms: ProjectMilestone) -> ProjectMilestone:
     tasks = db.query(ProjectTask).filter(ProjectTask.milestone_id == ms.id).all()
     total = len(tasks)
@@ -764,40 +973,51 @@ def enrich_milestone(db: Session, ms: ProjectMilestone) -> ProjectMilestone:
     ms.evidence_confirmed_by_name = _user_name(db, ms.evidence_confirmed_by)  # type: ignore[attr-defined]
     tasks_ready = total == 0 or done == total
     evidence_ready = evidence_status == EVIDENCE_STATUS_CONFIRMED
-    ms.can_complete = evidence_ready and tasks_ready  # type: ignore[attr-defined]
-    if ms.status == MILESTONE_STATUS_DONE:
-        if evidence_ready:
-            ms.next_action = "已完成"  # type: ignore[attr-defined]
-        elif evidence_status == EVIDENCE_STATUS_PENDING:
-            ms.next_action = "节点已标完成，请确认证据"  # type: ignore[attr-defined]
-        elif not (ms.evidence or "").strip():
-            ms.next_action = "节点已标完成，请补交证据"  # type: ignore[attr-defined]
-        else:
-            ms.next_action = "已完成"  # type: ignore[attr-defined]
+    project = db.query(Project).filter(Project.id == ms.project_id).first()
+    in_execution = bool(
+        project
+        and project.status
+        in {
+            PROJECT_STATUS_EXECUTING,
+            PROJECT_STATUS_ACCEPTING,
+            PROJECT_STATUS_ACCEPTED,
+            PROJECT_STATUS_COMPLETED,
+        }
+    )
+    ms.can_complete = bool(in_execution and evidence_ready and tasks_ready)  # type: ignore[attr-defined]
+    if not in_execution:
+        ms.next_action = "先确认计划基线，进入执行后再推进"  # type: ignore[attr-defined]
+    elif ms.status == MILESTONE_STATUS_DONE and evidence_ready:
+        ms.next_action = "已完成"  # type: ignore[attr-defined]
+    elif ms.status == MILESTONE_STATUS_DONE and evidence_status == EVIDENCE_STATUS_PENDING:
+        ms.next_action = "节点状态异常，请先确认证据"  # type: ignore[attr-defined]
+    elif ms.status == MILESTONE_STATUS_DONE and not (ms.evidence or "").strip():
+        ms.next_action = "节点状态异常，请补交证据"  # type: ignore[attr-defined]
+    elif total == 0 and not (ms.evidence or "").strip():
+        # 常规路径：先拆任务；无任务的验收节点也可直接交证据
+        ms.next_action = "建议先挂任务；纯验收节点也可直接交证据"  # type: ignore[attr-defined]
+    elif total > 0 and not tasks_ready:
+        ms.next_action = f"先完成剩余 {total - done} 个关联任务"  # type: ignore[attr-defined]
     elif not (ms.evidence or "").strip():
-        ms.next_action = "提交完成证据"  # type: ignore[attr-defined]
+        ms.next_action = "任务已齐，提交完成证据"  # type: ignore[attr-defined]
     elif evidence_status == EVIDENCE_STATUS_REJECTED:
         ms.next_action = "按驳回意见重提证据"  # type: ignore[attr-defined]
     elif evidence_status == EVIDENCE_STATUS_PENDING:
         ms.next_action = "等待部门负责人确认证据"  # type: ignore[attr-defined]
-    elif not tasks_ready:
-        ms.next_action = f"完成剩余 {total - done} 个关联任务"  # type: ignore[attr-defined]
     else:
-        ms.next_action = "可标记里程碑完成"  # type: ignore[attr-defined]
+        ms.next_action = "可标记节点完成"  # type: ignore[attr-defined]
     return ms
-
-
-def _sync_project_progress_from_milestones(db: Session, project: Project) -> None:
-    milestones = db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project.id).all()
-    if not milestones:
-        return
-    done = sum(1 for x in milestones if x.status == MILESTONE_STATUS_DONE)
-    project.progress = int(done * 100 / len(milestones))
 
 
 def _try_auto_complete_milestone(db: Session, ms: ProjectMilestone) -> bool:
     """证据已确认且任务齐（或无任务）时自动完成。返回是否本次完成。"""
     if ms.status == MILESTONE_STATUS_DONE:
+        return False
+    project = db.query(Project).filter(Project.id == ms.project_id).first()
+    if not project or project.status not in {
+        PROJECT_STATUS_EXECUTING,
+        PROJECT_STATUS_ACCEPTING,
+    }:
         return False
     if (ms.evidence_status or EVIDENCE_STATUS_NONE) != EVIDENCE_STATUS_CONFIRMED:
         return False
@@ -816,13 +1036,17 @@ def _try_auto_complete_milestone(db: Session, ms: ProjectMilestone) -> bool:
     ms.status = MILESTONE_STATUS_DONE
     if not ms.actual_date:
         ms.actual_date = date.today()
-    project = db.query(Project).filter(Project.id == ms.project_id).first()
-    if project:
-        _sync_project_progress_from_milestones(db, project)
+    recalculate_project_progress(db, project)
     return True
 
 
 def assert_milestone_completable(db: Session, ms: ProjectMilestone) -> None:
+    project = db.query(Project).filter(Project.id == ms.project_id).first()
+    if not project or project.status not in {
+        PROJECT_STATUS_EXECUTING,
+        PROJECT_STATUS_ACCEPTING,
+    }:
+        raise HTTPException(status_code=400, detail="项目未进入执行，不可完成计划节点")
     missing: list[str] = []
     if not (ms.evidence or "").strip():
         missing.append("完成证据未填写")
@@ -839,7 +1063,7 @@ def assert_milestone_completable(db: Session, ms: ProjectMilestone) -> None:
     if open_tasks:
         missing.append(f"还有 {open_tasks} 个关联任务未完成")
     if missing:
-        raise HTTPException(status_code=400, detail="里程碑不可完成：" + "；".join(missing))
+        raise HTTPException(status_code=400, detail="计划节点不可完成：" + "；".join(missing))
 
 
 def assert_ready_for_acceptance(db: Session, project: Project) -> None:
@@ -889,6 +1113,8 @@ def review_milestone_evidence(
     )
     if not ms:
         raise HTTPException(status_code=404, detail="里程碑不存在")
+    if project.status in {PROJECT_STATUS_INITIATING, PROJECT_STATUS_PLANNING}:
+        raise HTTPException(status_code=400, detail="项目未进入执行，暂不可审核完成证据")
     if not (ms.evidence or "").strip():
         raise HTTPException(status_code=400, detail="尚无完成证据可确认")
     if action not in {"confirm", "reject"}:
@@ -901,6 +1127,9 @@ def review_milestone_evidence(
         ms.evidence_reject_reason = reason.strip()
         ms.evidence_confirmed_by = user.id
         ms.evidence_confirmed_at = datetime.now(timezone.utc)
+        if ms.status == MILESTONE_STATUS_DONE:
+            ms.status = MILESTONE_STATUS_DOING
+        recalculate_project_progress(db, project)
         db.commit()
         db.refresh(ms)
         return enrich_milestone(db, ms)
@@ -910,6 +1139,7 @@ def review_milestone_evidence(
     ms.evidence_confirmed_by = user.id
     ms.evidence_confirmed_at = datetime.now(timezone.utc)
     _try_auto_complete_milestone(db, ms)
+    recalculate_project_progress(db, project)
 
     db.commit()
     db.refresh(ms)
@@ -925,7 +1155,8 @@ def add_milestone(db: Session, user: User, project_id: int, payload: MilestoneCr
     if project.status in {PROJECT_STATUS_COMPLETED, PROJECT_STATUS_TERMINATED}:
         raise HTTPException(status_code=400, detail="已结束项目不可添加里程碑")
 
-    evidence_text = (payload.evidence or "").strip() or None
+    # 创建时 evidence/remark 都视为「证据要求」，真正完成证据待执行阶段提交
+    requirement = (payload.remark or payload.evidence or "").strip() or None
     ms = ProjectMilestone(
         project_id=project.id,
         name=payload.name.strip(),
@@ -933,15 +1164,47 @@ def add_milestone(db: Session, user: User, project_id: int, payload: MilestoneCr
         actual_date=payload.actual_date,
         role=payload.role,
         deliverable=payload.deliverable,
-        evidence=evidence_text,
-        evidence_status=EVIDENCE_STATUS_PENDING if evidence_text else EVIDENCE_STATUS_NONE,
+        evidence=None,
+        evidence_status=EVIDENCE_STATUS_NONE,
         sort_order=payload.sort_order,
-        remark=payload.remark,
+        remark=requirement,
+        status=MILESTONE_STATUS_PENDING,
     )
     db.add(ms)
+    db.flush()
+    recalculate_project_progress(db, project)
     db.commit()
     db.refresh(ms)
     return enrich_milestone(db, ms)
+
+
+def delete_milestone(db: Session, user: User, project_id: int, milestone_id: int) -> None:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    assert_can_view(user, project)
+    assert_can_manage_plan(user, project)
+    if project.status in {PROJECT_STATUS_COMPLETED, PROJECT_STATUS_TERMINATED}:
+        raise HTTPException(status_code=400, detail="已结束项目不可删除计划节点")
+
+    ms = (
+        db.query(ProjectMilestone)
+        .filter(ProjectMilestone.id == milestone_id, ProjectMilestone.project_id == project_id)
+        .first()
+    )
+    if not ms:
+        raise HTTPException(status_code=404, detail="计划节点不存在")
+
+    # 关联任务保留，仅解除挂接，避免误删工作记录
+    (
+        db.query(ProjectTask)
+        .filter(ProjectTask.milestone_id == ms.id)
+        .update({ProjectTask.milestone_id: None}, synchronize_session=False)
+    )
+    db.delete(ms)
+    db.flush()
+    recalculate_project_progress(db, project)
+    db.commit()
 
 
 def update_milestone(
@@ -972,6 +1235,8 @@ def update_milestone(
         assert_can_manage_plan(user, project)
 
     if "evidence" in data:
+        if project.status in {PROJECT_STATUS_INITIATING, PROJECT_STATUS_PLANNING}:
+            raise HTTPException(status_code=400, detail="项目未进入执行，暂不可提交完成证据")
         text = (data.get("evidence") or "").strip()
         data["evidence"] = text or None
         if not text:
@@ -980,11 +1245,12 @@ def update_milestone(
             data["evidence_confirmed_at"] = None
             data["evidence_reject_reason"] = None
         else:
-            # 新提交/修改证据后重新进入待确认
+            # 新提交/修改证据后重新进入待确认；若曾误标完成则退回进行中
             data["evidence_status"] = EVIDENCE_STATUS_PENDING
             data["evidence_confirmed_by"] = None
             data["evidence_confirmed_at"] = None
             data["evidence_reject_reason"] = None
+            data["status"] = MILESTONE_STATUS_DOING
             ms.evidence = text
 
     next_status = data.get("status", ms.status)
@@ -999,11 +1265,7 @@ def update_milestone(
     for k, v in data.items():
         setattr(ms, k, v)
 
-    milestones = db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project_id).all()
-    if milestones:
-        done = sum(1 for x in milestones if x.status == "done")
-        project.progress = int(done * 100 / len(milestones))
-
+    recalculate_project_progress(db, project)
     db.commit()
     db.refresh(ms)
     return enrich_milestone(db, ms)
@@ -1109,6 +1371,12 @@ def create_task(db: Session, user: User, payload: ProjectTaskCreate) -> ProjectT
         if ms.status == "done":
             raise HTTPException(status_code=400, detail="已完成里程碑不可再挂新任务")
 
+    from app.services import project_resource as resource_service
+
+    resource_service.assert_task_hours_within_budget(
+        db, project.id, payload.planned_hours or Decimal("0")
+    )
+
     task = ProjectTask(
         task_no=_gen_task_no(db),
         project_id=project.id,
@@ -1148,6 +1416,15 @@ def update_task(db: Session, user: User, task_id: int, payload: ProjectTaskUpdat
             raise HTTPException(status_code=400, detail="完成任务须填写实际工时")
         if data["actual_hours"] is None or Decimal(str(data["actual_hours"])) < 0:
             raise HTTPException(status_code=400, detail="实际工时不能为空或负数")
+    if "planned_hours" in data and data["planned_hours"] is not None:
+        from app.services import project_resource as resource_service
+
+        resource_service.assert_task_hours_within_budget(
+            db,
+            project.id,
+            Decimal(str(data["planned_hours"])),
+            exclude_task_id=task.id,
+        )
     if "assignee_id" in data and data["assignee_id"] is not None:
         assignee = db.query(User).filter(User.id == data["assignee_id"]).first()
         if not assignee:

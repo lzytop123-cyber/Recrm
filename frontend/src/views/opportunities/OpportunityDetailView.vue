@@ -123,17 +123,8 @@
     </template>
 
     <el-dialog v-model="followVisible" title="记录跟进" width="560px" destroy-on-close>
-      <p class="dialog-hint">一次填写销售动作；如需推进漏斗，可同步更新阶段。</p>
+      <p class="dialog-hint">填写跟进结果；如需推进漏斗，可同步更新阶段。</p>
       <el-form :model="followForm" label-width="110px">
-        <el-form-item label="动作类型" required>
-          <el-select v-model="followForm.action_type" style="width: 100%">
-            <el-option label="需求访谈" value="需求访谈" />
-            <el-option label="方案沟通" value="方案沟通" />
-            <el-option label="报价说明" value="报价说明" />
-            <el-option label="商务谈判" value="商务谈判" />
-            <el-option label="阶段推进" value="阶段推进" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="结果与证据" required>
           <el-input
             v-model="followForm.evidence"
@@ -263,7 +254,6 @@ const timelineItems = computed<TimelineItem[]>(() => {
 })
 
 const followForm = reactive({
-  action_type: '需求访谈',
   evidence: '',
   stage: '',
   lost_reason: '',
@@ -309,7 +299,6 @@ const stageChanged = computed(
 const isClosedStage = computed(() => ['won', 'lost'].includes(followForm.stage))
 
 function openFollow() {
-  followForm.action_type = '需求访谈'
   followForm.evidence = ''
   followForm.stage = opp.value?.stage || 'need_confirm'
   followForm.lost_reason = ''
@@ -406,6 +395,7 @@ async function onFollow() {
 
   saving.value = true
   try {
+    const stageLabel = OPP_STAGE_LABEL[followForm.stage] || followForm.stage
     const payload: {
       content: string
       evidence: string
@@ -413,8 +403,8 @@ async function onFollow() {
       next_action_note?: string
     } = {
       content: stageChanged.value
-        ? `${followForm.action_type}已完成，阶段调整为${OPP_STAGE_LABEL[followForm.stage] || followForm.stage}`
-        : `${followForm.action_type}已完成`,
+        ? `跟进记录：阶段调整为${stageLabel}`
+        : `跟进记录：${followForm.evidence.trim().slice(0, 80)}`,
       evidence: followForm.evidence,
     }
     if (!isClosedStage.value) {
