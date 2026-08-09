@@ -533,39 +533,44 @@
           </section>
 
           <section class="drawer-section">
-            <h3>{{ drawerIsUnassigned ? '完整跟进与流转记录' : '操作轨迹' }}</h3>
-            <el-timeline v-if="drawerFlowLogs.length">
+            <div class="drawer-section-head">
+              <h3>{{ drawerIsUnassigned ? '完整跟进与流转记录' : '操作轨迹' }}</h3>
+              <el-radio-group
+                v-if="drawerLogs.length"
+                v-model="drawerLogFilter"
+                size="small"
+                class="drawer-log-filter"
+              >
+                <el-radio-button value="all">全部 {{ drawerLogs.length }}</el-radio-button>
+                <el-radio-button value="flow">流转 {{ drawerFlowLogs.length }}</el-radio-button>
+                <el-radio-button value="follow">跟进 {{ drawerFollowLogs.length }}</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-timeline v-if="drawerTimelineLogs.length">
               <el-timeline-item
-                v-for="log in drawerFlowLogs"
+                v-for="log in drawerTimelineLogs"
                 :key="log.id"
                 :timestamp="formatTime(log.created_at)"
                 placement="top"
+                :type="log.action === 'follow' ? 'primary' : 'info'"
               >
-                <b>{{ logActionLabel(log.action) }}</b>
-                <small class="log-meta">{{ log.username || '系统' }}{{ log.detail ? ` · ${formatLogDetail(log.detail)}` : '' }}</small>
+                <div class="log-row">
+                  <el-tag
+                    size="small"
+                    :type="log.action === 'follow' ? 'primary' : 'info'"
+                    effect="plain"
+                  >
+                    {{ log.action === 'follow' ? '跟进' : '流转' }}
+                  </el-tag>
+                  <b>{{ logActionLabel(log.action) }}</b>
+                </div>
+                <small class="log-meta">
+                  {{ log.username || '系统'
+                  }}{{ log.detail ? ` · ${formatLogDetail(log.detail)}` : '' }}
+                </small>
               </el-timeline-item>
             </el-timeline>
-            <div v-if="drawerFollowLogs.length" class="drawer-follow-fold">
-              <el-button link type="primary" @click="drawerFollowExpanded = !drawerFollowExpanded">
-                {{ drawerFollowExpanded ? '收起跟进明细' : `展开跟进明细（${drawerFollowLogs.length}）` }}
-              </el-button>
-              <el-timeline v-if="drawerFollowExpanded">
-                <el-timeline-item
-                  v-for="log in drawerFollowLogs"
-                  :key="log.id"
-                  :timestamp="formatTime(log.created_at)"
-                  placement="top"
-                >
-                  <b>{{ logActionLabel(log.action) }}</b>
-                  <small class="log-meta">{{ log.username || '系统' }}{{ log.detail ? ` · ${formatLogDetail(log.detail)}` : '' }}</small>
-                </el-timeline-item>
-              </el-timeline>
-            </div>
-            <el-empty
-              v-if="!drawerFlowLogs.length && !drawerFollowLogs.length"
-              description="暂无轨迹"
-              :image-size="56"
-            />
+            <el-empty v-else description="暂无轨迹" :image-size="56" />
           </section>
         </template>
       </div>
@@ -802,7 +807,7 @@ const drawerVisible = ref(false)
 const drawerLoading = ref(false)
 const drawerLead = ref<LeadDetail | null>(null)
 const drawerJourneyOppId = ref<number | null>(null)
-const drawerFollowExpanded = ref(false)
+const drawerLogFilter = ref<'all' | 'flow' | 'follow'>('all')
 const drawerFollowVisible = ref(false)
 const drawerConvertVisible = ref(false)
 const drawerReturnVisible = ref(false)
@@ -1097,6 +1102,20 @@ function reload() {
 const drawerLogs = computed(() => drawerLead.value?.logs || [])
 const drawerFlowLogs = computed(() => drawerLogs.value.filter((l) => l.action !== 'follow'))
 const drawerFollowLogs = computed(() => drawerLogs.value.filter((l) => l.action === 'follow'))
+const drawerTimelineLogs = computed(() => {
+  const list =
+    drawerLogFilter.value === 'follow'
+      ? drawerFollowLogs.value
+      : drawerLogFilter.value === 'flow'
+        ? drawerFlowLogs.value
+        : drawerLogs.value
+  return [...list].sort((a, b) => {
+    const ta = new Date(a.created_at).getTime()
+    const tb = new Date(b.created_at).getTime()
+    if (tb !== ta) return tb - ta
+    return (b.id || 0) - (a.id || 0)
+  })
+})
 const drawerIsUnassigned = computed(
   () => !!drawerLead.value && isUnassigned(drawerLead.value),
 )
@@ -1137,7 +1156,7 @@ async function openPoolDrawer(row: Lead) {
   drawerLoading.value = true
   drawerLead.value = null
   drawerJourneyOppId.value = null
-  drawerFollowExpanded.value = false
+  drawerLogFilter.value = 'all'
   try {
     const { data } = await fetchLeadDetail(row.id)
     drawerLead.value = data
@@ -1781,8 +1800,26 @@ watch(
   color: var(--crm-ink-soft);
   font-size: 12px;
 }
-.drawer-follow-fold {
-  margin-top: 8px;
+.drawer-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.drawer-section-head h3 {
+  margin: 0;
+}
+.drawer-log-filter :deep(.el-radio-button__inner) {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .drawer-footer {
   display: flex;

@@ -378,23 +378,6 @@ onUnmounted(() => {
   box-shadow: 4px 0 24px rgba(15, 39, 68, 0.04);
 }
 
-.aside::before {
-  content: '';
-  position: absolute;
-  inset: 12% 0 auto;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(59, 130, 246, 0.22),
-    rgba(30, 64, 175, 0.12),
-    transparent
-  );
-  pointer-events: none;
-  opacity: 0.7;
-  z-index: 0;
-}
-
 .brand {
   position: relative;
   z-index: 1;
@@ -406,6 +389,25 @@ onUnmounted(() => {
   padding: 16px 16px 14px;
   border-bottom: 1px solid var(--side-line);
   background: color-mix(in oklab, #fff 70%, transparent);
+}
+
+/* 装饰线固定在品牌区下方，避免按侧栏高度百分比漂移 */
+.brand::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.28),
+    rgba(30, 64, 175, 0.14),
+    transparent
+  );
+  pointer-events: none;
+  opacity: 0.85;
 }
 
 .brand-mark {
