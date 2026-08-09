@@ -113,6 +113,18 @@ class SystemDictionaryCreate(BaseModel):
     items_json: Optional[str] = None
 
 
+class SystemDictionaryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    items_json: Optional[str] = None
+
+
+class DictionaryItemOut(BaseModel):
+    value: str
+    label: str
+    enabled: bool = True
+    sort: int = 100
+
+
 class SystemDictionaryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -121,6 +133,7 @@ class SystemDictionaryOut(BaseModel):
     name: str
     items_json: Optional[str] = None
     updated_at: datetime
+    items: list[DictionaryItemOut] = []
 
 
 class DelegationCreate(BaseModel):

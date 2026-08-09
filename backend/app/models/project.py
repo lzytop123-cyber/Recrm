@@ -363,7 +363,14 @@ class ProjectMilestone(Base):
     actual_date: Mapped[Optional[date]] = mapped_column(Date, comment="实际/预测完成日")
     role: Mapped[Optional[str]] = mapped_column(String(50), comment="责任角色")
     deliverable: Mapped[Optional[str]] = mapped_column(String(200), comment="必交成果")
-    evidence: Mapped[Optional[str]] = mapped_column(String(200), comment="完成证据")
+    evidence: Mapped[Optional[str]] = mapped_column(Text, comment="完成证据说明")
+    evidence_link: Mapped[Optional[str]] = mapped_column(String(500), comment="完成证据链接")
+    evidence_attachment: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="完成证据附件文件名"
+    )
+    evidence_attachment_path: Mapped[Optional[str]] = mapped_column(
+        String(500), comment="完成证据附件存储路径"
+    )
     evidence_status: Mapped[str] = mapped_column(
         String(30), default=EVIDENCE_STATUS_NONE, server_default="none", comment="none/pending/confirmed/rejected"
     )

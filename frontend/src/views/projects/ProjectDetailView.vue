@@ -182,20 +182,11 @@
             {{ project.leftover_summary || '—' }}
           </el-descriptions-item>
           <el-descriptions-item label="验收附件" :span="acceptDescCols">
-            <div v-if="acceptanceFiles.length" class="attach-list">
-              <a
-                v-for="(file, idx) in acceptanceFiles"
-                :key="`${file.name}-${idx}`"
-                class="attach-item"
-                :href="file.href || undefined"
-                :target="file.href ? '_blank' : undefined"
-                :rel="file.href ? 'noopener' : undefined"
-                @click="!file.href && $event.preventDefault()"
-              >
-                {{ file.name }}
-              </a>
-            </div>
-            <span v-else>—</span>
+            <AttachmentPreview
+              :filename="project.acceptance_attachment"
+              :path="project.acceptance_attachment_path"
+              size="md"
+            />
           </el-descriptions-item>
           <el-descriptions-item
             v-if="project.acceptance_reject_reason"
@@ -382,7 +373,7 @@
         <el-form-item label="项目类型">
           <el-select v-model="editForm.project_type" style="width: 100%">
             <el-option
-              v-for="opt in PROJECT_TYPE_OPTIONS"
+              v-for="opt in businessTypeOptions"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -465,7 +456,7 @@ import {
   ACCEPTANCE_RESULT_LABEL,
   MILESTONE_STATUS_LABEL,
   PROJECT_STATUS_LABEL,
-  PROJECT_TYPE_OPTIONS,
+  useBusinessTypes,
   addMilestone,
   fetchProjectDetail,
   startProjectAccepting,
@@ -481,11 +472,13 @@ import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/sche
 import { fetchTickets, TICKET_STATUS_LABEL, type Ticket } from '@/api/tickets'
 import ProjectJourneyBar from '@/components/projects/ProjectJourneyBar.vue'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
+import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const isCompact = useMatchMedia('(max-width: 768px)')
 const descCols = computed(() => (isCompact.value ? 1 : 3))
 const acceptDescCols = computed(() => (isCompact.value ? 1 : 2))
@@ -523,28 +516,8 @@ const milestoneForm = reactive({
 
 const projectId = computed(() => Number(route.params.id))
 
-const acceptanceFiles = computed(() => {
-  const p = project.value
-  if (!p) return [] as { name: string; href?: string }[]
-  const raw = (p.acceptance_attachment || '').trim()
-  const path = (p.acceptance_attachment_path || '').trim()
-  const names = raw
-    ? raw.split(/(?<=\.(?:jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|zip|rar|txt))\s*-\s*/i)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : []
-  if (!names.length && path) {
-    const leaf = path.split(/[/\\]/).pop() || '查看附件'
-    return [{ name: leaf, href: `/uploads/${path}` }]
-  }
-  return names.map((name, idx) => ({
-    name,
-    href: path && idx === 0 ? `/uploads/${path}` : undefined,
-  }))
-})
-
 function typeLabel(code: string) {
-  return PROJECT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
+  return businessTypeLabel(code)
 }
 
 function formatDateTime(v?: string | null) {
@@ -798,23 +771,6 @@ onMounted(loadDetail)
 }
 .stack-gap-sm {
   margin-top: 12px;
-}
-.attach-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.attach-item {
-  color: var(--el-color-primary);
-  text-decoration: none;
-  line-height: 1.4;
-}
-.attach-item[href] {
-  cursor: pointer;
-}
-.attach-item:not([href]) {
-  color: var(--crm-ink, #303133);
-  cursor: default;
 }
 .empty-inline {
   display: flex;

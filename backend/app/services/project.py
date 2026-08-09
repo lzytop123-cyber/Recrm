@@ -51,7 +51,6 @@ from app.models.project import (
     PROJECT_STATUS_INITIATING,
     PROJECT_STATUS_PLANNING,
     PROJECT_STATUS_TERMINATED,
-    PROJECT_TYPES,
     TASK_STATUS_DONE,
     TASK_STATUS_DOING,
     TASK_STATUS_PENDING,
@@ -340,8 +339,9 @@ def assert_can_manage_plan(user: User, project: Project) -> None:
 
 
 def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
-    if payload.project_type not in PROJECT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的项目类型")
+    from app.services import platform as platform_service
+
+    platform_service.assert_business_type(db, payload.project_type, enabled_only=True)
 
     customer_id = payload.customer_id
     contract_id = payload.contract_id
@@ -384,7 +384,8 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
             detail=f"该合同已有交付项目 {existing.project_no}，不可重复立项（终止后才可再立）",
         )
     customer_id = customer_id or contract.customer_id
-    if project_type == "other" and contract.contract_type in PROJECT_TYPES:
+    type_values = platform_service.business_type_values(db, enabled_only=False)
+    if project_type == "other" and contract.contract_type in type_values:
         project_type = contract.contract_type
 
     if customer_id:
@@ -453,8 +454,12 @@ def update_project(db: Session, user: User, project_id: int, payload: ProjectUpd
         raise HTTPException(status_code=400, detail="已结束项目不可编辑")
 
     data = payload.model_dump(exclude_unset=True)
-    if "project_type" in data and data["project_type"] not in PROJECT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的项目类型")
+    if "project_type" in data and data["project_type"] is not None:
+        from app.services import platform as platform_service
+
+        data["project_type"] = platform_service.assert_business_type(
+            db, data["project_type"], enabled_only=True
+        )
     if "manager_id" in data and data["manager_id"] is not None:
         manager = db.query(User).filter(User.id == data["manager_id"]).first()
         if not manager:
@@ -921,6 +926,15 @@ def terminate_project(
     return enrich_project(db, project)
 
 
+def _normalize_evidence_link(raw: Optional[str]) -> Optional[str]:
+    link = (raw or "").strip()
+    if not link:
+        return None
+    if not (link.startswith("http://") or link.startswith("https://")):
+        raise HTTPException(status_code=400, detail="证据链接请以 http:// 或 https:// 开头")
+    return link[:500]
+
+
 def _milestone_fully_done(ms: ProjectMilestone) -> bool:
     """节点真正完成：状态 done 且完成证据已确认。"""
     return (
@@ -1242,31 +1256,68 @@ def update_milestone(
     if "status" in data and data["status"] not in MILESTONE_STATUSES:
         raise HTTPException(status_code=400, detail="无效的里程碑状态")
 
+    evidence_fields = {
+        "evidence",
+        "evidence_link",
+        "evidence_attachment",
+        "evidence_attachment_path",
+    }
     # 仅提交/重提证据：可查看项目即可；其余字段变更需部门负责人/管理员
-    evidence_only = set(data.keys()) <= {"evidence"}
+    evidence_only = set(data.keys()) <= evidence_fields
     if evidence_only:
         pass
     else:
         assert_can_manage_plan(user, project)
 
-    if "evidence" in data:
+    if evidence_fields & set(data.keys()):
         if project.status in {PROJECT_STATUS_INITIATING, PROJECT_STATUS_PLANNING}:
             raise HTTPException(status_code=400, detail="项目未进入执行，暂不可提交完成证据")
-        text = (data.get("evidence") or "").strip()
+        text = (data["evidence"] if "evidence" in data else ms.evidence) or ""
+        text = text.strip()
+        link = _normalize_evidence_link(
+            data["evidence_link"] if "evidence_link" in data else ms.evidence_link
+        )
+        attachment = (
+            data["evidence_attachment"] if "evidence_attachment" in data else ms.evidence_attachment
+        )
+        attachment = (attachment or "").strip() or None
+        attachment_path = (
+            data["evidence_attachment_path"]
+            if "evidence_attachment_path" in data
+            else ms.evidence_attachment_path
+        )
+        attachment_path = (attachment_path or "").strip() or None
+        if attachment and not attachment_path:
+            raise HTTPException(status_code=400, detail="附件路径缺失，请重新上传")
+        if attachment_path and not attachment:
+            attachment = attachment_path.rsplit("/", 1)[-1]
+
         data["evidence"] = text or None
+        data["evidence_link"] = link
+        data["evidence_attachment"] = attachment
+        data["evidence_attachment_path"] = attachment_path
+
         if not text:
+            data["evidence"] = None
+            data["evidence_link"] = None
+            data["evidence_attachment"] = None
+            data["evidence_attachment_path"] = None
             data["evidence_status"] = EVIDENCE_STATUS_NONE
             data["evidence_confirmed_by"] = None
             data["evidence_confirmed_at"] = None
             data["evidence_reject_reason"] = None
         else:
+            if not link and not attachment_path:
+                raise HTTPException(
+                    status_code=400,
+                    detail="请提供证据链接或上传附件，便于负责人核验",
+                )
             # 新提交/修改证据后重新进入待确认；若曾误标完成则退回进行中
             data["evidence_status"] = EVIDENCE_STATUS_PENDING
             data["evidence_confirmed_by"] = None
             data["evidence_confirmed_at"] = None
             data["evidence_reject_reason"] = None
             data["status"] = MILESTONE_STATUS_DOING
-            ms.evidence = text
 
     next_status = data.get("status", ms.status)
     if next_status == "done" and ms.status != "done":

@@ -46,7 +46,10 @@ request.interceptors.response.use(
 
     if (status === 401) {
       clearToken()
-      if (router.currentRoute.value.path !== '/login') {
+      if (router.currentRoute.value.path === '/login') {
+        // 登录页上的 401（如密码错误）需要直接提示，不能静默
+        ElMessage.error(message || '用户名或密码错误')
+      } else {
         ElMessage.error('登录已失效，请重新登录')
         router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }

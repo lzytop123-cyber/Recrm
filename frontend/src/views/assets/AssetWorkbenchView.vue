@@ -4,10 +4,9 @@
       <div>
         <p class="wb-eyebrow">经营台</p>
         <h1>固定资产</h1>
-        <p>{{ isEmployee ? '申请借用、查看本人记录与可借器材' : '管库存、审批借用；需要时再入库或扫码' }}</p>
+        <p>{{ isEmployee ? '申请借用、查看本人记录与可借器材' : '管库存、审批借用；需要时再入库' }}</p>
       </div>
       <div class="asset-head-actions">
-        <el-button @click="openScanner()">扫码</el-button>
         <el-button v-if="canManage && isEmployee" @click="viewMode = 'admin'">返回管理</el-button>
         <el-button v-else-if="canManage" @click="viewMode = 'employee'">员工自助</el-button>
         <el-button v-if="!isEmployee && canManage" type="primary" @click="openCreateAsset">＋ 设备入库</el-button>
@@ -541,23 +540,6 @@
         </el-button>
       </template>
     </el-dialog>
-
-    <!-- 扫码 -->
-    <el-dialog v-model="scannerVisible" title="扫码" width="400px" destroy-on-close>
-      <div class="scan-box">
-        <el-radio-group v-model="scanMode" size="small">
-          <el-radio-button value="checkout">领用</el-radio-button>
-          <el-radio-button value="return">归还</el-radio-button>
-          <el-radio-button value="inventory">盘点</el-radio-button>
-        </el-radio-group>
-        <p class="muted" style="margin: 14px 0">演示环境：点击下方按钮模拟扫到一台设备</p>
-        <div v-if="scanResult" class="scan-result">
-          <b>{{ scanResult.asset?.name || '已扫码' }}</b>
-          <small>{{ scanResult.message }}</small>
-        </div>
-        <el-button type="primary" style="width: 100%" :loading="acting" @click="doScan">模拟扫码</el-button>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -576,7 +558,6 @@ import {
   fetchAssetWorkbench,
   rejectBorrow,
   returnBorrow,
-  scanAsset,
   type AssetStats,
   type BorrowRequest,
   type FixedAsset,
@@ -628,9 +609,6 @@ const borrowDrawerVisible = ref(false)
 const borrowDrawer = ref<BorrowRequest | null>(null)
 const createAssetVisible = ref(false)
 const createBorrowVisible = ref(false)
-const scannerVisible = ref(false)
-const scanMode = ref('checkout')
-const scanResult = ref<{ message: string; asset?: FixedAsset } | null>(null)
 const scheduleLoading = ref(false)
 const scheduleOptions = ref<Schedule[]>([])
 const borrowAssetKeyword = ref('')

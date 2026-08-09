@@ -154,7 +154,7 @@
         <el-form-item label="业务类型" prop="business_type">
           <el-select v-model="form.business_type" style="width: 100%">
             <el-option
-              v-for="opt in BUSINESS_TYPE_OPTIONS"
+              v-for="opt in businessTypeOptions"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -200,7 +200,7 @@ import { ElMessage } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import { fetchCustomers, type Customer } from '@/api/customers'
 import {
-  BUSINESS_TYPE_OPTIONS,
+  useBusinessTypes,
   OPP_STAGE_LABEL,
   createOpportunity,
   fetchOpportunities,
@@ -220,6 +220,7 @@ const props = withDefaults(
 const router = useRouter()
 const route = useRoute()
 const isCompact = useMatchMedia('(max-width: 768px)')
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
 const customerLoading = ref(false)
@@ -250,7 +251,7 @@ const rules: FormRules = {
 }
 
 function typeLabel(code?: string) {
-  return BUSINESS_TYPE_OPTIONS.find((x) => x.value === code)?.label || code || '-'
+  return businessTypeLabel(code)
 }
 
 function formatAmount(v?: number | string | null) {

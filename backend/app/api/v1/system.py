@@ -1,10 +1,10 @@
 """系统管理 API。"""
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import PermissionChecker
+from app.api.deps import PermissionChecker, get_current_active_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.system import (
@@ -15,6 +15,7 @@ from app.schemas.system import (
     DelegationCreate,
     DelegationOut,
     DelegationUpdate,
+    DictionaryItemOut,
     ExportDownloadOut,
     ExportJobCreate,
     ExportJobOut,
@@ -27,12 +28,33 @@ from app.schemas.system import (
     SystemConfigUpdate,
     SystemDictionaryCreate,
     SystemDictionaryOut,
+    SystemDictionaryUpdate,
     SystemStatsOut,
 )
 from app.services import platform as platform_service
 from app.services import system as system_service
 
 router = APIRouter(prefix="/system", tags=["系统管理"])
+
+
+def _dictionary_out(row) -> SystemDictionaryOut:
+    items = [
+        DictionaryItemOut(
+            value=x["value"],
+            label=x["label"],
+            enabled=bool(x.get("enabled", True)),
+            sort=int(x.get("sort") or 100),
+        )
+        for x in platform_service.parse_dictionary_items(row.items_json)
+    ]
+    return SystemDictionaryOut(
+        id=row.id,
+        code=row.code,
+        name=row.name,
+        items_json=row.items_json,
+        updated_at=row.updated_at,
+        items=items,
+    )
 
 
 @router.get("/stats", response_model=SystemStatsOut, summary="系统统计")
@@ -174,10 +196,7 @@ def list_dictionaries(
     current_user: Annotated[User, Depends(PermissionChecker(["system:view"]))],
 ) -> list[SystemDictionaryOut]:
     _ = current_user
-    return [
-        SystemDictionaryOut.model_validate(x)
-        for x in platform_service.list_dictionaries(db)
-    ]
+    return [_dictionary_out(x) for x in platform_service.list_dictionaries(db)]
 
 
 @router.post("/dictionaries", response_model=SystemDictionaryOut, summary="创建字典")
@@ -187,9 +206,7 @@ def create_dictionary(
     current_user: Annotated[User, Depends(PermissionChecker(["system:view"]))],
 ) -> SystemDictionaryOut:
     _ = current_user
-    return SystemDictionaryOut.model_validate(
-        platform_service.create_dictionary(db, payload)
-    )
+    return _dictionary_out(platform_service.create_dictionary(db, payload))
 
 
 @router.get(
@@ -203,7 +220,50 @@ def get_dictionary(
     current_user: Annotated[User, Depends(PermissionChecker(["system:view"]))],
 ) -> SystemDictionaryOut:
     _ = current_user
-    return SystemDictionaryOut.model_validate(platform_service.get_dictionary(db, code))
+    return _dictionary_out(platform_service.get_dictionary(db, code))
+
+
+@router.patch(
+    "/dictionaries/{code}",
+    response_model=SystemDictionaryOut,
+    summary="更新字典",
+)
+def update_dictionary(
+    code: str,
+    payload: SystemDictionaryUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["system:view"]))],
+) -> SystemDictionaryOut:
+    _ = current_user
+    return _dictionary_out(platform_service.update_dictionary(db, code, payload))
+
+
+@router.get(
+    "/dictionaries/{code}/items",
+    response_model=list[DictionaryItemOut],
+    summary="字典选项（登录可读）",
+)
+def list_dictionary_items(
+    code: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    enabled_only: bool = Query(True),
+) -> list[DictionaryItemOut]:
+    """业务下拉框用：任意登录用户可读，不要求 system:view。"""
+    _ = current_user
+    if code != platform_service.BUSINESS_TYPE_DICT_CODE:
+        # 预留：其它字典暂仍走管理权限
+        raise HTTPException(status_code=404, detail="字典不存在")
+    items = platform_service.list_business_type_items(db, enabled_only=enabled_only)
+    return [
+        DictionaryItemOut(
+            value=x["value"],
+            label=x["label"],
+            enabled=bool(x.get("enabled", True)),
+            sort=int(x.get("sort") or 100),
+        )
+        for x in items
+    ]
 
 
 @router.get("/delegations", response_model=list[DelegationOut], summary="委托列表")

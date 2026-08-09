@@ -75,6 +75,8 @@ export const CONTRACT_TYPE_OPTIONS = [
   { value: 'other', label: '其他' },
 ]
 
+export { DEFAULT_BUSINESS_TYPE_OPTIONS, useBusinessTypes, businessTypeLabel } from './dictionaries'
+
 export const PAYMENT_METHOD_OPTIONS = [
   { value: 'once', label: '一次性' },
   { value: 'installment', label: '分期' },

@@ -530,6 +530,12 @@ button.portfolio-mini.active {
   word-break: break-word;
 }
 
+.evidence-review-box a {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  word-break: break-all;
+}
+
 .evidence-reject {
   color: var(--crm-danger, #c0392b);
   font-size: 11px;

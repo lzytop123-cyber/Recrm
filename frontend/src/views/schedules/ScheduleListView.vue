@@ -226,6 +226,7 @@
                 </el-tag>
                 <el-tag v-if="rowHasConflict(drawer)" type="danger" effect="light" size="small">冲突</el-tag>
                 <el-tag type="info" effect="plain" size="small">{{ typeLabel(drawer.schedule_type) }}</el-tag>
+                <el-tag effect="plain" size="small">{{ linkModeLabel(drawer) }}</el-tag>
               </div>
               <button type="button" class="sch-drawer-close" aria-label="关闭" @click="drawerVisible = false">
                 ×
@@ -262,6 +263,10 @@
             </div>
 
             <dl class="sch-kv">
+              <div class="sch-kv-row">
+                <dt>关联方式</dt>
+                <dd>{{ linkModeLabel(drawer) }}</dd>
+              </div>
               <div class="sch-kv-row">
                 <dt>地点</dt>
                 <dd>{{ drawer.location || '—' }}</dd>
@@ -357,6 +362,13 @@
             </el-radio-button>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="关联方式" prop="link_mode">
+          <el-radio-group v-model="form.link_mode" class="schedule-type-group" @change="onLinkModeChange">
+            <el-radio-button v-for="opt in LINK_MODE_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" maxlength="200" />
         </el-form-item>
@@ -380,7 +392,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="挂到项目">
+        <el-form-item v-if="form.link_mode !== 'none'" label="挂到项目" prop="project_id">
           <el-select
             v-model="form.project_id"
             clearable
@@ -388,7 +400,11 @@
             remote
             :remote-method="searchProjects"
             :loading="projectLoading"
-            placeholder="可选：挂到交付项目后，在交付执行里可见"
+            :placeholder="
+              form.link_mode === 'task'
+                ? '请先选择项目，再选任务'
+                : '挂到交付项目后，在交付执行里可见'
+            "
             style="width: 100%"
             @change="onProjectChange"
           >
@@ -400,13 +416,13 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="挂到任务">
+        <el-form-item v-if="form.link_mode === 'task'" label="挂到任务" prop="project_task_id">
           <el-select
             v-model="form.project_task_id"
             clearable
             filterable
             :disabled="!form.project_id"
-            placeholder="可选：先选项目后再选任务"
+            placeholder="请选择所属任务"
             style="width: 100%"
           >
             <el-option
@@ -534,9 +550,18 @@ const createVisible = ref(false)
 const completeVisible = ref(false)
 const formRef = ref<FormInstance>()
 
+type LinkMode = 'none' | 'project' | 'task'
+
+const LINK_MODE_OPTIONS: { value: LinkMode; label: string }[] = [
+  { value: 'none', label: '一般活动' },
+  { value: 'project', label: '项目排期' },
+  { value: 'task', label: '任务排期' },
+]
+
 const form = reactive({
   title: '',
   schedule_type: 'internal_training',
+  link_mode: 'none' as LinkMode,
   resource_type: 'instructor',
   employee_id: undefined as number | undefined,
   project_id: undefined as number | undefined,
@@ -552,12 +577,21 @@ const completeForm = reactive({
   create_timesheet: true,
 })
 
-const rules: FormRules = {
+const rules = computed<FormRules>(() => ({
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
   schedule_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  link_mode: [{ required: true, message: '请选择关联方式', trigger: 'change' }],
   resource_type: [{ required: true, message: '请选择角色', trigger: 'change' }],
   employee_id: [{ required: true, message: '请选择人员', trigger: 'change' }],
-}
+  project_id:
+    form.link_mode === 'none'
+      ? []
+      : [{ required: true, message: '请选择项目', trigger: 'change' }],
+  project_task_id:
+    form.link_mode === 'task'
+      ? [{ required: true, message: '请选择任务', trigger: 'change' }]
+      : [],
+}))
 
 const workHours = Array.from({ length: 14 }, (_, i) => i + 7) // 07-20，覆盖常见早晚场
 const hourStart = workHours[0]
@@ -932,6 +966,12 @@ function typeLabel(v?: string | null) {
   return SCHEDULE_TYPE_OPTIONS.find((x) => x.value === v)?.label || v || '其他'
 }
 
+function linkModeLabel(row: Schedule) {
+  if (row.project_task_id || row.task_no) return '任务排期'
+  if (row.project_id) return '项目排期'
+  return '一般活动'
+}
+
 function resourceLabel(v: string) {
   return SCHEDULE_RESOURCE_OPTIONS.find((x) => x.value === v)?.label || v
 }
@@ -1052,13 +1092,27 @@ async function onProjectChange(pid?: number) {
   taskOptions.value = data.items
 }
 
+function onLinkModeChange(mode: LinkMode | string | number | boolean | undefined) {
+  const next = (mode as LinkMode) || form.link_mode
+  if (next === 'none') {
+    form.project_id = undefined
+    form.project_task_id = undefined
+    taskOptions.value = []
+  } else if (next === 'project') {
+    form.project_task_id = undefined
+  }
+  formRef.value?.clearValidate(['project_id', 'project_task_id'])
+}
+
 async function openCreate(presetProjectId?: number) {
   form.title = ''
   form.schedule_type = 'internal_training'
+  form.link_mode = presetProjectId ? 'project' : 'none'
   form.resource_type = roleFilter.value === 'all' ? 'instructor' : roleFilter.value
   form.employee_id = resources.value[0]?.id
   form.project_id = undefined
   form.project_task_id = undefined
+  taskOptions.value = []
   form.location = ''
   form.content = ''
   const start = new Date()
@@ -1069,6 +1123,7 @@ async function openCreate(presetProjectId?: number) {
   form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
   createVisible.value = true
   if (presetProjectId) {
+    form.link_mode = 'project'
     await searchProjects('')
     const hit = projectOptions.value.find((p) => p.id === presetProjectId)
     if (!hit) {
@@ -1094,6 +1149,14 @@ async function onCreate() {
     ElMessage.warning('请完整填写必填项与时间')
     return
   }
+  let projectId = form.project_id
+  let projectTaskId = form.project_task_id
+  if (form.link_mode === 'none') {
+    projectId = undefined
+    projectTaskId = undefined
+  } else if (form.link_mode === 'project') {
+    projectTaskId = undefined
+  }
   saving.value = true
   try {
     const { data } = await createSchedule({
@@ -1101,8 +1164,8 @@ async function onCreate() {
       schedule_type: form.schedule_type,
       resource_type: form.resource_type,
       employee_id: form.employee_id,
-      project_id: form.project_id,
-      project_task_id: form.project_task_id,
+      project_id: projectId,
+      project_task_id: projectTaskId,
       start_time: localWallToAwareIso(form.range[0]),
       end_time: localWallToAwareIso(form.range[1]),
       location: form.location || undefined,

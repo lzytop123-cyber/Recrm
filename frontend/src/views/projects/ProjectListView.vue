@@ -107,7 +107,7 @@
         <el-form-item label="项目类型">
           <el-select v-model="form.project_type" style="width: 100%">
             <el-option
-              v-for="opt in PROJECT_TYPE_OPTIONS"
+              v-for="opt in businessTypeOptions"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -142,7 +142,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import {
   PROJECT_STATUS_LABEL,
-  PROJECT_TYPE_OPTIONS,
+  useBusinessTypes,
   createProject,
   fetchProjectStats,
   fetchProjects,
@@ -152,6 +152,7 @@ import {
 import { fetchContracts, type Contract } from '@/api/contracts'
 
 const router = useRouter()
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
 const contractLoading = ref(false)
@@ -194,7 +195,7 @@ const statCards = computed(() => {
 })
 
 function typeLabel(code: string) {
-  return PROJECT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
+  return businessTypeLabel(code)
 }
 
 function statusTag(s: string) {

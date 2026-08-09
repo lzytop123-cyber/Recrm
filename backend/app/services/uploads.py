@@ -10,7 +10,7 @@ from fastapi import HTTPException, UploadFile
 # backend/uploads/
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 
-ALLOWED_CATEGORIES = {"contract_proof", "acceptance_proof"}
+ALLOWED_CATEGORIES = {"contract_proof", "acceptance_proof", "milestone_evidence"}
 ALLOWED_EXTENSIONS = {
     ".pdf",
     ".png",
@@ -57,6 +57,7 @@ def save_upload(file: UploadFile, *, category: str) -> dict:
     subdir = {
         "contract_proof": "contracts",
         "acceptance_proof": "acceptance",
+        "milestone_evidence": "milestone_evidence",
     }.get(category, category)
     dest_dir = UPLOAD_ROOT / subdir
     dest_dir.mkdir(parents=True, exist_ok=True)

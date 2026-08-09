@@ -146,10 +146,12 @@
             style="width: 150px"
             @change="reload"
           >
-            <el-option label="AI产品销售" value="ai_product" />
-            <el-option label="AI定制开发" value="ai_custom" />
-            <el-option label="自媒体代运营" value="media_ops" />
-            <el-option label="其他" value="other" />
+            <el-option
+              v-for="opt in businessTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
           <el-select
             v-if="!embedded || pool !== 'public'"
@@ -349,10 +351,12 @@
             </el-form-item>
             <el-form-item label="需求方向" prop="business_type">
               <el-select v-model="form.business_type" style="width: 100%">
-                <el-option label="AI产品销售" value="ai_product" />
-                <el-option label="AI定制开发" value="ai_custom" />
-                <el-option label="自媒体代运营" value="media_ops" />
-                <el-option label="其他" value="other" />
+                <el-option
+                  v-for="opt in businessTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
               </el-select>
             </el-form-item>
             <el-form-item label="录入人">
@@ -746,6 +750,7 @@ import { useUserStore } from '@/stores/user'
 import { fetchEmployees, type Employee } from '@/api/org'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import type { SalesJourney } from '@/api/salesJourney'
+import { useBusinessTypes } from '@/api/dictionaries'
 import {
   LEAD_RETURN_REASON_OPTIONS,
   LEAD_SOURCE_OPTIONS,
@@ -786,6 +791,8 @@ const canManagePool = computed(
 const canSelfFollowOnCreate = computed(() =>
   (userStore.user?.roles ?? []).some((r) => r.code === 'sales'),
 )
+
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -948,15 +955,6 @@ watch(batchOwnerIds, (ids) => {
 function sourceLabel(code?: string | null) {
   if (!code) return '员工录入'
   return LEAD_SOURCE_OPTIONS.find((x) => x.value === code)?.label || code
-}
-function businessTypeLabel(code?: string | null) {
-  const map: Record<string, string> = {
-    ai_product: 'AI产品销售',
-    ai_custom: 'AI定制开发',
-    media_ops: '自媒体代运营',
-    other: '其他',
-  }
-  return (code && map[code]) || code || '-'
 }
 function statusTag(s: string) {
   const map: Record<string, string> = {

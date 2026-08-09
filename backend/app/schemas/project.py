@@ -88,7 +88,7 @@ class MilestoneCreate(BaseModel):
     actual_date: Optional[date] = None
     role: Optional[str] = Field(None, max_length=50)
     deliverable: Optional[str] = Field(None, max_length=200)
-    evidence: Optional[str] = Field(None, max_length=200)
+    evidence: Optional[str] = Field(None, max_length=1000)
     sort_order: int = 0
     remark: Optional[str] = None
 
@@ -99,7 +99,10 @@ class MilestoneUpdate(BaseModel):
     actual_date: Optional[date] = None
     role: Optional[str] = None
     deliverable: Optional[str] = None
-    evidence: Optional[str] = None
+    evidence: Optional[str] = Field(None, max_length=1000)
+    evidence_link: Optional[str] = Field(None, max_length=500)
+    evidence_attachment: Optional[str] = Field(None, max_length=255)
+    evidence_attachment_path: Optional[str] = Field(None, max_length=500)
     status: Optional[str] = None
     sort_order: Optional[int] = None
     remark: Optional[str] = None
@@ -116,6 +119,9 @@ class MilestoneOut(BaseModel):
     role: Optional[str] = None
     deliverable: Optional[str] = None
     evidence: Optional[str] = None
+    evidence_link: Optional[str] = None
+    evidence_attachment: Optional[str] = None
+    evidence_attachment_path: Optional[str] = None
     evidence_status: str = "none"
     evidence_confirmed_by: Optional[int] = None
     evidence_confirmed_at: Optional[datetime] = None

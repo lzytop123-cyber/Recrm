@@ -144,7 +144,7 @@
               </p>
             </header>
 
-            <section v-if="highlightAmount" class="amount-card">
+            <section v-if="highlightAmount && detail.type !== 'project_payment_defer'" class="amount-card">
               <small>{{ highlightAmount.label }}</small>
               <b>{{ highlightAmount.value }}</b>
             </section>
@@ -185,33 +185,11 @@
               </div>
               <div v-if="acceptanceAttachments.length" class="fact-row wide">
                 <small>附件</small>
-                <div class="attach-preview">
-                  <template v-for="(file, idx) in acceptanceAttachments" :key="`${file.name}-${idx}`">
-                    <el-image
-                      v-if="file.isImage && file.url"
-                      :src="file.url"
-                      :preview-src-list="acceptanceImageUrls"
-                      :initial-index="acceptanceImageIndex(idx)"
-                      fit="cover"
-                      class="attach-thumb"
-                      preview-teleported
-                    />
-                    <a
-                      v-else-if="file.url"
-                      class="attach-link"
-                      :href="file.url"
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      {{ file.name }}
-                    </a>
-                    <span v-else class="attach-name">{{ file.name }}</span>
-                  </template>
-                </div>
+                <AttachmentPreview :items="acceptanceAttachments" size="md" />
               </div>
-              <div v-else-if="factValue('附件')" class="fact-row">
+              <div v-else-if="factValue('附件')" class="fact-row wide">
                 <small>附件</small>
-                <b>{{ factValue('附件') }}</b>
+                <AttachmentPreview :filename="factValue('附件')" size="md" />
               </div>
             </div>
 
@@ -233,15 +211,21 @@
               </div>
               <div class="fact-row">
                 <small>已确认到账</small>
-                <b>¥{{ financeMoney(detailProject?.contract_paid_amount ?? factValue('已确认到账')) }}</b>
+                <b :class="{ 'text-warn': paymentDeferUnpaid }">
+                  ¥{{ financeMoney(detailProject?.contract_paid_amount ?? factValue('已确认到账')) }}
+                </b>
               </div>
               <div class="fact-row wide">
                 <small>申请原因</small>
                 <b>{{ detailProject?.payment_deferred_reason || factValue('申请原因') || '—' }}</b>
               </div>
-              <div class="fact-row wide">
-                <small>说明</small>
-                <b>通过后可在无到款情况下进入计划；结项财务核对仍须回款收齐。</b>
+              <div class="fact-row wide decision-hint">
+                <small>审批要点</small>
+                <b>
+                  当前未确认到账 ¥{{ financeMoney(detailProject?.contract_paid_amount ?? factValue('已确认到账')) }}
+                  ／合同 ¥{{ financeMoney(detailProject?.contract_amount ?? factValue('合同金额')) }}。
+                  通过后可先进入计划与交付；结项财务核对仍须回款收齐。
+                </b>
               </div>
             </div>
 
@@ -338,16 +322,25 @@
             </div>
 
             <section v-if="timelineNodes.length" class="timeline-block">
-              <h3>流程进度</h3>
+              <div class="timeline-head">
+                <h3>流程进度</h3>
+                <span class="timeline-progress">{{ timelineProgressText }}</span>
+              </div>
+              <p v-if="timelineChainHint" class="timeline-chain-hint">{{ timelineChainHint }}</p>
               <ol class="approval-timeline">
                 <li
                   v-for="(node, idx) in timelineNodes"
                   :key="`${node.name}-${idx}`"
                   :class="timelineClass(node.status)"
                 >
-                  <div class="tl-dot" />
+                  <div class="tl-rail" aria-hidden="true">
+                    <span class="tl-dot">{{ idx + 1 }}</span>
+                  </div>
                   <div class="tl-body">
-                    <div class="tl-title">{{ node.name }}</div>
+                    <div class="tl-title-row">
+                      <div class="tl-title">{{ node.name }}</div>
+                      <span class="tl-status">{{ timelineStatusLabel(node.status) }}</span>
+                    </div>
                     <div v-if="node.actor_name || node.acted_at" class="tl-meta">
                       <span v-if="node.actor_name">{{ node.actor_name }}</span>
                       <span v-if="node.acted_at"> · {{ formatTime(node.acted_at) }}</span>
@@ -410,6 +403,8 @@ import {
   fetchProjectDetail,
   type Project,
 } from '@/api/projects'
+import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
+import { parseAttachmentList } from '@/utils/attachments'
 
 const router = useRouter()
 
@@ -496,54 +491,11 @@ const financeCollectionLabel = computed(() => {
   return factValue('回款状态') || '—'
 })
 
-const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp)$/i
-
-function isImageName(name: string) {
-  return IMAGE_EXT_RE.test(name)
-}
-
-function uploadsUrl(path?: string | null) {
-  const p = (path || '').trim().replace(/^\/+/, '')
-  if (!p) return ''
-  if (/^https?:\/\//i.test(p) || p.startsWith('/uploads/')) return p
-  return `/uploads/${p}`
-}
-
 const acceptanceAttachments = computed(() => {
   const p = detailProject.value
-  if (!p) return [] as { name: string; url: string; isImage: boolean }[]
-  const raw = (p.acceptance_attachment || '').trim()
-  const path = (p.acceptance_attachment_path || '').trim()
-  const url = uploadsUrl(path)
-  const names = raw
-    ? raw
-        .split(/(?<=\.(?:jpg|jpeg|png|gif|webp|bmp|pdf|doc|docx|xls|xlsx|zip|rar|txt))\s*-\s*/i)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : []
-  if (!names.length && path) {
-    const leaf = path.split(/[/\\]/).pop() || '查看附件'
-    return [{ name: leaf, url, isImage: isImageName(leaf) }]
-  }
-  return names.map((name, idx) => ({
-    name,
-    url: idx === 0 ? url : '',
-    isImage: isImageName(name),
-  }))
+  if (!p) return []
+  return parseAttachmentList(p.acceptance_attachment, p.acceptance_attachment_path)
 })
-
-const acceptanceImageUrls = computed(() =>
-  acceptanceAttachments.value.filter((f) => f.isImage && f.url).map((f) => f.url),
-)
-
-function acceptanceImageIndex(fileIdx: number) {
-  const files = acceptanceAttachments.value
-  let imageIdx = 0
-  for (let i = 0; i < fileIdx; i += 1) {
-    if (files[i]?.isImage && files[i]?.url) imageIdx += 1
-  }
-  return imageIdx
-}
 
 const highlightAmount = computed(() => {
   const facts = detail.value?.facts || []
@@ -562,6 +514,34 @@ const timelineNodes = computed(() => {
   const d = detail.value
   if (!d) return []
   return d.timeline?.length ? d.timeline : d.nodes || []
+})
+
+const timelineProgressText = computed(() => {
+  const nodes = timelineNodes.value
+  if (!nodes.length) return ''
+  const done = nodes.filter((n) => n.status === 'done').length
+  const currentIdx = nodes.findIndex((n) => n.status === 'pending' || n.status === 'active')
+  if (currentIdx >= 0) return `第 ${currentIdx + 1} / ${nodes.length} 步`
+  if (done === nodes.length) return `已完成 ${nodes.length} 步`
+  return `${done} / ${nodes.length} 步`
+})
+
+const timelineChainHint = computed(() => {
+  const t = detail.value?.type
+  if (t === 'project_payment_defer') {
+    return '链路：提交申请 → 负责人审批 → 进入计划 → 结项仍须财务核对回款'
+  }
+  if (t === 'project_acceptance') return '链路：提交验收 → 审批 → 验收归档'
+  if (t === 'project_finance') return '链路：提交核对 → 财务审批 → 项目结项'
+  if (t === 'contract') return '链路：提交合同 → 审批 → 签署 / 执行'
+  if (t === 'receipt') return '链路：登记到账 → 复核确认 → 核销到应收'
+  if (t === 'allocation') return '链路：提交核销 → 审批 → 计入应收'
+  return ''
+})
+
+const paymentDeferUnpaid = computed(() => {
+  const paid = Number(detailProject.value?.contract_paid_amount ?? factValue('已确认到账') ?? 0)
+  return !Number.isNaN(paid) && paid <= 0
 })
 
 const deepLinkLabel = computed(() => {
@@ -588,6 +568,12 @@ function timelineComment(node: { status?: string; comment?: string | null; actor
     return node.status === 'pending' || node.status === 'active' ? '待审批人处理' : ''
   }
   return node.comment
+}
+
+function timelineStatusLabel(status?: string) {
+  if (status === 'done') return '已完成'
+  if (status === 'pending' || status === 'active') return '进行中'
+  return '未开始'
 }
 
 function timelineClass(status?: string) {
@@ -1103,51 +1089,40 @@ onMounted(reload)
   line-height: 1.45;
 }
 
-.attach-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.attach-thumb {
-  width: 120px;
-  height: 120px;
-  border-radius: 8px;
-  border: 1px solid var(--ap-line);
-  cursor: zoom-in;
-  overflow: hidden;
-  background: #fff;
-}
-
-.attach-thumb :deep(img) {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.attach-link {
-  color: var(--ap-blue);
-  font-size: 13px;
-  font-weight: 600;
-  word-break: break-all;
-}
-
-.attach-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ap-ink);
-  word-break: break-all;
-}
-
 .timeline-block {
-  margin-top: 4px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--ap-line);
+  border-radius: 12px;
+  background: var(--ap-surface-soft, #f8fafc);
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .timeline-block h3 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 14px;
   color: var(--ap-ink);
+}
+
+.timeline-progress {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ap-blue);
+}
+
+.timeline-chain-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ap-ink-faint);
 }
 
 .approval-timeline {
@@ -1158,51 +1133,111 @@ onMounted(reload)
 
 .approval-timeline li {
   display: grid;
-  grid-template-columns: 16px 1fr;
+  grid-template-columns: 28px 1fr;
   gap: 10px;
   position: relative;
-  padding-bottom: 16px;
+  padding-bottom: 14px;
 }
 
-.approval-timeline li:not(:last-child)::before {
+.approval-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.approval-timeline li:not(:last-child) .tl-rail::after {
   content: '';
   position: absolute;
-  left: 7px;
-  top: 14px;
+  left: 13px;
+  top: 28px;
   bottom: 0;
   width: 2px;
   background: var(--ap-line);
 }
 
+.approval-timeline .is-done:not(:last-child) .tl-rail::after {
+  background: color-mix(in oklab, var(--ap-success) 55%, var(--ap-line));
+}
+
+.tl-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  z-index: 1;
+}
+
 .approval-timeline .tl-dot {
-  width: 12px;
-  height: 12px;
-  margin-top: 4px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid var(--ap-line);
   background: #fff;
-  z-index: 1;
+  color: var(--ap-ink-faint);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .approval-timeline .is-done .tl-dot {
   border-color: var(--ap-success);
   background: var(--ap-success);
+  color: #fff;
 }
 
 .approval-timeline .is-current .tl-dot {
   border-color: var(--ap-blue-mid);
   background: var(--ap-blue-mid);
+  color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ap-blue-mid) 22%, transparent);
 }
 
 .approval-timeline .is-waiting .tl-dot {
   border-color: var(--ap-line);
   background: #fff;
+  color: var(--ap-ink-faint);
+}
+
+.tl-body {
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.approval-timeline .is-current .tl-body {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid color-mix(in oklab, var(--ap-blue-mid) 35%, var(--ap-line));
+  box-shadow: 0 4px 12px rgba(15, 39, 68, 0.05);
+}
+
+.tl-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .tl-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ap-ink);
+}
+
+.tl-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ap-ink-faint);
+}
+
+.is-done .tl-status {
+  color: var(--ap-success);
+}
+
+.is-current .tl-status {
+  color: var(--ap-blue);
 }
 
 .is-waiting .tl-title {
@@ -1216,6 +1251,25 @@ onMounted(reload)
   color: var(--ap-ink-faint);
   margin-top: 2px;
   line-height: 1.4;
+}
+
+.is-current .tl-comment {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.decision-hint {
+  border-color: color-mix(in oklab, #f59e0b 35%, var(--ap-line)) !important;
+  background: color-mix(in oklab, #fff7ed 80%, #fff) !important;
+}
+
+.decision-hint b {
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.text-warn {
+  color: #b45309 !important;
 }
 
 .drawer-actions {

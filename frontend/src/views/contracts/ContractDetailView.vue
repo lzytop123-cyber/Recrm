@@ -129,20 +129,12 @@
           <div class="detail-cell wide">
             <small>合同证明</small>
             <div class="proof-cell">
-              <template v-if="contract.proof_url">
-                <a
-                  v-if="isProofImage"
-                  :href="contract.proof_url"
-                  target="_blank"
-                  rel="noopener"
-                  class="proof-thumb-link"
-                >
-                  <img :src="contract.proof_url" :alt="contract.proof_filename || '合同证明'" class="proof-thumb" />
-                </a>
-                <a :href="contract.proof_url" target="_blank" rel="noopener">
-                  {{ contract.proof_filename || '查看附件' }}
-                </a>
-              </template>
+              <AttachmentPreview
+                v-if="contract.proof_url"
+                :url="contract.proof_url"
+                :filename="contract.proof_filename"
+                size="md"
+              />
               <span v-else class="muted-inline">未上传（提交审批前须补传）</span>
               <template v-if="contract.status === 'draft'">
                 <el-button
@@ -241,7 +233,7 @@
         <el-form-item label="合同类型">
           <el-select v-model="editForm.contract_type" style="width: 100%">
             <el-option
-              v-for="opt in CONTRACT_TYPE_OPTIONS"
+              v-for="opt in businessTypeOptions"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -371,9 +363,10 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
+import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 import {
   CONTRACT_STATUS_LABEL,
-  CONTRACT_TYPE_OPTIONS,
+  useBusinessTypes,
   PAYMENT_METHOD_OPTIONS,
   activateContract,
   approveContract,
@@ -393,6 +386,7 @@ import { useUserStore } from '@/stores/user'
 const route = useRoute()
 const userStore = useUserStore()
 const isCompact = useMatchMedia('(max-width: 768px)')
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
 const uploadingProof = ref(false)
@@ -487,13 +481,8 @@ const showApprovalSection = computed(() => {
   return !!s && s !== 'draft'
 })
 
-const isProofImage = computed(() => {
-  const name = (contract.value?.proof_filename || contract.value?.proof_url || '').toLowerCase()
-  return /\.(png|jpe?g|gif|webp)(\?|$)/.test(name)
-})
-
 function typeLabel(code: string) {
-  return CONTRACT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
+  return businessTypeLabel(code)
 }
 
 function payLabel(code?: string | null) {

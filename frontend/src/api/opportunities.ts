@@ -88,6 +88,8 @@ export const BUSINESS_TYPE_OPTIONS = [
   { value: 'other', label: '其他' },
 ]
 
+export { DEFAULT_BUSINESS_TYPE_OPTIONS, useBusinessTypes, businessTypeLabel } from './dictionaries'
+
 export function fetchOpportunityStats() {
   return request.get<OpportunityStats>('/opportunities/stats')
 }

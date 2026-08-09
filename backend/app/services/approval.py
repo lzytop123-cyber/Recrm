@@ -1332,6 +1332,12 @@ def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
         current_comment = "确认银行到账是否属实"
     elif item.type == "allocation" and item.can_act:
         current_comment = "核对核销金额与合同应收"
+    elif item.type == "project_payment_defer" and item.can_act:
+        current_comment = "确认可无到款先立项；结项仍须回款收齐"
+    elif item.type == "project_acceptance" and item.can_act:
+        current_comment = "核对验收结论与附件后审批"
+    elif item.type == "project_finance" and item.can_act:
+        current_comment = "核对回款是否收齐后结项"
     current = ApprovalTimelineNode(
         name=item.node or "当前节点",
         status=current_status,
@@ -1352,6 +1358,58 @@ def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
                 name="计入应收",
                 status="waiting",
                 comment="审批通过后生效",
+            )
+        )
+    elif item.type == "project_payment_defer":
+        if current_status != "done":
+            nodes.append(
+                ApprovalTimelineNode(
+                    name="进入计划阶段",
+                    status="waiting",
+                    comment="通过后可无到款推进计划与交付",
+                )
+            )
+            nodes.append(
+                ApprovalTimelineNode(
+                    name="结项财务核对",
+                    status="waiting",
+                    comment="结项前仍须回款收齐",
+                )
+            )
+        else:
+            nodes.append(
+                ApprovalTimelineNode(
+                    name="进入计划阶段",
+                    status="done" if item.status_label.startswith("已通过") else "waiting",
+                    comment=(
+                        "立项结果已生效"
+                        if item.status_label.startswith("已通过")
+                        else "未通过，不可无到款立项"
+                    ),
+                )
+            )
+    elif item.type == "project_acceptance" and current_status != "done":
+        nodes.append(
+            ApprovalTimelineNode(
+                name="验收归档",
+                status="waiting",
+                comment="通过后进入已验收，可继续结项",
+            )
+        )
+    elif item.type == "project_finance" and current_status != "done":
+        nodes.append(
+            ApprovalTimelineNode(
+                name="项目结项",
+                status="waiting",
+                comment="财务核对通过后可结项关闭",
+            )
+        )
+    elif item.type == "contract" and current_status != "done":
+        nodes.append(
+            ApprovalTimelineNode(
+                name="签署 / 执行",
+                status="waiting",
+                comment="审批通过后由负责人签署并进入执行",
             )
         )
     return nodes

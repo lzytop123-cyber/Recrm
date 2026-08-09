@@ -10,7 +10,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
-from app.models.contract import CONTRACT_TYPES
 from app.models.customer import Customer
 from app.models.opportunity import (
     OPP_OPEN_STAGES,
@@ -130,8 +129,9 @@ def assert_can_edit(user: User, opp: Opportunity) -> None:
 
 
 def create_opportunity(db: Session, user: User, payload: OpportunityCreate) -> Opportunity:
-    if payload.business_type not in CONTRACT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的业务类型")
+    from app.services import platform as platform_service
+
+    platform_service.assert_business_type(db, payload.business_type, enabled_only=True)
     stage = payload.stage or OPP_STAGE_NEED
     if stage not in OPP_STAGES:
         raise HTTPException(status_code=400, detail="无效的商机阶段")
@@ -184,8 +184,12 @@ def update_opportunity(
     assert_can_edit(user, opp)
 
     data = payload.model_dump(exclude_unset=True)
-    if "business_type" in data and data["business_type"] not in CONTRACT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的业务类型")
+    if "business_type" in data and data["business_type"] is not None:
+        from app.services import platform as platform_service
+
+        data["business_type"] = platform_service.assert_business_type(
+            db, data["business_type"], enabled_only=True
+        )
     if "title" in data and data["title"]:
         data["title"] = data["title"].strip()
     for k, v in data.items():
@@ -429,10 +433,13 @@ def draft_contract_from_opportunity(db: Session, user: User, opportunity_id: int
             detail=f"该商机已有合同 {existing.contract_no}，不可重复发起",
         )
 
+    from app.services import platform as platform_service
+
+    type_values = platform_service.business_type_values(db, enabled_only=False)
     payload = ContractCreate(
         title=f"{opp.title}-合同",
         customer_id=opp.customer_id,
-        contract_type=opp.business_type if opp.business_type in CONTRACT_TYPES else "other",
+        contract_type=opp.business_type if opp.business_type in type_values else "other",
         amount=opp.expected_amount or Decimal("0"),
         remark=f"由商机 {opp.opportunity_no} 起草",
         opportunity_id=opportunity_id,

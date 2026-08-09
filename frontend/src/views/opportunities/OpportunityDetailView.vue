@@ -188,7 +188,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
-  BUSINESS_TYPE_OPTIONS,
   OPP_STAGE_LABEL,
   changeOpportunityStage,
   createOpportunityActivity,
@@ -196,10 +195,12 @@ import {
   fetchOpportunityDetail,
   type OpportunityActivity,
   type OpportunityDetail,
+  useBusinessTypes,
 } from '@/api/opportunities'
 
 const route = useRoute()
 const router = useRouter()
+const { businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
 const opp = ref<OpportunityDetail | null>(null)
@@ -326,7 +327,7 @@ function goBack() {
 }
 
 function typeLabel(code?: string) {
-  return BUSINESS_TYPE_OPTIONS.find((x) => x.value === code)?.label || code || '-'
+  return businessTypeLabel(code)
 }
 
 function formatAmount(v: number | string) {

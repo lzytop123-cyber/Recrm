@@ -109,7 +109,7 @@
               :style="isCompact ? { width: '100%' } : { width: '150px' }"
             >
               <el-option
-                v-for="opt in PROJECT_TYPE_OPTIONS"
+                v-for="opt in businessTypeOptions"
                 :key="opt.value"
                 :label="opt.label"
                 :value="opt.value"
@@ -1303,7 +1303,7 @@
           </el-form-item>
           <el-form-item label="交付类型" prop="project_type">
             <el-select v-model="initForm.project_type" style="width: 100%" @change="onProjectTypeChange">
-              <el-option v-for="opt in PROJECT_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+              <el-option v-for="opt in businessTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
           </el-form-item>
           <el-form-item label="立项门槛">
@@ -1862,7 +1862,7 @@
     <el-dialog
       v-model="evidenceVisible"
       :title="evidenceDialogTitle"
-      width="560px"
+      width="600px"
       destroy-on-close
       class="claim-dialog"
     >
@@ -1901,8 +1901,24 @@
             <p>{{ evidenceTarget.remark }}</p>
           </div>
           <div class="evidence-review-box">
-            <small>证据内容</small>
+            <small>完成说明</small>
             <p>{{ evidenceTarget.evidence || '尚未提交' }}</p>
+            <template v-if="evidenceTarget.evidence_link">
+              <small style="display: block; margin-top: 10px">相关链接</small>
+              <p>
+                <a :href="evidenceTarget.evidence_link" target="_blank" rel="noopener">
+                  {{ evidenceTarget.evidence_link }}
+                </a>
+              </p>
+            </template>
+            <template v-if="evidenceTarget.evidence_attachment">
+              <small style="display: block; margin-top: 10px">附件</small>
+              <AttachmentPreview
+                :filename="evidenceTarget.evidence_attachment"
+                :path="evidenceTarget.evidence_attachment_path"
+                size="md"
+              />
+            </template>
             <small v-if="evidenceTarget.evidence_reject_reason" class="evidence-reject">
               上次驳回：{{ evidenceTarget.evidence_reject_reason }}
             </small>
@@ -1915,18 +1931,69 @@
           </p>
         </template>
         <template v-else>
-          <p class="muted" style="margin: 0 0 8px">
-            提交后由项目负责人确认。可填文档说明或链接。
+          <div v-if="evidenceTarget.remark" class="evidence-review-box" style="margin-bottom: 12px">
+            <small>证据要求</small>
+            <p>{{ evidenceTarget.remark }}</p>
+          </div>
+          <p class="muted" style="margin: 0 0 12px">
+            提交后由项目负责人确认。请填写说明，并至少提供链接或附件其一。
           </p>
-          <p v-if="evidenceTarget.remark" class="muted" style="margin: 0 0 12px">
-            证据要求：{{ evidenceTarget.remark }}
-          </p>
-          <el-input
-            v-model="evidenceDraft"
-            type="textarea"
-            :rows="4"
-            placeholder="例如：客户确认记录 / 评审纪要链接"
-          />
+          <el-form label-position="top" @submit.prevent>
+            <el-form-item label="完成说明" required>
+              <el-input
+                v-model="evidenceDraft"
+                type="textarea"
+                :rows="3"
+                maxlength="1000"
+                show-word-limit
+                placeholder="对照证据要求，说明本节点已完成内容"
+              />
+            </el-form-item>
+            <el-form-item label="相关链接">
+              <el-input
+                v-model="evidenceLinkDraft"
+                placeholder="https:// 文档 / 评审纪要 / 测试报告链接"
+              />
+            </el-form-item>
+            <el-form-item label="附件">
+              <div class="accept-attach" :class="{ uploaded: !!evidenceAttachName }">
+                <template v-if="evidenceAttachName">
+                  <AttachmentPreview
+                    :filename="evidenceAttachName"
+                    :path="evidenceAttachPath || evidenceAttachPreviewUrl"
+                    size="md"
+                  />
+                  <div class="accept-attach-actions">
+                    <a
+                      v-if="evidenceAttachPreviewUrl"
+                      :href="evidenceAttachPreviewUrl"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      打开查看
+                    </a>
+                    <button type="button" class="text-link" @click="triggerEvidenceUpload">
+                      重新选择
+                    </button>
+                    <button type="button" class="text-link" @click="clearEvidenceAttachment">
+                      移除
+                    </button>
+                  </div>
+                </template>
+                <button v-else type="button" class="upload-box" @click="triggerEvidenceUpload">
+                  <b>上传截图 / 报告 / 确认材料</b>
+                  <small>支持 PDF、图片、Word、Excel、PPT、TXT · 单文件不超过 20MB</small>
+                </button>
+              </div>
+              <input
+                ref="evidenceFileRef"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                style="display: none"
+                @change="onEvidenceFileChange"
+              />
+            </el-form-item>
+          </el-form>
           <p
             v-if="evidenceTarget.evidence_reject_reason"
             class="evidence-reject"
@@ -1950,7 +2017,7 @@
         <el-button
           v-else-if="planInExecution"
           type="primary"
-          :loading="saving"
+          :loading="saving || uploadingEvidence"
           @click="submitMilestoneEvidence"
         >
           提交证据
@@ -2216,7 +2283,7 @@ import {
   ACCEPTANCE_RESULT_LABEL,
   HEALTH_LABEL,
   PROJECT_STATUS_LABEL,
-  PROJECT_TYPE_OPTIONS,
+  useBusinessTypes,
   TASK_STATUS_LABEL,
   acceptProject,
   addMilestone,
@@ -2261,8 +2328,10 @@ import {
 } from '@/api/tickets'
 import { useUserStore } from '@/stores/user'
 import { uploadFile } from '@/api/uploads'
+import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 
 const isCompact = useMatchMedia('(max-width: 768px)')
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 
 type TabKey = 'portfolio' | 'initiation' | 'execute' | 'acceptance'
 type OverviewMode = 'list' | 'board'
@@ -2425,6 +2494,17 @@ const evidenceVisible = ref(false)
 const evidenceMode = ref<'fill' | 'review'>('fill')
 const evidenceTarget = ref<ProjectMilestone | null>(null)
 const evidenceDraft = ref('')
+const evidenceLinkDraft = ref('')
+const evidenceAttachName = ref('')
+const evidenceAttachPath = ref('')
+const evidenceAttachPreviewUrl = ref('')
+const evidenceFileRef = ref<HTMLInputElement | null>(null)
+const uploadingEvidence = ref(false)
+const evidenceAttachExt = computed(() => {
+  const name = evidenceAttachName.value || ''
+  const ext = name.includes('.') ? name.split('.').pop() : ''
+  return (ext || 'FILE').toUpperCase()
+})
 const taskMilestoneOptions = ref<ProjectMilestone[]>([])
 const openTaskMilestones = computed(() =>
   taskMilestoneOptions.value.filter((m) => m.status !== 'done'),
@@ -2784,7 +2864,7 @@ const acceptanceCandidates = computed(() =>
 )
 
 function typeLabel(code?: string) {
-  return PROJECT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code || '—'
+  return businessTypeLabel(code)
 }
 
 function scheduleLabel(s?: string) {
@@ -3843,6 +3923,10 @@ function onMilestonePrimaryAction(row: ProjectMilestone) {
 function openEvidencePanel(row: ProjectMilestone) {
   evidenceTarget.value = row
   evidenceDraft.value = row.evidence || ''
+  evidenceLinkDraft.value = row.evidence_link || ''
+  evidenceAttachName.value = row.evidence_attachment || ''
+  evidenceAttachPath.value = row.evidence_attachment_path || ''
+  evidenceAttachPreviewUrl.value = evidenceAttachUrl(row)
   if (!planInExecution.value) {
     evidenceMode.value = 'review'
   } else if (!row.evidence || row.evidence_status === 'rejected') {
@@ -3853,6 +3937,41 @@ function openEvidencePanel(row: ProjectMilestone) {
     evidenceMode.value = 'fill'
   }
   evidenceVisible.value = true
+}
+
+function evidenceAttachUrl(row?: ProjectMilestone | null) {
+  const path = (row?.evidence_attachment_path || evidenceAttachPath.value || '').trim()
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path) || path.startsWith('/uploads/')) return path
+  return `/uploads/${path.replace(/^\/+/, '')}`
+}
+
+function triggerEvidenceUpload() {
+  evidenceFileRef.value?.click()
+}
+
+function clearEvidenceAttachment() {
+  evidenceAttachName.value = ''
+  evidenceAttachPath.value = ''
+  evidenceAttachPreviewUrl.value = ''
+}
+
+async function onEvidenceFileChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  uploadingEvidence.value = true
+  try {
+    const { data } = await uploadFile(file, 'milestone_evidence')
+    evidenceAttachName.value = data.filename
+    evidenceAttachPath.value = data.path
+    evidenceAttachPreviewUrl.value = data.url || evidenceAttachUrl()
+  } catch {
+    /* interceptor */
+  } finally {
+    uploadingEvidence.value = false
+  }
 }
 
 async function confirmEvidence(row: ProjectMilestone) {
@@ -3927,14 +4046,27 @@ async function markMilestoneDone(row: ProjectMilestone) {
 
 async function submitMilestoneEvidence() {
   if (!planProjectId.value || !evidenceTarget.value) return
-  if (!evidenceDraft.value.trim()) {
-    ElMessage.warning('请填写完成证据')
+  const text = evidenceDraft.value.trim()
+  const link = evidenceLinkDraft.value.trim()
+  if (!text) {
+    ElMessage.warning('请填写完成说明')
+    return
+  }
+  if (!link && !evidenceAttachPath.value) {
+    ElMessage.warning('请提供证据链接或上传附件')
+    return
+  }
+  if (link && !/^https?:\/\//i.test(link)) {
+    ElMessage.warning('证据链接请以 http:// 或 https:// 开头')
     return
   }
   saving.value = true
   try {
     await updateMilestone(planProjectId.value, evidenceTarget.value.id, {
-      evidence: evidenceDraft.value.trim(),
+      evidence: text,
+      evidence_link: link || null,
+      evidence_attachment: evidenceAttachName.value || null,
+      evidence_attachment_path: evidenceAttachPath.value || null,
     })
     ElMessage.success('证据已提交，等待项目负责人确认')
     evidenceVisible.value = false

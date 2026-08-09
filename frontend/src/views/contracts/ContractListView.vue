@@ -343,7 +343,7 @@
         <el-form-item label="合同类型">
           <el-select v-model="form.contract_type" style="width: 100%">
             <el-option
-              v-for="opt in CONTRACT_TYPE_OPTIONS"
+              v-for="opt in businessTypeOptions"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -376,7 +376,14 @@
             @click="pickContractProof"
           >
             <template v-if="form.proof_filename">
-              <b>{{ form.proof_filename }}</b>
+              <AttachmentPreview
+                v-if="form.proof_path"
+                :filename="form.proof_filename"
+                :path="form.proof_path"
+                size="sm"
+                @click.stop
+              />
+              <b v-else>{{ form.proof_filename }}</b>
               <small>{{ uploadingProof ? '上传中…' : '已上传 · 可重新选择' }}</small>
             </template>
             <template v-else>
@@ -658,7 +665,12 @@
         </el-descriptions-item>
         <el-descriptions-item label="提交人">{{ claimDetail.submitted_by_name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="到账证明" :span="2">
-          {{ claimDetail.proof_filename || '未上传' }}
+          <AttachmentPreview
+            v-if="claimDetail.proof_filename"
+            :filename="claimDetail.proof_filename"
+            empty-text="未上传"
+          />
+          <span v-else>未上传</span>
         </el-descriptions-item>
         <el-descriptions-item label="已核销金额">
           ¥{{ formatAmount(claimDetail.allocated_amount) }}
@@ -755,7 +767,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   CONTRACT_STATUS_LABEL,
-  CONTRACT_TYPE_OPTIONS,
+  useBusinessTypes,
   PAYMENT_METHOD_OPTIONS,
   createContract,
   fetchContractStats,
@@ -779,6 +791,7 @@ import {
 } from '@/api/finance'
 import { uploadFile } from '@/api/uploads'
 import { useUserStore } from '@/stores/user'
+import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 
 /** HTTP 非 localhost 下 crypto.randomUUID 不可用，幂等键用兼容实现 */
 function newIdempotencyKey(): string {
@@ -802,6 +815,7 @@ const props = withDefaults(
 
 const router = useRouter()
 const isCompact = useMatchMedia('(max-width: 768px)')
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const userStore = useUserStore()
 
 const canConfirmClaim = computed(() =>
@@ -1005,7 +1019,7 @@ const statCards = computed(() => {
 })
 
 function typeLabel(code: string) {
-  return CONTRACT_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
+  return businessTypeLabel(code)
 }
 
 function formatAmount(v?: number | string | null) {

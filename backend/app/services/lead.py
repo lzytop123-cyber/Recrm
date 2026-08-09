@@ -788,10 +788,10 @@ def add_follow_up(db: Session, user: User, lead_id: int, payload: LeadFollowUpCr
 
 
 def convert_lead(db: Session, user: User, lead_id: int, payload: LeadConvertRequest) -> dict:
-    from app.models.contract import CONTRACT_TYPES
     from app.models.opportunity import OPP_STAGE_NEED, OPP_STAGES, Opportunity, OpportunityActivity
     from app.models.opportunity import OPP_STAGE_LABEL
     from app.services.opportunity import _gen_opportunity_no
+    from app.services import platform as platform_service
 
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
@@ -801,7 +801,7 @@ def convert_lead(db: Session, user: User, lead_id: int, payload: LeadConvertRequ
         raise HTTPException(status_code=400, detail="当前状态不可转化")
 
     business_type = payload.business_type or lead.business_type or "other"
-    if business_type not in CONTRACT_TYPES:
+    if business_type not in platform_service.business_type_values(db, enabled_only=False):
         business_type = "other"
     stage = payload.opportunity_stage or OPP_STAGE_NEED
     if stage not in OPP_STAGES:

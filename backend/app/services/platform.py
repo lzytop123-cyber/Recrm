@@ -3,6 +3,8 @@
 """
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -25,6 +27,7 @@ from app.schemas.system import (
     SystemConfigCreate,
     SystemConfigUpdate,
     SystemDictionaryCreate,
+    SystemDictionaryUpdate,
 )
 
 
@@ -145,6 +148,7 @@ def update_config(db: Session, user: User, key: str, payload: SystemConfigUpdate
 
 
 def list_dictionaries(db: Session) -> list[SystemDictionary]:
+    ensure_business_type_dictionary(db)
     return db.query(SystemDictionary).order_by(SystemDictionary.code.asc()).all()
 
 
@@ -160,10 +164,168 @@ def create_dictionary(db: Session, payload: SystemDictionaryCreate) -> SystemDic
 
 
 def get_dictionary(db: Session, code: str) -> SystemDictionary:
+    if code == BUSINESS_TYPE_DICT_CODE:
+        return ensure_business_type_dictionary(db)
     row = db.query(SystemDictionary).filter(SystemDictionary.code == code).first()
     if not row:
         raise HTTPException(status_code=404, detail="字典不存在")
     return row
+
+
+def update_dictionary(
+    db: Session, code: str, payload: SystemDictionaryUpdate
+) -> SystemDictionary:
+    row = get_dictionary(db, code)
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        name = str(data["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="字典名称不能为空")
+        row.name = name
+    if "items_json" in data:
+        # 统一走规范化，避免脏数据
+        if code == BUSINESS_TYPE_DICT_CODE:
+            raw_items = json.loads(data["items_json"] or "[]")
+            if not isinstance(raw_items, list):
+                raise HTTPException(status_code=400, detail="字典项格式无效")
+            row.items_json = json.dumps(
+                _normalize_business_type_items(raw_items),
+                ensure_ascii=False,
+            )
+        else:
+            row.items_json = data["items_json"]
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ---- business type dictionary ----
+
+BUSINESS_TYPE_DICT_CODE = "business_type"
+
+DEFAULT_BUSINESS_TYPE_ITEMS: list[dict] = [
+    {"value": "ai_product", "label": "AI产品销售", "enabled": True, "sort": 10},
+    {"value": "ai_custom", "label": "AI定制开发", "enabled": True, "sort": 20},
+    {"value": "media_ops", "label": "自媒体代运营", "enabled": True, "sort": 30},
+    {"value": "other", "label": "其他", "enabled": True, "sort": 90},
+]
+
+_VALUE_RE = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
+
+
+def _normalize_business_type_items(raw: list) -> list[dict]:
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail=f"第 {idx + 1} 项格式无效")
+        value = str(item.get("value") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not value or not label:
+            raise HTTPException(status_code=400, detail=f"第 {idx + 1} 项编码和名称必填")
+        if not _VALUE_RE.match(value):
+            raise HTTPException(
+                status_code=400,
+                detail=f"编码「{value}」仅支持小写字母开头，字母/数字/下划线，最长 30",
+            )
+        if value in seen:
+            raise HTTPException(status_code=400, detail=f"编码重复：{value}")
+        seen.add(value)
+        enabled = bool(item.get("enabled", True))
+        try:
+            sort = int(item.get("sort", (idx + 1) * 10))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"编码「{value}」排序值无效") from exc
+        cleaned.append(
+            {"value": value, "label": label[:80], "enabled": enabled, "sort": sort}
+        )
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="至少保留一个业务类型")
+    if "other" not in seen:
+        raise HTTPException(status_code=400, detail="请保留编码为 other 的「其他」类型")
+    if not any(x["enabled"] for x in cleaned):
+        raise HTTPException(status_code=400, detail="至少启用一个业务类型")
+    cleaned.sort(key=lambda x: (x["sort"], x["value"]))
+    return cleaned
+
+
+def ensure_business_type_dictionary(db: Session) -> SystemDictionary:
+    row = (
+        db.query(SystemDictionary)
+        .filter(SystemDictionary.code == BUSINESS_TYPE_DICT_CODE)
+        .first()
+    )
+    if row:
+        return row
+    row = SystemDictionary(
+        code=BUSINESS_TYPE_DICT_CODE,
+        name="业务类型",
+        items_json=json.dumps(DEFAULT_BUSINESS_TYPE_ITEMS, ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def parse_dictionary_items(items_json: Optional[str]) -> list[dict]:
+    if not items_json:
+        return []
+    try:
+        data = json.loads(items_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[dict] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("value") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not value or not label:
+            continue
+        out.append(
+            {
+                "value": value,
+                "label": label,
+                "enabled": bool(item.get("enabled", True)),
+                "sort": int(item.get("sort") or 100),
+            }
+        )
+    out.sort(key=lambda x: (x["sort"], x["value"]))
+    return out
+
+
+def list_business_type_items(db: Session, *, enabled_only: bool = False) -> list[dict]:
+    row = ensure_business_type_dictionary(db)
+    items = parse_dictionary_items(row.items_json)
+    if not items:
+        items = list(DEFAULT_BUSINESS_TYPE_ITEMS)
+    if enabled_only:
+        items = [x for x in items if x.get("enabled", True)]
+    return items
+
+
+def business_type_values(db: Session, *, enabled_only: bool = False) -> set[str]:
+    return {x["value"] for x in list_business_type_items(db, enabled_only=enabled_only)}
+
+
+def business_type_label_map(db: Session) -> dict[str, str]:
+    return {x["value"]: x["label"] for x in list_business_type_items(db, enabled_only=False)}
+
+
+def assert_business_type(db: Session, value: str, *, enabled_only: bool = True) -> str:
+    code = (value or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="业务类型不能为空")
+    allowed = business_type_values(db, enabled_only=enabled_only)
+    if code not in allowed:
+        # 兼容：已停用但仍存在的类型，在非 enabled_only 场景可用
+        if enabled_only and code in business_type_values(db, enabled_only=False):
+            raise HTTPException(status_code=400, detail="该业务类型已停用")
+        raise HTTPException(status_code=400, detail="无效的业务类型")
+    return code
 
 
 # ---- delegations ----

@@ -21,6 +21,9 @@ export interface ProjectMilestone {
   role?: string | null
   deliverable?: string | null
   evidence?: string | null
+  evidence_link?: string | null
+  evidence_attachment?: string | null
+  evidence_attachment_path?: string | null
   evidence_status?: string | null
   evidence_confirmed_by?: number | null
   evidence_confirmed_at?: string | null
@@ -206,6 +209,9 @@ export const PROJECT_TYPE_OPTIONS = [
   { value: 'media_ops', label: '自媒体代运营' },
   { value: 'other', label: '其他' },
 ]
+
+// 兼容旧引用：优先使用 @/api/dictionaries 的 useBusinessTypes
+export { DEFAULT_BUSINESS_TYPE_OPTIONS, useBusinessTypes, businessTypeLabel } from './dictionaries'
 
 export const MILESTONE_STATUS_LABEL: Record<string, string> = {
   pending: '未开始',

@@ -21,7 +21,6 @@ from app.models.contract import (
     CONTRACT_STATUS_SIGNED,
     CONTRACT_STATUS_TERMINATED,
     CONTRACT_STATUSES,
-    CONTRACT_TYPES,
     Contract,
 )
 from app.models.customer import Customer
@@ -219,8 +218,9 @@ def assert_can_edit_draft(user: User, contract: Contract) -> None:
 
 
 def create_contract(db: Session, user: User, payload: ContractCreate) -> Contract:
-    if payload.contract_type not in CONTRACT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的合同类型")
+    from app.services import platform as platform_service
+
+    platform_service.assert_business_type(db, payload.contract_type, enabled_only=True)
     customer = db.query(Customer).filter(Customer.id == payload.customer_id).first()
     if not customer:
         raise HTTPException(status_code=400, detail="客户不存在")
@@ -269,8 +269,12 @@ def update_contract(db: Session, user: User, contract_id: int, payload: Contract
     assert_can_edit_draft(user, contract)
 
     data = payload.model_dump(exclude_unset=True)
-    if "contract_type" in data and data["contract_type"] not in CONTRACT_TYPES:
-        raise HTTPException(status_code=400, detail="无效的合同类型")
+    if "contract_type" in data and data["contract_type"] is not None:
+        from app.services import platform as platform_service
+
+        data["contract_type"] = platform_service.assert_business_type(
+            db, data["contract_type"], enabled_only=True
+        )
     if "customer_id" in data:
         customer = db.query(Customer).filter(Customer.id == data["customer_id"]).first()
         if not customer:

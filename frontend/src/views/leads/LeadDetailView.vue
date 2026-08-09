@@ -163,10 +163,12 @@
         </el-form-item>
         <el-form-item label="业务类型">
           <el-select v-model="convertBizType" style="width: 100%">
-            <el-option label="AI产品销售" value="ai_product" />
-            <el-option label="AI定制开发" value="ai_custom" />
-            <el-option label="自媒体代运营" value="media_ops" />
-            <el-option label="其他" value="other" />
+            <el-option
+              v-for="opt in businessTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -273,10 +275,12 @@ import {
   type LeadDetail,
   type LeadQuota,
 } from '@/api/leads'
+import { useBusinessTypes } from '@/api/dictionaries'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const { businessTypeOptions } = useBusinessTypes()
 
 const loading = ref(false)
 const saving = ref(false)

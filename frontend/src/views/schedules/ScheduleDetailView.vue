@@ -35,6 +35,7 @@
       </template>
       <el-descriptions :column="descCols" border>
         <el-descriptions-item label="资源类型">{{ resourceLabel(item.resource_type) }}</el-descriptions-item>
+        <el-descriptions-item label="关联方式">{{ linkModeLabel(item) }}</el-descriptions-item>
         <el-descriptions-item label="人员">{{ item.employee_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="申请人">{{ item.creator_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="开始时间">{{ formatTime(item.start_time) }}</el-descriptions-item>
@@ -114,6 +115,12 @@ const scheduleId = computed(() => Number(route.params.id))
 
 function resourceLabel(code: string) {
   return SCHEDULE_RESOURCE_OPTIONS.find((x) => x.value === code)?.label || code
+}
+
+function linkModeLabel(row: Schedule) {
+  if (row.project_task_id || row.task_no) return '任务排期'
+  if (row.project_id) return '项目排期'
+  return '一般活动'
 }
 
 function statusTag(s: string) {

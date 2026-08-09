@@ -52,10 +52,12 @@
             </el-form-item>
             <el-form-item label="需求方向" prop="business_type">
               <el-select v-model="form.business_type" style="width: 100%">
-                <el-option label="AI产品销售" value="ai_product" />
-                <el-option label="AI定制开发" value="ai_custom" />
-                <el-option label="自媒体代运营" value="media_ops" />
-                <el-option label="其他" value="other" />
+                <el-option
+                  v-for="opt in businessTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
               </el-select>
             </el-form-item>
             <el-form-item label="录入人">
@@ -107,9 +109,12 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { checkLeadDuplicates, createLead } from '@/api/leads'
+import { useBusinessTypes } from '@/api/dictionaries'
 import { useUserStore } from '@/stores/user'
 
+const { businessTypeOptions } = useBusinessTypes()
 const userStore = useUserStore()
+
 const createVisible = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
