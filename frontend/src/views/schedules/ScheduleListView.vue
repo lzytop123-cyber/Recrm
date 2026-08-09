@@ -373,40 +373,29 @@
           <el-input v-model="form.title" maxlength="200" />
         </el-form-item>
         <el-form-item label="资源角色" prop="resource_type">
-          <el-select
-            v-model="form.resource_type"
-            style="width: 100%"
-            @change="onResourceTypeChange"
-          >
+          <el-select v-model="form.resource_type" style="width: 100%">
             <el-option v-for="opt in SCHEDULE_RESOURCE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <div class="field-tip">按组织架构角色筛选可选人员（讲师/主播→讲师主播岗）</div>
+          <div class="field-tip">用于排期分类筛选，与选人无关</div>
         </el-form-item>
         <el-form-item label="人员" prop="employee_id">
-          <el-select
+          <el-tree-select
             v-model="form.employee_id"
+            :data="personTree"
             filterable
+            check-strictly
+            default-expand-all
+            :render-after-expand="false"
+            :loading="personTreeLoading"
             teleported
             :placement="isCompact ? 'top' : 'bottom'"
-            :loading="resourceLoading"
             popper-class="schedule-person-popper"
-            placeholder="选择组织架构中的人员"
+            placeholder="按组织架构选择人员"
             style="width: 100%"
-          >
-            <el-option
-              v-for="u in resources"
-              :key="u.id"
-              :label="resourceOptionLabel(u)"
-              :value="u.id"
-            >
-              <div class="resource-opt">
-                <b>{{ u.name }}</b>
-                <small>{{ resourceOptionMeta(u) }}</small>
-              </div>
-            </el-option>
-          </el-select>
-          <div v-if="!resourceLoading && !resources.length" class="field-tip">
-            该角色下暂无人员，请先在组织架构为员工分配对应角色
+            :props="{ label: 'label', value: 'value', children: 'children', disabled: 'disabled' }"
+          />
+          <div v-if="!personTreeLoading && !personTreeHasPeople" class="field-tip">
+            组织架构暂无在职人员，请先在组织架构维护员工
           </div>
         </el-form-item>
         <el-form-item label="时间" required>
@@ -526,13 +515,13 @@ import {
   confirmSchedule,
   coordinateSchedule,
   createSchedule,
+  fetchPersonTree,
   fetchResourceLoad,
-  fetchResourceOptions,
   fetchScheduleDetail,
   fetchSchedules,
   startSchedule,
+  type PersonTreeNode,
   type ResourceLoad,
-  type ResourceOption,
   type Schedule,
   type ScheduleConflict,
 } from '@/api/schedules'
@@ -562,8 +551,18 @@ const viewMode = ref<ViewMode>('week')
 const roleFilter = ref<RoleFilter>('all')
 const items = ref<Schedule[]>([])
 const resourceLoads = ref<ResourceLoad[]>([])
-const resources = ref<ResourceOption[]>([])
-const resourceLoading = ref(false)
+const personTree = ref<PersonTreeNode[]>([])
+const personTreeLoading = ref(false)
+const personTreeHasPeople = computed(() => {
+  const walk = (nodes: PersonTreeNode[]): boolean => {
+    for (const n of nodes) {
+      if (n.is_person) return true
+      if (n.children?.length && walk(n.children)) return true
+    }
+    return false
+  }
+  return walk(personTree.value)
+})
 const projectOptions = ref<Project[]>([])
 const taskOptions = ref<ProjectTask[]>([])
 const anchor = ref(startOfDay(new Date()))
@@ -1148,8 +1147,8 @@ async function openCreate(presetProjectId?: number) {
   const end = new Date(start)
   end.setHours(12)
   form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
-  await loadResources(form.resource_type)
-  form.employee_id = resources.value[0]?.id
+  await loadPersonTree()
+  form.employee_id = firstPersonId(personTree.value)
   createVisible.value = true
   if (presetProjectId) {
     form.link_mode = 'project'
@@ -1308,40 +1307,31 @@ watch([viewMode, roleFilter, anchor], () => {
   reload()
 })
 
-async function loadResources(resourceType?: string) {
-  resourceLoading.value = true
+function firstPersonId(nodes: PersonTreeNode[]): number | undefined {
+  for (const n of nodes) {
+    if (n.is_person && typeof n.value === 'number') return n.value
+    if (n.children?.length) {
+      const hit = firstPersonId(n.children)
+      if (hit != null) return hit
+    }
+  }
+  return undefined
+}
+
+async function loadPersonTree() {
+  personTreeLoading.value = true
   try {
-    const { data } = await fetchResourceOptions(
-      resourceType ? { resource_type: resourceType } : undefined,
-    )
-    resources.value = data
+    const { data } = await fetchPersonTree()
+    personTree.value = data || []
   } catch {
-    resources.value = []
+    personTree.value = []
   } finally {
-    resourceLoading.value = false
+    personTreeLoading.value = false
   }
-}
-
-async function onResourceTypeChange(v?: string) {
-  await loadResources(v || form.resource_type)
-  if (!resources.value.some((u) => u.id === form.employee_id)) {
-    form.employee_id = resources.value[0]?.id
-  }
-}
-
-function resourceOptionMeta(u: ResourceOption) {
-  const roles = (u.role_names || []).filter(Boolean).join('、')
-  const parts = [u.department_name, u.job_title, roles].filter(Boolean)
-  return parts.join(' · ') || '未标注部门/角色'
-}
-
-function resourceOptionLabel(u: ResourceOption) {
-  const meta = resourceOptionMeta(u)
-  return meta ? `${u.name}（${meta}）` : u.name
 }
 
 onMounted(async () => {
-  await loadResources('instructor')
+  await loadPersonTree()
   await searchProjects('')
   await reload()
   await applyCreateQuery()
@@ -1354,21 +1344,6 @@ onMounted(async () => {
   color: var(--crm-ink-soft);
   font-size: 12px;
   line-height: 1.4;
-}
-.resource-opt {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1.3;
-  padding: 2px 0;
-}
-.resource-opt b {
-  font-weight: 600;
-  color: var(--crm-ink, #1f2937);
-}
-.resource-opt small {
-  color: var(--crm-ink-soft, #64748b);
-  font-size: 12px;
 }
 @media (max-width: 768px) {
   .schedule-type-group {
@@ -1385,22 +1360,31 @@ onMounted(async () => {
 }
 </style>
 
-<!-- 下拉挂到 body，需非 scoped -->
+<!-- 树下拉挂到 body，需非 scoped -->
 <style>
 .schedule-person-popper.el-select__popper,
+.schedule-person-popper.el-tree-select__popper,
 .schedule-person-popper {
   max-width: min(92vw, 420px);
 }
-.schedule-person-popper .el-select-dropdown__wrap {
-  max-height: min(280px, 45vh) !important;
+.schedule-person-popper .el-select-dropdown__wrap,
+.schedule-person-popper .el-tree-select__popper .el-scrollbar__wrap,
+.schedule-person-popper .el-scrollbar__wrap {
+  max-height: min(320px, 50vh) !important;
   overflow-y: auto !important;
 }
-.schedule-person-popper .el-select-dropdown__item {
+.schedule-person-popper .el-tree-node__content {
   height: auto;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  line-height: 1.35;
+  min-height: 32px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   white-space: normal;
+  line-height: 1.35;
+}
+.schedule-person-popper .el-tree-node.is-disabled > .el-tree-node__content {
+  cursor: default;
+  color: var(--crm-ink-soft, #64748b);
+  font-weight: 600;
 }
 </style>
 

@@ -34,7 +34,6 @@ from app.models.schedule import (
     SCHEDULE_TYPES,
     Schedule,
 )
-from app.models.role import Role
 from app.models.ticket import Ticket
 from app.models.timesheet import (
     TIMESHEET_STATUS_DRAFT,
@@ -500,12 +499,12 @@ def cancel_schedule(
     return enrich_schedule(db, item)
 
 
-# 排期「资源角色」→ 组织架构角色 code（与 seed 角色对齐）
+# 排期「资源角色」→ 组织架构角色 code（仅用于排序靠前，不卡死可选人）
 SCHEDULE_RESOURCE_ORG_ROLE_CODES: dict[str, set[str] | None] = {
     "instructor": {"instructor"},  # 讲师主播
     "streamer": {"instructor"},  # 主播同属讲师主播岗
     "shooting_edit": {"brand", "operations"},  # 品宣 / 运营常兼拍摄剪辑
-    "other": None,  # 不按角色过滤
+    "other": None,
 }
 
 
@@ -514,27 +513,24 @@ def list_resource_options(
     *,
     resource_type: Optional[str] = None,
 ) -> list[dict]:
-    """可选按排期资源角色过滤组织架构中对应角色的在职人员。"""
+    """列出组织架构在职人员（含部门/岗位/角色）；resource_type 仅把匹配角色排到前面。"""
     from sqlalchemy.orm import joinedload
 
-    q = (
+    users = (
         db.query(User)
         .options(joinedload(User.roles), joinedload(User.department))
         .filter(User.is_active.is_(True))
+        .order_by(User.id.asc())
+        .limit(500)
+        .all()
     )
-    role_codes: set[str] | None = None
-    if resource_type:
-        if resource_type in SCHEDULE_RESOURCE_ORG_ROLE_CODES:
-            role_codes = SCHEDULE_RESOURCE_ORG_ROLE_CODES[resource_type]
-        # 未知类型时不过滤，避免误伤
-    if role_codes:
-        q = q.filter(User.roles.any(Role.code.in_(list(role_codes))))
-
-    users = q.order_by(User.id.asc()).limit(200).all()
+    prefer_codes = SCHEDULE_RESOURCE_ORG_ROLE_CODES.get(resource_type or "", None) if resource_type else None
     out: list[dict] = []
     for u in users:
+        role_codes = {r.code for r in (u.roles or []) if r.code}
         role_names = [r.name for r in (u.roles or [])]
         dept = u.department.name if u.department else None
+        preferred = bool(prefer_codes and role_codes.intersection(prefer_codes))
         out.append(
             {
                 "id": u.id,
@@ -542,9 +538,93 @@ def list_resource_options(
                 "department_name": dept,
                 "job_title": u.job_title,
                 "role_names": role_names,
+                "_preferred": preferred,
             }
         )
+    out.sort(
+        key=lambda x: (
+            0 if x.get("_preferred") else 1,
+            x.get("department_name") or "\uffff",
+            x.get("name") or "",
+            x["id"],
+        )
+    )
+    for row in out:
+        row.pop("_preferred", None)
     return out
+
+
+def _person_leaf_label(u: User) -> str:
+    name = u.real_name or u.username
+    title = (u.job_title or "").strip()
+    if not title:
+        role_names = [r.name for r in (u.roles or []) if r.name]
+        title = "、".join(role_names[:2]) if role_names else ""
+    return f"{name} · {title}" if title else name
+
+
+def list_person_tree(db: Session) -> list[dict]:
+    """组织架构部门树 + 在职人员叶子（供排期选人；部门节点不可选）。"""
+    from sqlalchemy.orm import joinedload
+
+    from app.services import org as org_service
+
+    users = (
+        db.query(User)
+        .options(joinedload(User.roles), joinedload(User.department))
+        .filter(User.is_active.is_(True))
+        .order_by(User.id.asc())
+        .limit(500)
+        .all()
+    )
+    by_dept: dict[Optional[int], list[User]] = {}
+    for u in users:
+        by_dept.setdefault(u.department_id, []).append(u)
+
+    def attach(dept) -> dict:
+        children: list[dict] = []
+        for child in getattr(dept, "children", None) or []:
+            children.append(attach(child))
+        for u in by_dept.get(dept.id, []):
+            children.append(
+                {
+                    "value": u.id,
+                    "label": _person_leaf_label(u),
+                    "disabled": False,
+                    "is_person": True,
+                }
+            )
+        return {
+            "value": f"d:{dept.id}",
+            "label": dept.name,
+            "disabled": True,
+            "is_person": False,
+            "children": children,
+        }
+
+    roots = org_service.build_department_tree(db)
+    tree = [attach(d) for d in roots]
+
+    unassigned = by_dept.get(None, [])
+    if unassigned:
+        tree.append(
+            {
+                "value": "d:unassigned",
+                "label": "未分配部门",
+                "disabled": True,
+                "is_person": False,
+                "children": [
+                    {
+                        "value": u.id,
+                        "label": _person_leaf_label(u),
+                        "disabled": False,
+                        "is_person": True,
+                    }
+                    for u in unassigned
+                ],
+            }
+        )
+    return tree
 
 
 def resource_load(

@@ -606,13 +606,20 @@
         <section class="plan-bottom">
           <article class="crm-panel plan-side-card">
             <div class="card-head plan-panel-head">
-              <div>
+              <div class="plan-panel-copy">
                 <b>风险与问题</b>
-                <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
-                  影响范围、责任人和处理期限可追溯
-                </span>
+                <span class="plan-panel-desc">影响范围、责任人和处理期限可追溯</span>
               </div>
-              <button v-if="canManagePlan" type="button" class="text-link" @click="openRiskDialog">＋ 新增</button>
+              <div class="plan-panel-actions">
+                <button
+                  v-if="canManagePlan"
+                  type="button"
+                  class="text-link"
+                  @click="openRiskDialog"
+                >
+                  ＋ 新增
+                </button>
+              </div>
             </div>
             <div v-if="planRisks.length" class="plan-alert-list">
               <div
@@ -638,22 +645,28 @@
 
           <article class="crm-panel plan-side-card">
             <div class="card-head plan-panel-head">
-              <div>
+              <div class="plan-panel-copy">
                 <b>变更记录</b>
-                <span class="muted" style="display: block; margin-top: 4px; font-weight: 400">
-                  改范围请用右上角「申请基线变更」
+                <span class="plan-panel-desc">
+                  {{
+                    planBaselineLocked
+                      ? '基线锁定后，改范围/工期走变更审批'
+                      : '确认基线后，改范围请走变更审批'
+                  }}
                 </span>
               </div>
-              <button
-                v-if="canManagePlan && planBaselineLocked"
-                type="button"
-                class="text-link"
-                @click="openChangeDialog"
-              >
-                ＋ 申请变更
-              </button>
+              <div class="plan-panel-actions">
+                <button
+                  v-if="canManagePlan"
+                  type="button"
+                  class="text-link"
+                  @click="openChangeDialog"
+                >
+                  ＋ 申请变更
+                </button>
+              </div>
             </div>
-            <div class="plan-change-list">
+            <div v-if="planChanges.length" class="plan-change-list">
               <div v-for="item in planChanges" :key="item.id" class="plan-change-row">
                 <span>{{ item.code }} · {{ item.title }}</span>
                 <span class="change-row-right">
@@ -664,18 +677,18 @@
                   </template>
                 </span>
               </div>
-              <div v-if="!planChanges.length" class="plan-empty" style="border: 0; padding-top: 0">
-                暂无变更申请
-              </div>
+            </div>
+            <div v-else class="plan-empty">
+              {{ canManagePlan ? '暂无变更申请，点击右上角发起' : '暂无变更申请' }}
             </div>
           </article>
         </section>
 
         <section class="crm-panel" style="margin-top: 14px">
           <div class="card-head plan-panel-head">
-            <div>
+            <div class="plan-panel-copy">
               <b>人员档期</b>
-              <span class="muted" style="margin-left: 8px">
+              <span class="plan-panel-desc">
                 谁在何时被占用（日历）；与上方「计划节点」不同，不影响进度
               </span>
             </div>

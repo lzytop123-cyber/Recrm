@@ -80,6 +80,14 @@ export interface ResourceOption {
   role_names?: string[]
 }
 
+export interface PersonTreeNode {
+  value: number | string
+  label: string
+  disabled?: boolean
+  is_person?: boolean
+  children?: PersonTreeNode[]
+}
+
 export interface ResourceLoad {
   employee_id: number
   employee_name: string
@@ -124,6 +132,10 @@ export function fetchScheduleStats() {
 
 export function fetchResourceOptions(params?: { resource_type?: string }) {
   return request.get<ResourceOption[]>('/schedules/options/resources', { params })
+}
+
+export function fetchPersonTree() {
+  return request.get<PersonTreeNode[]>('/schedules/options/person-tree')
 }
 
 export function fetchResourceLoad(params: {

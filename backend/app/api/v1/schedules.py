@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker
@@ -34,6 +34,17 @@ class ResourceOption(BaseModel):
     role_names: list[str] = []
 
 
+class PersonTreeNode(BaseModel):
+    value: int | str
+    label: str
+    disabled: bool = False
+    is_person: bool = False
+    children: list["PersonTreeNode"] = Field(default_factory=list)
+
+
+PersonTreeNode.model_rebuild()
+
+
 @router.get("/stats", response_model=ScheduleStatsOut, summary="排期统计")
 def stats(
     db: Annotated[Session, Depends(get_db)],
@@ -48,7 +59,7 @@ def resource_options(
     current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
     resource_type: Optional[str] = Query(
         None,
-        description="按排期资源角色过滤组织架构对应角色人员：instructor/streamer/shooting_edit/other",
+        description="可选；仅把匹配组织角色的人排到前面：instructor/streamer/shooting_edit/other",
     ),
 ) -> list[ResourceOption]:
     _ = current_user
@@ -56,6 +67,19 @@ def resource_options(
         ResourceOption(**x)
         for x in schedule_service.list_resource_options(db, resource_type=resource_type)
     ]
+
+
+@router.get(
+    "/options/person-tree",
+    response_model=list[PersonTreeNode],
+    summary="组织架构人员树（部门下挂人）",
+)
+def person_tree(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
+) -> list[PersonTreeNode]:
+    _ = current_user
+    return [PersonTreeNode.model_validate(x) for x in schedule_service.list_person_tree(db)]
 
 
 @router.get("/resource-load", response_model=ResourceLoadListOut, summary="资源负载")
