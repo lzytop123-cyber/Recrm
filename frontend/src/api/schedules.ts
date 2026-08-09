@@ -75,6 +75,9 @@ export interface ScheduleStats {
 export interface ResourceOption {
   id: number
   name: string
+  department_name?: string | null
+  job_title?: string | null
+  role_names?: string[]
 }
 
 export interface ResourceLoad {
@@ -119,8 +122,8 @@ export function fetchScheduleStats() {
   return request.get<ScheduleStats>('/schedules/stats')
 }
 
-export function fetchResourceOptions() {
-  return request.get<ResourceOption[]>('/schedules/options/resources')
+export function fetchResourceOptions(params?: { resource_type?: string }) {
+  return request.get<ResourceOption[]>('/schedules/options/resources', { params })
 }
 
 export function fetchResourceLoad(params: {

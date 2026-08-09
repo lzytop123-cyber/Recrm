@@ -7,7 +7,7 @@
         <p class="todo-head-desc">审批、工单、线索、任务、档期汇总一处；点击条目进入对应业务页处理。</p>
       </div>
       <div class="todo-head-actions">
-        <el-button @click="reload">刷新</el-button>
+        <el-button :size="isCompact ? 'small' : 'default'" @click="reload">刷新</el-button>
       </div>
     </header>
 
@@ -43,7 +43,19 @@
           <strong>{{ listTitle }}</strong>
           <p class="todo-panel-hint">按紧急程度与到期时间优先处理</p>
         </div>
-        <span class="todo-count-chip">{{ filtered.length }} 项</span>
+        <div class="todo-panel-tools">
+          <span class="todo-count-chip">{{ filtered.length }} 项</span>
+          <el-button
+            v-if="isCompact"
+            class="todo-refresh-inline"
+            text
+            type="primary"
+            size="small"
+            @click="reload"
+          >
+            刷新
+          </el-button>
+        </div>
       </div>
 
       <el-alert
@@ -66,15 +78,24 @@
         >
           <div class="todo-row-top">
             <span class="todo-cat" :data-cat="item.category">{{ item.category_label }}</span>
-            <span v-if="item.status_label" class="todo-status">{{ item.status_label }}</span>
+            <span
+              v-if="item.status_label && showStatus(item)"
+              class="todo-status"
+            >
+              {{ item.status_label }}
+            </span>
+            <span class="todo-go todo-go--top">去处理</span>
           </div>
           <div class="todo-row-main">
             <strong>{{ item.title }}</strong>
-            <span v-if="item.subtitle" class="todo-sub">{{ item.subtitle }}</span>
+            <div class="todo-row-foot">
+              <span v-if="item.subtitle" class="todo-sub">{{ item.subtitle }}</span>
+              <span v-if="item.due_at" class="todo-due">{{ formatDue(item.due_at) }}</span>
+            </div>
           </div>
           <div class="todo-row-meta">
             <span v-if="item.due_at" class="todo-due">{{ formatDue(item.due_at) }}</span>
-            <span v-else class="todo-due todo-due--empty" />
+            <span v-if="item.status_label && !isCompact" class="todo-status">{{ item.status_label }}</span>
             <span class="todo-go">去处理</span>
           </div>
         </button>
@@ -91,7 +112,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchMyTodos, type TodoCategory, type TodoList } from '@/api/todos'
+import { fetchMyTodos, type TodoCategory, type TodoItem, type TodoList } from '@/api/todos'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 
 const router = useRouter()
@@ -131,6 +152,17 @@ const filtered = computed(() => {
   if (category.value === 'all') return items
   return items.filter((x) => x.category === category.value)
 })
+
+/** 移动端已有分类标签时，隐藏与分类语义重复的状态文案 */
+function showStatus(item: TodoItem) {
+  if (!isCompact.value) return false
+  const status = (item.status_label || '').replace(/\s/g, '')
+  const cat = (item.category_label || '').replace(/\s/g, '')
+  if (!status) return false
+  if (status === cat) return false
+  if (item.category === 'approval' && (status.includes('待审批') || status === '待审批')) return false
+  return true
+}
 
 function formatDue(iso: string) {
   const d = new Date(iso)
@@ -346,6 +378,13 @@ onMounted(reload)
   color: var(--td-ink-faint);
 }
 
+.todo-panel-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .todo-count-chip {
   display: inline-flex;
   align-items: center;
@@ -358,6 +397,10 @@ onMounted(reload)
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
+}
+
+.todo-refresh-inline {
+  display: none;
 }
 
 .todo-partial {
@@ -413,6 +456,10 @@ onMounted(reload)
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
+}
+
+.todo-go--top {
+  display: none;
 }
 
 .todo-cat {
@@ -477,6 +524,10 @@ onMounted(reload)
   white-space: nowrap;
 }
 
+.todo-row-foot {
+  display: none;
+}
+
 .todo-sub {
   font-size: 12px;
   color: var(--td-ink-faint);
@@ -501,15 +552,12 @@ onMounted(reload)
   background: #fff;
   border: 1px solid var(--td-line);
   color: var(--td-ink);
+  font-size: 12px;
 }
 
 .todo-due {
   color: var(--td-ink-faint);
   font-variant-numeric: tabular-nums;
-}
-
-.todo-due--empty {
-  display: none;
 }
 
 .todo-go {
@@ -566,38 +614,53 @@ onMounted(reload)
 
 @media (max-width: 768px) {
   .todo-page {
-    gap: 10px;
+    gap: 8px;
   }
 
+  /* 标题 + 刷新同一行，不再占整行大按钮 */
   .todo-head {
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 10px 12px;
+    border-radius: 12px;
   }
 
-  .todo-head-copy h1 {
-    font-size: 20px;
-  }
-
+  .todo-eyebrow,
   .todo-head-desc {
     display: none;
   }
 
+  .todo-head-copy {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .todo-head-copy h1 {
+    font-size: 18px;
+  }
+
   .todo-head-actions {
-    width: 100%;
+    width: auto;
+    flex-shrink: 0;
   }
 
   .todo-head-actions .el-button {
-    width: 100%;
+    width: auto;
+    min-height: 32px;
+    padding: 0 12px;
   }
 
+  /* 分类改成横向胶囊：标签+数字同行 */
   .todo-kpis {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
+    margin: 0 -2px;
+    padding: 2px 2px 4px;
     scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 28px), transparent 100%);
   }
 
   .todo-kpis::-webkit-scrollbar {
@@ -606,80 +669,155 @@ onMounted(reload)
 
   .todo-kpi {
     flex: 0 0 auto;
-    min-width: 108px;
-    padding: 10px 12px;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 7px 12px;
+    border-radius: 999px;
+    box-shadow: none;
   }
 
   .todo-kpi:hover {
     transform: none;
   }
 
+  .todo-kpi.active::before {
+    display: none;
+  }
+
   .todo-kpi small {
-    font-size: 11px;
-    margin-bottom: 4px;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: inherit;
   }
 
   .todo-kpi b {
-    font-size: 18px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0;
+    font-family: inherit;
+    color: var(--td-ink-soft);
+  }
+
+  .todo-kpi.active b,
+  .todo-kpi b.danger {
+    color: var(--td-danger);
+  }
+
+  .todo-kpi.active b {
+    color: var(--td-blue);
   }
 
   .todo-panel {
-    padding: 12px 12px 10px;
+    padding: 10px;
     border-radius: 12px;
+    min-height: 0;
+  }
+
+  .todo-panel-head {
+    align-items: center;
+    margin-bottom: 10px;
   }
 
   .todo-panel-hint {
     display: none;
   }
 
+  .todo-panel-head strong {
+    font-size: 14px;
+  }
+
+  .todo-count-chip {
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .todo-refresh-inline {
+    display: none; /* 刷新已在页头 */
+  }
+
+  .todo-list {
+    gap: 6px;
+  }
+
   .todo-row {
     grid-template-columns: 1fr;
     grid-template-areas:
       'top'
-      'main'
-      'meta';
-    gap: 8px;
-    padding: 12px;
+      'main';
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .todo-row-meta {
+    display: none;
   }
 
   .todo-row-top {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     width: 100%;
+  }
+
+  .todo-go--top {
+    display: inline-flex;
+    margin-left: auto;
+    min-height: 28px;
+    align-items: center;
+    padding: 0 2px;
+    font-size: 13px;
+  }
+
+  .todo-go--top::after {
+    content: ' ›';
+    font-weight: 700;
+  }
+
+  .todo-cat {
+    min-height: 24px;
+    padding: 2px 8px;
+    font-size: 11px;
   }
 
   .todo-row-main strong {
+    font-size: 14px;
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }
 
-  .todo-sub {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-
-  .todo-row-meta {
+  .todo-row-foot {
+    display: flex;
+    align-items: baseline;
     justify-content: space-between;
-    width: 100%;
+    gap: 8px;
+    margin-top: 2px;
   }
 
-  .todo-due--empty {
+  .todo-row-foot .todo-sub {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: unset;
     display: block;
   }
 
-  .todo-go::after {
-    content: '';
+  .todo-row-foot .todo-due {
+    flex-shrink: 0;
+    font-size: 11px;
   }
-}
 
-@media (max-width: 640px) {
-  .todo-kpi {
-    min-width: 96px;
+  .todo-empty {
+    padding: 28px 8px 20px;
   }
 }
 </style>

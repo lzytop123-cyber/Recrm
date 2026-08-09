@@ -29,6 +29,9 @@ router = APIRouter(prefix="/schedules", tags=["排期管理"])
 class ResourceOption(BaseModel):
     id: int
     name: str
+    department_name: Optional[str] = None
+    job_title: Optional[str] = None
+    role_names: list[str] = []
 
 
 @router.get("/stats", response_model=ScheduleStatsOut, summary="排期统计")
@@ -43,9 +46,16 @@ def stats(
 def resource_options(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
+    resource_type: Optional[str] = Query(
+        None,
+        description="按排期资源角色过滤组织架构对应角色人员：instructor/streamer/shooting_edit/other",
+    ),
 ) -> list[ResourceOption]:
     _ = current_user
-    return [ResourceOption(**x) for x in schedule_service.list_resource_options(db)]
+    return [
+        ResourceOption(**x)
+        for x in schedule_service.list_resource_options(db, resource_type=resource_type)
+    ]
 
 
 @router.get("/resource-load", response_model=ResourceLoadListOut, summary="资源负载")

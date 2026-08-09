@@ -474,12 +474,12 @@
         </div>
 
         <div v-if="!milestones.length" class="plan-next-guide" v-loading="planLoading">
-          <h3>{{ planBaselineLocked ? '基线已锁定，可以开始执行' : '先确认基线，再决定怎么拆' }}</h3>
+          <h3>{{ planBaselineLocked ? '基线已锁定，开始推进' : '确认「做什么」，再拆「怎么做」' }}</h3>
           <p>
             {{
               planBaselineLocked
-                ? '当前未添加计划节点。简单项目建议直接拆任务；需要阶段验收时再补节点。'
-                : '确认基线后，计划范围生效。之后改范围请用右上角「申请基线变更」。'
+                ? '还没有计划节点。简单项目直接去任务工时；需要分阶段验收再补节点。'
+                : '先点「确定计划基线」。弹窗里可直接添加计划节点；简单项目也可跳过，确认后按任务推进。'
             }}
           </p>
           <div class="plan-next-actions">
@@ -1458,6 +1458,7 @@
       v-model="msVisible"
       width="560px"
       destroy-on-close
+      append-to-body
       class="claim-dialog ms-dialog"
     >
       <template #header>
@@ -1589,14 +1590,24 @@
         </el-form>
       </div>
       <div class="form-block">
-        <h3><span>2</span>计划节点（可选）</h3>
+        <div class="baseline-section-head">
+          <h3><span>2</span>计划节点（可选）</h3>
+          <el-button
+            v-if="canManagePlan"
+            type="primary"
+            link
+            @click="openMilestoneFromBaseline"
+          >
+            ＋ 添加节点
+          </el-button>
+        </div>
         <div class="plan-check-list">
           <div v-for="row in baselineMilestoneChecks" :key="row.name" class="plan-check-row">
             <span :class="{ ok: row.ok }">{{ row.ok ? '✓' : '⚠' }} {{ row.name }}</span>
             <b>{{ row.detail }}</b>
           </div>
-          <div v-if="!baselineMilestoneChecks.length" class="plan-empty">
-            未添加也可确认基线；复杂项目建议补节点，便于跟踪进度与验收证据
+          <div v-if="!baselineMilestoneChecks.length" class="baseline-node-empty">
+            <p>可不添加，确认后按任务推进；需要分阶段验收时，在这里直接加节点。</p>
           </div>
         </div>
       </div>
@@ -1607,7 +1618,7 @@
             <span :class="{ ok: baselineReleaseChecks.rolesOk, muted: !milestones.length }">
               {{
                 !milestones.length
-                  ? 'ⓘ 项目角色'
+                  ? 'ⓘ 推进方式'
                   : baselineReleaseChecks.rolesOk
                     ? '✓ 项目角色'
                     : '⚠ 项目角色'
@@ -1615,7 +1626,7 @@
             </span>
             <b>{{
               !milestones.length
-                ? '无计划节点，确认后按任务推进'
+                ? '无节点：确认后去任务工时拆任务'
                 : baselineReleaseChecks.rolesOk
                   ? '责任归属完整'
                   : '请给节点补齐责任角色'
@@ -1634,8 +1645,10 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="baselineVisible = false">保存草稿</el-button>
-        <el-button type="primary" :loading="saving" @click="confirmBaseline">提交基线确认</el-button>
+        <el-button @click="baselineVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="confirmBaseline">
+          {{ milestones.length ? '提交基线确认' : '确认基线（按任务推进）' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -3698,6 +3711,11 @@ function openBaselineDialog() {
   baselineVisible.value = true
 }
 
+/** 基线弹窗内直接添加节点：叠开添加窗，基线确认不关 */
+async function openMilestoneFromBaseline() {
+  await openMilestone()
+}
+
 function openChangeDialog() {
   if (!planProject.value) return ElMessage.info('请先选择项目')
   if (!planBaselineLocked.value) {
@@ -4107,7 +4125,9 @@ async function onAddMilestone() {
       // 证据要求写入 remark；真正完成证据在执行阶段再提交
       remark: msForm.evidence.trim() || undefined,
     })
-    ElMessage.success('计划节点已添加')
+    ElMessage.success(
+      baselineVisible.value ? '计划节点已添加，可继续确认基线' : '计划节点已添加',
+    )
     msVisible.value = false
     await loadPlanDetail()
     await loadProjects()

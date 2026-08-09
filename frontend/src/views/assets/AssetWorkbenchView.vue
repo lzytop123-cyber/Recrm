@@ -425,6 +425,7 @@
       width="600px"
       destroy-on-close
       class="borrow-dialog"
+      :fullscreen="isCompact"
     >
       <p class="borrow-hint">
         先定用途和时段，再选在库器材。若已有排期，选档期可自动带出时间。
@@ -464,7 +465,30 @@
             <div class="field-tip">不挂排期也可以借；挂上后便于从排期追溯器材。</div>
           </el-form-item>
           <el-form-item label="借用时段" required>
+            <!-- 手机用系统日期时间面板，避免 Element 双月面板超出屏幕 -->
+            <div v-if="isCompact" class="borrow-range-native">
+              <label class="borrow-range-field">
+                <span>开始</span>
+                <input
+                  class="native-date-input"
+                  type="datetime-local"
+                  :value="toNativeDatetime(borrowForm.range[0])"
+                  @input="onBorrowStartNative(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+              <label class="borrow-range-field">
+                <span>归还</span>
+                <input
+                  class="native-date-input"
+                  type="datetime-local"
+                  :value="toNativeDatetime(borrowForm.range[1])"
+                  :min="toNativeDatetime(borrowForm.range[0]) || undefined"
+                  @input="onBorrowEndNative(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+            </div>
             <el-date-picker
+              v-else
               v-model="borrowForm.range"
               type="datetimerange"
               value-format="YYYY-MM-DDTHH:mm:ss"
@@ -564,7 +588,10 @@ import {
   type InventorySession,
 } from '@/api/assets'
 import { fetchSchedules, type Schedule } from '@/api/schedules'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import { useUserStore } from '@/stores/user'
+
+const isCompact = useMatchMedia('(max-width: 768px)')
 
 type TabKey = 'overview' | 'ledger' | 'borrow'
 
@@ -844,6 +871,29 @@ function toPickerTime(iso?: string | null) {
   return iso.length >= 19 ? iso.slice(0, 19) : iso
 }
 
+/** datetime-local 只需到分钟 */
+function toNativeDatetime(iso?: string | null) {
+  if (!iso) return ''
+  return iso.length >= 16 ? iso.slice(0, 16) : iso
+}
+
+function fromNativeDatetime(v: string) {
+  if (!v) return ''
+  return v.length === 16 ? `${v}:00` : v
+}
+
+function onBorrowStartNative(v: string) {
+  const start = fromNativeDatetime(v)
+  const end = borrowForm.range[1] || ''
+  borrowForm.range = start || end ? [start, end] : []
+}
+
+function onBorrowEndNative(v: string) {
+  const start = borrowForm.range[0] || ''
+  const end = fromNativeDatetime(v)
+  borrowForm.range = start || end ? [start, end] : []
+}
+
 function scheduleOptionLabel(s: Schedule) {
   const when = s.start_time ? s.start_time.slice(5, 16).replace('T', ' ') : ''
   const proj = s.project_name ? ` · ${s.project_name}` : ''
@@ -899,7 +949,7 @@ async function submitCreateBorrow() {
     ElMessage.warning('请填写使用用途')
     return
   }
-  if (borrowForm.range.length < 2) {
+  if (!borrowForm.range[0] || !borrowForm.range[1]) {
     ElMessage.warning('请选择借用时段')
     return
   }

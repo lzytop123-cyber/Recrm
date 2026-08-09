@@ -373,14 +373,41 @@
           <el-input v-model="form.title" maxlength="200" />
         </el-form-item>
         <el-form-item label="资源角色" prop="resource_type">
-          <el-select v-model="form.resource_type" style="width: 100%">
+          <el-select
+            v-model="form.resource_type"
+            style="width: 100%"
+            @change="onResourceTypeChange"
+          >
             <el-option v-for="opt in SCHEDULE_RESOURCE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
+          <div class="field-tip">按组织架构角色筛选可选人员（讲师/主播→讲师主播岗）</div>
         </el-form-item>
         <el-form-item label="人员" prop="employee_id">
-          <el-select v-model="form.employee_id" filterable style="width: 100%">
-            <el-option v-for="u in resources" :key="u.id" :label="u.name" :value="u.id" />
+          <el-select
+            v-model="form.employee_id"
+            filterable
+            teleported
+            :placement="isCompact ? 'top' : 'bottom'"
+            :loading="resourceLoading"
+            popper-class="schedule-person-popper"
+            placeholder="选择组织架构中的人员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="u in resources"
+              :key="u.id"
+              :label="resourceOptionLabel(u)"
+              :value="u.id"
+            >
+              <div class="resource-opt">
+                <b>{{ u.name }}</b>
+                <small>{{ resourceOptionMeta(u) }}</small>
+              </div>
+            </el-option>
           </el-select>
+          <div v-if="!resourceLoading && !resources.length" class="field-tip">
+            该角色下暂无人员，请先在组织架构为员工分配对应角色
+          </div>
         </el-form-item>
         <el-form-item label="时间" required>
           <el-date-picker
@@ -536,6 +563,7 @@ const roleFilter = ref<RoleFilter>('all')
 const items = ref<Schedule[]>([])
 const resourceLoads = ref<ResourceLoad[]>([])
 const resources = ref<ResourceOption[]>([])
+const resourceLoading = ref(false)
 const projectOptions = ref<Project[]>([])
 const taskOptions = ref<ProjectTask[]>([])
 const anchor = ref(startOfDay(new Date()))
@@ -1109,7 +1137,6 @@ async function openCreate(presetProjectId?: number) {
   form.schedule_type = 'internal_training'
   form.link_mode = presetProjectId ? 'project' : 'none'
   form.resource_type = roleFilter.value === 'all' ? 'instructor' : roleFilter.value
-  form.employee_id = resources.value[0]?.id
   form.project_id = undefined
   form.project_task_id = undefined
   taskOptions.value = []
@@ -1121,6 +1148,8 @@ async function openCreate(presetProjectId?: number) {
   const end = new Date(start)
   end.setHours(12)
   form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
+  await loadResources(form.resource_type)
+  form.employee_id = resources.value[0]?.id
   createVisible.value = true
   if (presetProjectId) {
     form.link_mode = 'project'
@@ -1279,9 +1308,40 @@ watch([viewMode, roleFilter, anchor], () => {
   reload()
 })
 
+async function loadResources(resourceType?: string) {
+  resourceLoading.value = true
+  try {
+    const { data } = await fetchResourceOptions(
+      resourceType ? { resource_type: resourceType } : undefined,
+    )
+    resources.value = data
+  } catch {
+    resources.value = []
+  } finally {
+    resourceLoading.value = false
+  }
+}
+
+async function onResourceTypeChange(v?: string) {
+  await loadResources(v || form.resource_type)
+  if (!resources.value.some((u) => u.id === form.employee_id)) {
+    form.employee_id = resources.value[0]?.id
+  }
+}
+
+function resourceOptionMeta(u: ResourceOption) {
+  const roles = (u.role_names || []).filter(Boolean).join('、')
+  const parts = [u.department_name, u.job_title, roles].filter(Boolean)
+  return parts.join(' · ') || '未标注部门/角色'
+}
+
+function resourceOptionLabel(u: ResourceOption) {
+  const meta = resourceOptionMeta(u)
+  return meta ? `${u.name}（${meta}）` : u.name
+}
+
 onMounted(async () => {
-  const { data } = await fetchResourceOptions()
-  resources.value = data
+  await loadResources('instructor')
   await searchProjects('')
   await reload()
   await applyCreateQuery()
@@ -1295,6 +1355,21 @@ onMounted(async () => {
   font-size: 12px;
   line-height: 1.4;
 }
+.resource-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+  padding: 2px 0;
+}
+.resource-opt b {
+  font-weight: 600;
+  color: var(--crm-ink, #1f2937);
+}
+.resource-opt small {
+  color: var(--crm-ink-soft, #64748b);
+  font-size: 12px;
+}
 @media (max-width: 768px) {
   .schedule-type-group {
     display: flex;
@@ -1307,6 +1382,25 @@ onMounted(async () => {
   .schedule-type-group :deep(.el-radio-button__inner) {
     width: 100%;
   }
+}
+</style>
+
+<!-- 下拉挂到 body，需非 scoped -->
+<style>
+.schedule-person-popper.el-select__popper,
+.schedule-person-popper {
+  max-width: min(92vw, 420px);
+}
+.schedule-person-popper .el-select-dropdown__wrap {
+  max-height: min(280px, 45vh) !important;
+  overflow-y: auto !important;
+}
+.schedule-person-popper .el-select-dropdown__item {
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  line-height: 1.35;
+  white-space: normal;
 }
 </style>
 

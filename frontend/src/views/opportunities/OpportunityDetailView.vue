@@ -157,10 +157,22 @@
         </el-form-item>
         <template v-if="!isClosedStage">
           <el-form-item label="下一动作日期" required>
+            <!-- 手机用系统日期面板，避免 Element 下拉被键盘挡住 -->
+            <input
+              v-if="isCompact"
+              v-model="followForm.next_action_at"
+              class="native-date-input"
+              type="date"
+              :min="minNextActionDate"
+            />
             <el-date-picker
+              v-else
               v-model="followForm.next_action_at"
               type="date"
               value-format="YYYY-MM-DD"
+              placement="top-start"
+              :editable="false"
+              :clearable="true"
               style="width: 100%"
             />
           </el-form-item>
@@ -274,6 +286,14 @@ const followForm = reactive({
   lost_reason: '',
   next_action_at: '',
   next_action_note: '持续跟进',
+})
+
+const minNextActionDate = computed(() => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 })
 
 const stageOptions = [
@@ -555,6 +575,27 @@ onBeforeUnmount(() => {
 .contract-step:last-child {
   margin-bottom: 0;
 }
+
+.native-date-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base, 4px);
+  background: var(--el-fill-color-blank, #fff);
+  color: var(--el-text-color-primary);
+  font-size: 16px; /* 避免 iOS 自动放大 */
+  line-height: 40px;
+  appearance: none;
+}
+
+.native-date-input:focus {
+  outline: none;
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px var(--el-color-primary-light-7, rgba(64, 158, 255, 0.2));
+}
+
 @media (max-width: 720px) {
   .detail-summary {
     flex-wrap: wrap;

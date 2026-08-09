@@ -658,6 +658,31 @@ button.portfolio-mini.active {
   text-align: right;
 }
 
+.baseline-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.baseline-section-head h3 {
+  margin: 0;
+}
+
+.baseline-node-empty {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--crm-surface-soft);
+  color: var(--crm-ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.baseline-node-empty p {
+  margin: 0;
+}
+
 .dialog-eyebrow {
   display: block;
   color: var(--crm-ink-soft);

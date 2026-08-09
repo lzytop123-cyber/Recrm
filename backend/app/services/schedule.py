@@ -34,6 +34,7 @@ from app.models.schedule import (
     SCHEDULE_TYPES,
     Schedule,
 )
+from app.models.role import Role
 from app.models.ticket import Ticket
 from app.models.timesheet import (
     TIMESHEET_STATUS_DRAFT,
@@ -499,15 +500,51 @@ def cancel_schedule(
     return enrich_schedule(db, item)
 
 
-def list_resource_options(db: Session) -> list[dict]:
-    users = (
+# 排期「资源角色」→ 组织架构角色 code（与 seed 角色对齐）
+SCHEDULE_RESOURCE_ORG_ROLE_CODES: dict[str, set[str] | None] = {
+    "instructor": {"instructor"},  # 讲师主播
+    "streamer": {"instructor"},  # 主播同属讲师主播岗
+    "shooting_edit": {"brand", "operations"},  # 品宣 / 运营常兼拍摄剪辑
+    "other": None,  # 不按角色过滤
+}
+
+
+def list_resource_options(
+    db: Session,
+    *,
+    resource_type: Optional[str] = None,
+) -> list[dict]:
+    """可选按排期资源角色过滤组织架构中对应角色的在职人员。"""
+    from sqlalchemy.orm import joinedload
+
+    q = (
         db.query(User)
+        .options(joinedload(User.roles), joinedload(User.department))
         .filter(User.is_active.is_(True))
-        .order_by(User.id.asc())
-        .limit(200)
-        .all()
     )
-    return [{"id": u.id, "name": u.real_name or u.username} for u in users]
+    role_codes: set[str] | None = None
+    if resource_type:
+        if resource_type in SCHEDULE_RESOURCE_ORG_ROLE_CODES:
+            role_codes = SCHEDULE_RESOURCE_ORG_ROLE_CODES[resource_type]
+        # 未知类型时不过滤，避免误伤
+    if role_codes:
+        q = q.filter(User.roles.any(Role.code.in_(list(role_codes))))
+
+    users = q.order_by(User.id.asc()).limit(200).all()
+    out: list[dict] = []
+    for u in users:
+        role_names = [r.name for r in (u.roles or [])]
+        dept = u.department.name if u.department else None
+        out.append(
+            {
+                "id": u.id,
+                "name": u.real_name or u.username,
+                "department_name": dept,
+                "job_title": u.job_title,
+                "role_names": role_names,
+            }
+        )
+    return out
 
 
 def resource_load(
