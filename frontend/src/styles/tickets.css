@@ -2,9 +2,11 @@
 
 .ticket-workbench {
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-x: clip;
 }
 
 .ticket-workbench .sales-head {
@@ -329,13 +331,124 @@
   }
 }
 
-@media (max-width: 640px) {
-  .ticket-workbench .sales-head {
-    flex-direction: column;
+@media (max-width: 768px) {
+  .ticket-workbench {
+    gap: 10px;
   }
 
-  .ticket-kpis,
+  .ticket-workbench .sales-head {
+    position: relative;
+    z-index: 1;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    overflow: hidden;
+  }
+
+  .ticket-workbench .sales-head-copy > p:last-of-type {
+    display: none;
+  }
+
+  .ticket-workbench .sales-head-actions {
+    width: 100%;
+  }
+
+  .ticket-workbench .sales-head-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .ticket-workbench .sales-head-copy h1 {
+    font-size: 20px;
+  }
+
+  /* 始终 2×2，避免四张 KPI 占满首屏 */
+  .ticket-kpis {
+    position: relative;
+    z-index: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ticket-kpi {
+    min-height: 0;
+    gap: 4px;
+    padding: 10px 12px;
+  }
+
+  .ticket-kpi:hover:not(.ticket-kpi--static) {
+    transform: none;
+  }
+
+  .ticket-kpis small {
+    font-size: 11px;
+  }
+
+  .ticket-kpis b {
+    font-size: 18px;
+  }
+
+  .ticket-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .ticket-toolbar .filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .ticket-toolbar .filters > .el-input,
+  .ticket-toolbar .filters > .el-select {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .ticket-toolbar .filters > .el-button {
+    grid-column: 1 / -1;
+  }
+
+  .ticket-chip {
+    width: 100%;
+    justify-content: center;
+    padding: 5px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+    text-align: center;
+  }
+
+  /* 看板横滑：容器占满屏宽，列更宽便于点选 */
   .ticket-board {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(78vw, 280px));
+    width: 100%;
+    min-width: 0;
+    gap: 10px;
+    margin: 0;
+    padding: 0 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+
+  .ticket-column {
+    scroll-snap-align: start;
+  }
+
+  .ticket-card h3 {
+    font-size: 14px;
+  }
+
+  .sla-rules-list .row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .sla-rules-list .row b {
+    text-align: left;
   }
 }

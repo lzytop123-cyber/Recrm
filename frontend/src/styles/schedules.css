@@ -895,34 +895,189 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* 解除一屏锁定，整页可上下滑 */
+  .schedule-workbench.crm-fit-page {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .schedule-workbench .crm-fit-body {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .schedule-workbench .crm-fit-body.is-scroll {
+    overflow: visible;
+  }
+
+  .schedule-workbench .crm-fit-body > .calendar-shell,
+  .schedule-workbench .crm-fit-body > .calendar-main {
+    flex: none;
+    height: auto;
+  }
+
   .schedule-workbench .sales-head {
+    position: relative;
+    z-index: 1;
     flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+
+  .schedule-workbench .sales-head-copy > p:last-of-type {
+    display: none;
+  }
+
+  .schedule-workbench .sales-head-actions {
+    width: 100%;
+  }
+
+  .schedule-workbench .sales-head-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .schedule-workbench .sales-head-copy h1 {
+    font-size: 20px;
+  }
+
+  .schedule-toolbar {
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .schedule-tabs {
+    width: 100%;
+    flex: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .schedule-tab {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+    text-align: center;
   }
 
   .schedule-summary {
-    flex-wrap: wrap;
+    width: 100%;
+    flex-wrap: nowrap;
   }
 
   .schedule-summary > div {
-    flex: 1 1 40%;
+    flex: 1 1 0;
     min-width: 0;
+    padding: 8px 10px;
   }
 
-  .schedule-summary > div:nth-child(odd) {
-    border-left: 0;
+  .schedule-summary > div small {
+    font-size: 11px;
   }
 
-  .schedule-summary > div:nth-child(n + 3) {
-    border-top: 1px solid var(--crm-border);
+  .calendar-shell {
+    gap: 10px;
+  }
+
+  .calendar-main {
+    min-height: min(68vh, 560px);
+    height: auto;
+  }
+
+  .calendar-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .calendar-nav h2 {
+    width: 100%;
+    order: -1;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .calendar-nav > .el-button,
+  .calendar-nav > div {
+    flex: 1 1 auto;
+  }
+
+  .calendar-nav > div {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .week-grid-wrap {
+    min-height: 420px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .week-grid {
+    width: max-content;
+    min-width: 100%;
+    grid-template-columns: 40px repeat(7, minmax(72px, 1fr));
+  }
+
+  .month-grid {
+    min-height: 420px;
+  }
+
+  .month-cell {
+    min-height: 72px;
+    padding: 4px;
+  }
+
+  .month-event {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+
+  .calendar-side {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .sync-kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sch-drawer-footer {
+    gap: 10px;
+  }
+
+  .sch-drawer-actions {
+    width: 100%;
+  }
+
+  .sch-drawer-actions .el-button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .schedule-workbench .sales-head-copy h1 {
+    font-size: 18px;
+  }
+
+  .schedule-summary > div {
+    padding: 8px;
+  }
+
+  .week-grid {
+    grid-template-columns: 36px repeat(7, minmax(64px, 1fr));
   }
 
   .sync-kpis {
     grid-template-columns: 1fr;
-  }
-
-  .week-grid {
-    grid-template-columns: 40px repeat(7, minmax(64px, 1fr));
-    overflow-x: auto;
   }
 }

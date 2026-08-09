@@ -123,9 +123,16 @@
       </el-card>
     </template>
 
-    <el-dialog v-model="followVisible" title="记录跟进" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="followVisible"
+      title="记录跟进"
+      width="560px"
+      destroy-on-close
+      class="opp-follow-dialog"
+      :fullscreen="isCompact"
+    >
       <p class="dialog-hint">填写跟进结果；如需推进漏斗，可同步更新阶段。</p>
-      <el-form :model="followForm" label-width="110px">
+      <el-form :model="followForm" :label-width="isCompact ? 'auto' : '110px'" :label-position="isCompact ? 'top' : 'right'">
         <el-form-item label="结果与证据" required>
           <el-input
             v-model="followForm.evidence"
@@ -176,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
@@ -198,6 +205,12 @@ const saving = ref(false)
 const opp = ref<OpportunityDetail | null>(null)
 const followVisible = ref(false)
 const expandedContractKeys = ref(new Set<string>())
+const isCompact = ref(false)
+let compactMq: MediaQueryList | null = null
+
+function syncCompact() {
+  isCompact.value = !!compactMq?.matches
+}
 
 type TimelineItem = {
   key: string
@@ -443,7 +456,15 @@ async function onDraftContract() {
 }
 
 watch(opportunityId, load)
-onMounted(load)
+onMounted(() => {
+  compactMq = window.matchMedia('(max-width: 720px)')
+  syncCompact()
+  compactMq.addEventListener('change', syncCompact)
+  load()
+})
+onBeforeUnmount(() => {
+  compactMq?.removeEventListener('change', syncCompact)
+})
 </script>
 
 <style scoped>
@@ -534,8 +555,32 @@ onMounted(load)
   margin-bottom: 0;
 }
 @media (max-width: 720px) {
+  .detail-summary {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .detail-summary small {
+    width: 100%;
+    order: 2;
+  }
+  .opp-title {
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
   .detail-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .detail-cell {
+    padding: 10px 12px;
+  }
+  .contract-group-head {
+    align-items: flex-start;
+  }
+  .contract-group-head .muted {
+    margin-left: 0;
+    width: 100%;
   }
 }
 </style>

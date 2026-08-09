@@ -1,4 +1,4 @@
-"""销售旅程聚合：线索→商机→合同主线。"""
+"""业务旅程聚合：线索→商机→合同→项目全链路。"""
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
@@ -13,6 +13,19 @@ from app.models.user import User
 from app.schemas.lead import LeadConvertRequest, LeadCreate, LeadFollowUpCreate
 from app.services import lead as lead_service
 from app.services import sales_journey as journey_service
+
+FULL_JOURNEY_KEYS = [
+    "lead_created",
+    "lead_assigned",
+    "lead_following",
+    "lead_converted",
+    "opp_need_confirm",
+    "opp_proposal",
+    "opp_negotiation",
+    "opp_closed",
+    "contract",
+    "project",
+]
 
 
 def _ensure_sales(db: Session) -> User:
@@ -66,10 +79,12 @@ def test_journey_before_and_after_convert(db_session: Session) -> None:
 
     before = journey_service.build_sales_journey(db_session, lead=lead)
     keys = [m["key"] for m in before["milestones"]]
-    assert keys[:4] == ["lead_created", "lead_assigned", "lead_following", "lead_converted"]
+    assert keys == FULL_JOURNEY_KEYS
     assert before["current_key"] == "lead_following"
     assert before["links"]["opportunity_id"] is None
+    assert any(m["key"] == "opp_need_confirm" and m["status"] == "pending" for m in before["milestones"])
     assert any(m["key"] == "contract" and m["status"] == "pending" for m in before["milestones"])
+    assert any(m["key"] == "project" and m["status"] == "pending" for m in before["milestones"])
 
     result = lead_service.convert_lead(
         db_session,
@@ -119,6 +134,64 @@ def test_journey_before_and_after_convert(db_session: Session) -> None:
     with_contract = journey_service.build_sales_journey(db_session, opportunity=opp)
     assert with_contract["current_key"] == "contract"
     assert with_contract["links"]["contract_id"]
+    assert with_contract["links"]["project_id"] is None
     contract_node = next(m for m in with_contract["milestones"] if m["key"] == "contract")
     assert contract_node["status"] == "current"
     assert "已签署" in contract_node["label"]
+    project_node = next(m for m in with_contract["milestones"] if m["key"] == "project")
+    assert project_node["status"] == "pending"
+
+    # 合同立项后：当前节点落到项目，合同视为完成交接
+    from app.models.project import PROJECT_STATUS_EXECUTING, Project
+
+    contract = db_session.get(Contract, with_contract["links"]["contract_id"])
+    assert contract is not None
+    db_session.add(
+        Project(
+            project_no="PJ-JOURNEY-001",
+            name="旅程项目",
+            contract_id=contract.id,
+            customer_id=result["customer_id"],
+            status=PROJECT_STATUS_EXECUTING,
+            manager_id=sales.id,
+            creator_id=sales.id,
+        )
+    )
+    db_session.commit()
+
+    with_project = journey_service.build_sales_journey(db_session, contract=contract)
+    assert [m["key"] for m in with_project["milestones"]] == FULL_JOURNEY_KEYS
+    assert with_project["current_key"] == "project"
+    assert with_project["links"]["project_id"]
+    assert next(m for m in with_project["milestones"] if m["key"] == "contract")["status"] == "done"
+    assert next(m for m in with_project["milestones"] if m["key"] == "project")["status"] == "current"
+
+    from_project = journey_service.build_sales_journey(
+        db_session, project=db_session.get(Project, with_project["links"]["project_id"])
+    )
+    assert from_project["links"]["contract_id"] == contract.id
+    assert from_project["links"]["opportunity_id"] == opp.id
+    assert from_project["current_key"] == "project"
+
+    # 无商机的直接合同：上游线索/商机仍展示，状态为 skipped（未发生）
+    orphan = Contract(
+        contract_no="HT-JOURNEY-ORPHAN",
+        title="直接合同",
+        customer_id=result["customer_id"],
+        opportunity_id=None,
+        contract_type="ai_product",
+        amount=Decimal("1"),
+        status=CONTRACT_STATUS_SIGNED,
+        owner_id=sales.id,
+        creator_id=sales.id,
+    )
+    db_session.add(orphan)
+    db_session.commit()
+    orphan_journey = journey_service.build_sales_journey(db_session, contract=orphan)
+    assert [m["key"] for m in orphan_journey["milestones"]] == FULL_JOURNEY_KEYS
+    assert all(
+        m["status"] == "skipped"
+        for m in orphan_journey["milestones"]
+        if m["key"].startswith("lead_") or m["key"].startswith("opp_")
+    )
+    assert orphan_journey["current_key"] == "contract"

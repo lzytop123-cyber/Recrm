@@ -46,12 +46,12 @@
         <el-button v-if="!embedded" type="primary" @click="openCreate">＋ 新建商机</el-button>
       </div>
 
-      <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+      <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
         <el-table
           :data="items"
           v-loading="loading"
           stripe
-          :height="embedded ? '100%' : undefined"
+          :height="embedded && !isCompact ? '100%' : undefined"
           @row-click="goDetail"
         >
         <el-table-column label="商机" min-width="220">
@@ -108,15 +108,28 @@
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'prev, pager, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 5 : 7"
           @current-change="loadList"
           @size-change="loadList"
         />
       </div>
     </section>
 
-    <el-dialog v-model="createVisible" title="创建客户商机" width="640px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
+    <el-dialog
+      v-model="createVisible"
+      title="创建客户商机"
+      width="640px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '110px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <p class="form-section">客户与负责人</p>
         <el-form-item label="客户主体" prop="customer_id">
           <el-select
@@ -184,6 +197,7 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import { fetchCustomers, type Customer } from '@/api/customers'
 import {
   BUSINESS_TYPE_OPTIONS,
@@ -205,6 +219,7 @@ const props = withDefaults(
 
 const router = useRouter()
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
 const customerLoading = ref(false)
@@ -444,5 +459,31 @@ onMounted(() => {
 .embedded.opportunities-page .pager,
 .embedded.opportunities-page .table-footer {
   flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .embedded.opportunities-page {
+    height: auto;
+    overflow: visible;
+  }
+  .embedded.opportunities-page > .crm-panel {
+    flex: none;
+    overflow: visible;
+  }
+  .embedded.opportunities-page .crm-table-wrap.is-fit,
+  .embedded.opportunities-page .crm-table-wrap {
+    flex: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .pager {
+    justify-content: center;
+    overflow-x: auto;
+  }
 }
 </style>

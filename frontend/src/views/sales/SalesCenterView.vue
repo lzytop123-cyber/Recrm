@@ -210,20 +210,82 @@ function onImport() {
   flex-shrink: 0;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* 解除一屏锁定，允许整页纵向滑动 */
+  .sales-center.crm-fit-page {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sales-center .crm-fit-body {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .sales-center :deep(.embedded.leads-page),
+  .sales-center :deep(.embedded.opportunities-page) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .sales-center :deep(.crm-fit-panel),
+  .sales-center :deep(.embedded .crm-panel) {
+    flex: none;
+    overflow: visible;
+  }
+
+  .sales-center :deep(.crm-table-wrap.is-fit) {
+    flex: none;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .sales-head {
     flex-direction: column;
     padding: 14px 16px;
   }
 
+  .sales-head-actions {
+    width: 100%;
+  }
+
+  .sales-head-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .sales-head-copy h1 {
+    font-size: 22px;
+  }
+
   .sales-tabs {
     width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sales-tabs :deep(.sales-tab),
   .sales-tab {
     flex: 1 1 auto;
     justify-content: center;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .sales-head-copy h1 {
+    font-size: 20px;
+  }
+
+  .sales-head-copy p:last-child {
+    font-size: 12px;
   }
 }
 </style>

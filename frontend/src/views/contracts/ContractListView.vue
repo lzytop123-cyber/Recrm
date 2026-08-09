@@ -124,12 +124,12 @@
 
       <!-- 合同台账 -->
       <template v-if="!embedded || financeTab === 'contracts'">
-        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
           <el-table
             :data="items"
             v-loading="loading"
             stripe
-            :height="embedded ? '100%' : undefined"
+            :height="embedded && !isCompact ? '100%' : undefined"
             @row-click="goDetail"
           >
           <el-table-column prop="contract_no" label="合同编号" width="150">
@@ -180,12 +180,12 @@
 
       <!-- 应收计划 -->
       <template v-else-if="financeTab === 'receivables'">
-        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
           <el-table
             :data="receivableItems"
             v-loading="loading"
             stripe
-            :height="embedded ? '100%' : undefined"
+            :height="embedded && !isCompact ? '100%' : undefined"
           >
           <el-table-column label="应收编号" width="150">
             <template #default="{ row }"><b>{{ `YS-${row.id}` }}</b></template>
@@ -225,12 +225,12 @@
 
       <!-- 到款核销 -->
       <template v-else>
-        <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+        <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
           <el-table
             :data="receiptItems"
             v-loading="loading"
             stripe
-            :height="embedded ? '100%' : undefined"
+            :height="embedded && !isCompact ? '100%' : undefined"
           >
           <el-table-column label="到款认领单" width="150">
             <template #default="{ row }"><b>{{ row.receipt_no }}</b></template>
@@ -297,15 +297,28 @@
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'prev, pager, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 5 : 7"
           @current-change="loadCurrent"
           @size-change="loadCurrent"
         />
       </div>
     </section>
 
-    <el-dialog v-model="createVisible" title="起草合同" width="560px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <el-dialog
+      v-model="createVisible"
+      title="起草合同"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="合同名称" prop="title">
           <el-input v-model="form.title" />
         </el-form-item>
@@ -389,13 +402,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="receivableVisible" title="新建应收计划" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="receivableVisible"
+      title="新建应收计划"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
       <p class="dialog-hint">把合同金额拆成可收款的节点。同一合同可建多笔，合计不超过合同总额。</p>
       <el-form
         ref="receivableFormRef"
         :model="receivableForm"
         :rules="receivableRules"
-        label-width="100px"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
       >
         <el-form-item label="合同" prop="contract_id">
           <el-select
@@ -483,6 +503,7 @@
       width="720px"
       destroy-on-close
       class="claim-dialog"
+      :fullscreen="isCompact"
     >
       <p class="dialog-hint">提交后由财务确认到账，再核销到应收计划。当前只登记「钱已到」这一步。</p>
       <el-form ref="claimFormRef" :model="claimForm" :rules="claimRules" label-position="top" class="claim-form">
@@ -612,8 +633,9 @@
       title="到款认领详情"
       width="560px"
       destroy-on-close
+      :fullscreen="isCompact"
     >
-      <el-descriptions v-if="claimDetail" :column="2" border>
+      <el-descriptions v-if="claimDetail" :column="isCompact ? 1 : 2" border>
         <el-descriptions-item label="认领单号" :span="2">
           {{ claimDetail.receipt_no }}
         </el-descriptions-item>
@@ -673,7 +695,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="allocationVisible" title="提交收款核销" width="620px" destroy-on-close>
+    <el-dialog
+      v-model="allocationVisible"
+      title="提交收款核销"
+      width="620px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
       <el-alert
         v-if="allocationReceipt"
         :title="`${allocationReceipt.receipt_no} 可核销余额：¥${formatAmount(allocationReceipt.available_amount)}（提交后进入审批中心）`"
@@ -686,7 +714,8 @@
         ref="allocationFormRef"
         :model="allocationForm"
         :rules="allocationRules"
-        label-width="110px"
+        :label-width="isCompact ? 'auto' : '110px'"
+        :label-position="isCompact ? 'top' : 'right'"
       >
         <el-form-item label="核销到应收" prop="receivable_plan_id">
           <el-select v-model="allocationForm.receivable_plan_id" style="width: 100%">
@@ -723,6 +752,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   CONTRACT_STATUS_LABEL,
   CONTRACT_TYPE_OPTIONS,
@@ -771,6 +801,7 @@ const props = withDefaults(
 )
 
 const router = useRouter()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const userStore = useUserStore()
 
 const canConfirmClaim = computed(() =>
@@ -1696,9 +1727,49 @@ watch(
   font-size: 12px;
   line-height: 1.5;
 }
-@media (max-width: 700px) {
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+}
+@media (max-width: 768px) {
+  .embedded.contracts-page {
+    height: auto;
+    overflow: visible;
+  }
+  .embedded.contracts-page > .crm-panel {
+    flex: none;
+    overflow: visible;
+  }
+  .embedded.contracts-page .crm-table-wrap.is-fit,
+  .embedded.contracts-page .crm-table-wrap {
+    flex: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
   .form-grid-2 {
     grid-template-columns: 1fr;
+  }
+  .receivable-balance {
+    grid-template-columns: 1fr;
+  }
+  .table-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .pager {
+    justify-content: center;
+    overflow-x: auto;
+  }
+  .finance-kpi .crm-stat-tile em {
+    font-size: 11px;
+    line-height: 1.35;
   }
 }
 </style>

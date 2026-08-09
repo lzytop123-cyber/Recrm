@@ -39,8 +39,10 @@ from app.schemas.project_resource import (
     ResourceConfirmRequest,
     ResourceRoleOptionsOut,
 )
+from app.schemas.lead import SalesJourneyOut
 from app.services import project as project_service
 from app.services import project_resource as resource_service
+from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/projects", tags=["项目管理"])
 
@@ -195,6 +197,16 @@ def get_project(
 ) -> ProjectDetailOut:
     project = project_service.get_project_detail(db, current_user, project_id)
     return ProjectDetailOut.model_validate(project)
+
+
+@router.get("/{project_id}/journey", response_model=SalesJourneyOut, summary="业务旅程")
+def get_project_journey(
+    project_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> SalesJourneyOut:
+    project = project_service.get_project_detail(db, current_user, project_id)
+    return SalesJourneyOut(**sales_journey_service.build_sales_journey(db, project=project))
 
 
 @router.get(

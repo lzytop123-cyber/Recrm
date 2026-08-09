@@ -233,14 +233,109 @@
     margin-left: 0;
   }
 
+  .sales-head-actions .el-button,
+  .head-actions .el-button,
+  .asset-head-actions .el-button {
+    flex: 1 1 auto;
+  }
+
   .crm-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crm-toolbar,
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .crm-filters,
+  .filters {
+    width: 100%;
+  }
+
+  .crm-filters > .el-input,
+  .crm-filters > .el-select,
+  .filters > .el-input,
+  .filters > .el-select {
+    width: 100% !important;
+    flex: 1 1 100%;
+  }
+
+  .crm-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .detail-page .top-bar {
+    align-items: stretch;
+  }
+
+  .detail-page .actions {
+    width: 100%;
+  }
+
+  .detail-page .actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .main .el-card__header,
+  .main .el-card__body {
+    padding: 12px 14px;
+  }
+
+  .el-overlay-dialog .el-dialog,
+  .el-dialog {
+    width: min(94vw, var(--el-dialog-width, 560px)) !important;
+    max-width: 94vw;
+    margin: 6vh auto 0 !important;
+  }
+
+  .el-dialog.is-fullscreen {
+    width: 100% !important;
+    max-width: 100%;
+    margin: 0 !important;
+  }
+
+  .el-dialog .el-form-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .el-dialog .el-form-item__label {
+    width: auto !important;
+    height: auto;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .el-dialog .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  .el-dialog__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .el-dialog__footer .el-button {
+    flex: 1 1 auto;
+    margin: 0 !important;
   }
 }
 
 @media (max-width: 480px) {
   .crm-stats {
     grid-template-columns: 1fr;
+  }
+
+  .sales-head-copy h1,
+  .sales-head h1 {
+    font-size: 20px;
   }
 }
 

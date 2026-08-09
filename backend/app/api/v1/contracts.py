@@ -16,7 +16,9 @@ from app.schemas.contract import (
     ContractTerminateRequest,
     ContractUpdate,
 )
+from app.schemas.lead import SalesJourneyOut
 from app.services import contract as contract_service
+from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/contracts", tags=["合同管理"])
 
@@ -71,6 +73,16 @@ def get_contract(
 ) -> ContractOut:
     contract = contract_service.get_contract(db, current_user, contract_id)
     return ContractOut.model_validate(contract)
+
+
+@router.get("/{contract_id}/journey", response_model=SalesJourneyOut, summary="业务旅程")
+def get_contract_journey(
+    contract_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["contract:view"]))],
+) -> SalesJourneyOut:
+    contract = contract_service.get_contract(db, current_user, contract_id)
+    return SalesJourneyOut(**sales_journey_service.build_sales_journey(db, contract=contract))
 
 
 @router.patch("/{contract_id}", response_model=ContractOut, summary="编辑草稿")

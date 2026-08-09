@@ -951,8 +951,78 @@ button.portfolio-mini.active {
   }
 }
 
+@media (max-width: 768px) {
+  .project-delivery .sales-head {
+    flex-direction: column;
+    margin-bottom: 10px;
+    padding: 14px 16px;
+  }
+
+  .project-delivery .sales-head-actions {
+    width: 100%;
+  }
+
+  .project-delivery .sales-head-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .project-delivery .sales-head-copy h1 {
+    font-size: 22px;
+  }
+
+  .portfolio-hero {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .portfolio-mini {
+    padding: 10px 12px;
+  }
+
+  .portfolio-mini strong {
+    font-size: 20px;
+  }
+
+  .project-tabs {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 10px;
+  }
+
+  .project-tab {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .project-kanban-scroll {
+    margin: 0 -4px;
+    padding: 0 4px 10px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+
+  .project-kanban {
+    grid-template-columns: repeat(5, minmax(260px, 1fr));
+    min-width: 1340px;
+    gap: 10px;
+  }
+
+  .project-kanban-column {
+    min-height: 280px;
+    scroll-snap-align: start;
+  }
+
+  .board-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+}
+
 @media (max-width: 640px) {
-  .portfolio-hero,
   .plan-summary,
   .plan-summary--slim,
   .plan-summary--compact,
@@ -965,13 +1035,37 @@ button.portfolio-mini.active {
     grid-template-columns: 1fr;
   }
 
-  .project-tabs {
-    overflow-x: auto;
-    flex-wrap: nowrap;
+  .handoff-card .card-top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .project-tab {
-    flex-shrink: 0;
+  .handoff-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-table-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .plan-next-chip {
+    max-width: none;
+    text-align: left;
+  }
+
+  .project-board-card {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .portfolio-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .project-delivery .sales-head-copy h1 {
+    font-size: 20px;
   }
 }
 

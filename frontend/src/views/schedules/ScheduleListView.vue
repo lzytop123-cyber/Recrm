@@ -52,7 +52,7 @@
       </section>
     </div>
 
-    <div class="crm-fit-body" :class="{ 'is-scroll': viewMode === 'month' }">
+    <div class="crm-fit-body" :class="{ 'is-scroll': isCompact || viewMode === 'month' }">
     <!-- 周视图 -->
     <div
       v-if="viewMode === 'week'"
@@ -211,7 +211,7 @@
     <!-- 详情抽屉 -->
     <el-drawer
       v-model="drawerVisible"
-      size="440px"
+      :size="isCompact ? '100%' : '440px'"
       destroy-on-close
       class="schedule-detail-drawer"
       :with-header="false"
@@ -336,10 +336,22 @@
     </el-drawer>
 
     <!-- 新建 -->
-    <el-dialog v-model="createVisible" title="新建排期" width="640px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <el-dialog
+      v-model="createVisible"
+      title="新建排期"
+      width="640px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="活动类型" prop="schedule_type">
-          <el-radio-group v-model="form.schedule_type">
+          <el-radio-group v-model="form.schedule_type" class="schedule-type-group">
             <el-radio-button v-for="opt in SCHEDULE_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </el-radio-button>
@@ -419,16 +431,29 @@
     </el-dialog>
 
     <!-- 完成填工时 -->
-    <el-dialog v-model="completeVisible" title="完成活动并填工时" width="480px" destroy-on-close>
-      <el-form label-width="100px">
+    <el-dialog
+      v-model="completeVisible"
+      title="完成活动并填工时"
+      width="480px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="活动结果" required>
           <el-input v-model="completeForm.result" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item label="实际工时" required>
-          <el-input-number v-model="completeForm.actual_hours" :min="0.5" :max="24" :step="0.5" />
-          <span style="margin-left: 8px; color: var(--crm-ink-soft); font-size: 12px">
-            不等于排期时长自动覆盖
-          </span>
+          <el-input-number
+            v-model="completeForm.actual_hours"
+            :min="0.5"
+            :max="24"
+            :step="0.5"
+            style="width: 100%"
+          />
+          <div class="field-tip">不等于排期时长自动覆盖</div>
         </el-form-item>
         <el-form-item label="生成工时">
           <el-switch v-model="completeForm.create_timesheet" />
@@ -447,6 +472,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   FEISHU_SYNC_LABEL,
   SCHEDULE_RESOURCE_OPTIONS,
@@ -485,6 +511,7 @@ const roleFilters: { key: RoleFilter; label: string }[] = [
 ]
 
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
 const projectLoading = ref(false)
@@ -1197,3 +1224,26 @@ onMounted(async () => {
   await applyCreateQuery()
 })
 </script>
+
+<style scoped>
+.field-tip {
+  margin-top: 4px;
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+@media (max-width: 768px) {
+  .schedule-type-group {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .schedule-type-group :deep(.el-radio-button) {
+    flex: 1 1 auto;
+  }
+  .schedule-type-group :deep(.el-radio-button__inner) {
+    width: 100%;
+  }
+}
+</style>
+

@@ -46,7 +46,7 @@
           </div>
         </div>
       </template>
-      <el-descriptions :column="3" border>
+      <el-descriptions :column="descCols" border>
         <el-descriptions-item label="类型">{{ typeLabel(item.ticket_type) }}</el-descriptions-item>
         <el-descriptions-item label="优先级">{{ priorityLabel(item.priority) }}</el-descriptions-item>
         <el-descriptions-item label="截止时间">{{ formatTime(item.due_at) }}</el-descriptions-item>
@@ -55,7 +55,6 @@
         <el-descriptions-item
           v-if="(item.candidate_names || []).length > 1 || ((item.candidate_names || []).length === 1 && !item.assignee_id)"
           label="候选处理人"
-          :span="item.assignee_name ? 1 : 1"
         >
           {{ (item.candidate_names || []).join('、') }}
         </el-descriptions-item>
@@ -93,12 +92,12 @@
           <span v-if="item.satisfaction">{{ item.satisfaction }} / 5</span>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item label="评价备注" :span="2">
+        <el-descriptions-item label="评价备注" :span="descCols > 1 ? 2 : 1">
           {{ item.satisfaction_comment || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="问题描述" :span="3">{{ item.content }}</el-descriptions-item>
-        <el-descriptions-item v-if="item.result" label="处理结果" :span="3">{{ item.result }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="3">{{ item.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="问题描述" :span="descCols">{{ item.content }}</el-descriptions-item>
+        <el-descriptions-item v-if="item.result" label="处理结果" :span="descCols">{{ item.result }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="descCols">{{ item.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -129,8 +128,17 @@
       <el-empty v-else description="暂无记录" :image-size="60" />
     </el-card>
 
-    <el-dialog v-model="assignVisible" title="分派工单" width="420px" destroy-on-close>
-      <el-form label-width="80px">
+    <el-dialog
+      v-model="assignVisible"
+      title="分派工单"
+      width="420px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '80px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="处理人">
           <el-select v-model="assigneeId" filterable style="width: 100%">
             <el-option v-for="u in assignees" :key="u.id" :label="u.name" :value="u.id" />
@@ -146,8 +154,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="transferVisible" title="转派工单" width="420px" destroy-on-close>
-      <el-form label-width="80px">
+    <el-dialog
+      v-model="transferVisible"
+      title="转派工单"
+      width="420px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '80px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="新处理人">
           <el-select v-model="assigneeId" filterable style="width: 100%">
             <el-option v-for="u in assignees" :key="u.id" :label="u.name" :value="u.id" />
@@ -163,11 +180,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="confirmVisible" title="工单验收" width="520px" destroy-on-close>
+    <el-dialog
+      v-model="confirmVisible"
+      title="工单验收"
+      width="520px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
       <p class="hint">确认结果并关闭。关闭后 3 个工作日内可重开；满意度计入本月协作统计。</p>
-      <el-form label-width="90px">
+      <el-form
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="满意度" required>
-          <el-radio-group v-model="satisfaction">
+          <el-radio-group v-model="satisfaction" class="satisfaction-group">
             <el-radio-button :value="5">5 · 完全满足</el-radio-button>
             <el-radio-button :value="4">4 · 基本满足</el-radio-button>
             <el-radio-button :value="3">3 · 一般</el-radio-button>
@@ -191,6 +217,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   TICKET_ACTION_LABEL,
   TICKET_PRIORITY_OPTIONS,
@@ -212,6 +239,8 @@ import {
 } from '@/api/tickets'
 
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const descCols = computed(() => (isCompact.value ? 1 : 3))
 const loading = ref(false)
 const saving = ref(false)
 const commenting = ref(false)
@@ -498,5 +527,41 @@ onMounted(loadDetail)
   color: var(--crm-ink-soft, #909399);
   font-size: 13px;
   line-height: 1.5;
+}
+@media (max-width: 768px) {
+  .top-bar {
+    align-items: stretch;
+  }
+  .actions {
+    width: 100%;
+  }
+  .actions .el-button {
+    flex: 1 1 calc(50% - 8px);
+  }
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .title-block span {
+    word-break: break-word;
+    line-height: 1.35;
+  }
+  .comment-box {
+    flex-direction: column;
+  }
+  .comment-box .el-button {
+    width: 100%;
+  }
+  .satisfaction-group {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .satisfaction-group :deep(.el-radio-button) {
+    flex: 1 1 100%;
+  }
+  .satisfaction-group :deep(.el-radio-button__inner) {
+    width: 100%;
+  }
 }
 </style>

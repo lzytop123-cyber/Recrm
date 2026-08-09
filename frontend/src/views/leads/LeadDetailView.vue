@@ -40,7 +40,7 @@
           :sync-key="lead.status"
           hide-self-lead
         />
-        <el-descriptions :column="3" border class="stack-gap-sm">
+        <el-descriptions :column="descCols" border class="stack-gap-sm">
           <el-descriptions-item label="联系人">{{ lead.name }}</el-descriptions-item>
           <el-descriptions-item label="公司">{{ lead.company_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="电话">{{ lead.phone || '-' }}</el-descriptions-item>
@@ -50,8 +50,8 @@
           <el-descriptions-item label="跟进人">{{ lead.owner_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="录入人">{{ lead.creator_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保护截止">{{ formatTime(lead.protect_until) }}</el-descriptions-item>
-          <el-descriptions-item label="需求" :span="3">{{ lead.need_desc || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="3">{{ lead.remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="需求" :span="descCols">{{ lead.need_desc || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="descCols">{{ lead.remark || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="lead.converted_opportunity_id" label="转化商机">
             <el-button
               link
@@ -72,8 +72,8 @@
         </el-descriptions>
       </el-card>
 
-      <el-row :gutter="12" class="stack-gap">
-        <el-col :span="14">
+      <el-row :gutter="12" class="stack-gap lead-split">
+        <el-col :span="isCompact ? 24 : 14">
           <el-card>
             <template #header>跟进记录</template>
             <el-timeline v-if="lead.follow_ups?.length">
@@ -95,7 +95,7 @@
             <el-empty v-else description="暂无跟进记录" :image-size="64" />
           </el-card>
         </el-col>
-        <el-col :span="10">
+        <el-col :span="isCompact ? 24 : 10">
           <el-card>
             <template #header>操作日志</template>
             <el-timeline v-if="lead.logs?.length">
@@ -252,7 +252,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -307,6 +307,14 @@ const followForm = reactive({
 })
 
 const leadId = computed(() => Number(route.params.id))
+const isCompact = ref(false)
+const descCols = computed(() => (isCompact.value ? 1 : 3))
+let compactMq: MediaQueryList | null = null
+
+function syncCompact() {
+  isCompact.value = !!compactMq?.matches
+}
+
 const isPublic = computed(
   () => lead.value?.status === 'pending_assign' || lead.value?.status === 'returned',
 )
@@ -497,7 +505,15 @@ async function onLost() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  compactMq = window.matchMedia('(max-width: 720px)')
+  syncCompact()
+  compactMq.addEventListener('change', syncCompact)
+  load()
+})
+onBeforeUnmount(() => {
+  compactMq?.removeEventListener('change', syncCompact)
+})
 </script>
 
 <style scoped>
@@ -509,5 +525,13 @@ onMounted(load)
 }
 .fu-item p {
   margin: 6px 0 0;
+}
+@media (max-width: 720px) {
+  .lead-split .el-col + .el-col {
+    margin-top: 12px;
+  }
+  .card-header {
+    gap: 6px;
+  }
 }
 </style>

@@ -21,7 +21,7 @@
           </el-tag>
         </div>
       </template>
-      <el-descriptions :column="3" border>
+      <el-descriptions :column="descCols" border>
         <el-descriptions-item label="款项">{{ payment.title || '-' }}</el-descriptions-item>
         <el-descriptions-item label="金额">{{ formatAmount(payment.amount) }}</el-descriptions-item>
         <el-descriptions-item label="收款方式">{{ methodLabel(payment.method) }}</el-descriptions-item>
@@ -47,12 +47,22 @@
         <el-descriptions-item label="登记人">{{ payment.owner_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="确认人">{{ payment.confirmed_by_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="确认时间">{{ formatTime(payment.confirmed_at) }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="3">{{ payment.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="descCols">{{ payment.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
-    <el-dialog v-model="editVisible" title="编辑应收" width="520px" destroy-on-close>
-      <el-form :model="editForm" label-width="100px">
+    <el-dialog
+      v-model="editVisible"
+      title="编辑应收"
+      width="520px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :model="editForm"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="款项名称">
           <el-input v-model="editForm.title" />
         </el-form-item>
@@ -82,8 +92,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="confirmVisible" title="确认到账" width="480px">
-      <el-form :model="confirmForm" label-width="100px">
+    <el-dialog
+      v-model="confirmVisible"
+      title="确认到账"
+      width="480px"
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :model="confirmForm"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="到账日期">
           <el-date-picker v-model="confirmForm.paid_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
@@ -113,6 +132,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   DUE_STATUS_LABEL,
   PAYMENT_METHOD_OPTIONS,
@@ -125,6 +145,8 @@ import {
 } from '@/api/payments'
 
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const descCols = computed(() => (isCompact.value ? 1 : 3))
 const loading = ref(false)
 const saving = ref(false)
 const payment = ref<Payment | null>(null)
@@ -259,4 +281,11 @@ async function onRefund() {
 onMounted(loadDetail)
 </script>
 
+<style scoped>
+@media (max-width: 768px) {
+  .card-header {
+    gap: 6px;
+  }
+}
+</style>
 

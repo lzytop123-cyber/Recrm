@@ -199,7 +199,7 @@ class SalesJourneyMilestone(BaseModel):
     status: str  # done / current / pending / skipped
     at: Optional[datetime] = None
     actor: Optional[str] = None
-    entity: Optional[str] = None  # lead / customer / opportunity / contract
+    entity: Optional[str] = None  # lead / customer / opportunity / contract / project
     entity_id: Optional[int] = None
 
 
@@ -208,10 +208,13 @@ class SalesJourneyLinks(BaseModel):
     customer_id: Optional[int] = None
     opportunity_id: Optional[int] = None
     contract_id: Optional[int] = None
+    project_id: Optional[int] = None
     lead_label: Optional[str] = None
     customer_name: Optional[str] = None
     opportunity_no: Optional[str] = None
     contract_no: Optional[str] = None
+    project_no: Optional[str] = None
+    project_name: Optional[str] = None
 
 
 class SalesJourneyOut(BaseModel):

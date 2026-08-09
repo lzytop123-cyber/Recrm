@@ -156,8 +156,21 @@
       </article>
     </section>
 
-    <el-dialog v-model="createVisible" title="发起协作工单" width="640px" destroy-on-close class="claim-dialog">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
+    <el-dialog
+      v-model="createVisible"
+      title="发起协作工单"
+      width="640px"
+      destroy-on-close
+      class="claim-dialog"
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '110px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <section class="form-block">
           <h3><span>1</span>请求内容</h3>
           <el-form-item label="工单标题" prop="title">
@@ -278,7 +291,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="slaVisible" title="工单时限规则" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="slaVisible"
+      title="工单时限规则"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
       <p style="margin: 0 0 12px; color: var(--crm-ink-soft); font-size: 13px">
         按工单分类计算完成时限；等待发起人确认期间暂停计时。
       </p>
@@ -304,6 +323,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   TICKET_PRIORITY_OPTIONS,
   TICKET_TYPE_OPTIONS,
@@ -322,6 +342,7 @@ type FocusFilter = 'near_sla' | 'overdue' | 'pending_confirm'
 
 const router = useRouter()
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
 const projectLoading = ref(false)

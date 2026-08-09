@@ -95,6 +95,12 @@
         >
           {{ collectionHintText }}
         </p>
+        <SalesJourneyBar
+          class="journey-in-card"
+          :contract-id="contract.id"
+          :sync-key="contract.status"
+          hide-self-contract
+        />
       </el-card>
 
       <el-card class="stack-gap">
@@ -217,8 +223,18 @@
       </el-card>
     </template>
 
-    <el-dialog v-model="editVisible" title="编辑草稿" width="560px" destroy-on-close>
-      <el-form :model="editForm" label-width="100px">
+    <el-dialog
+      v-model="editVisible"
+      title="编辑草稿"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :model="editForm"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="合同名称" required>
           <el-input v-model="editForm.title" />
         </el-form-item>
@@ -284,12 +300,22 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="signVisible" title="签署合同" width="480px" destroy-on-close>
+    <el-dialog
+      v-model="signVisible"
+      title="签署合同"
+      width="480px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
       <p v-if="contract" class="dialog-context">
         {{ contract.contract_no }} · {{ contract.title }}
       </p>
       <p class="dialog-hint">签署日期默认为今天；生效日未填则与签署日相同。到期日选填，但不能早于生效日。</p>
-      <el-form :model="signForm" label-width="100px">
+      <el-form
+        :model="signForm"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="签署日期" required>
           <el-date-picker
             v-model="signForm.signed_date"
@@ -324,7 +350,12 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="terminateVisible" title="终止合同" width="480px">
+    <el-dialog
+      v-model="terminateVisible"
+      title="终止合同"
+      width="480px"
+      :fullscreen="isCompact"
+    >
       <el-input v-model="terminateReason" type="textarea" :rows="3" placeholder="请填写终止原因" />
       <template #footer>
         <el-button @click="terminateVisible = false">取消</el-button>
@@ -338,6 +369,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
+import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   CONTRACT_STATUS_LABEL,
   CONTRACT_TYPE_OPTIONS,
@@ -359,6 +392,7 @@ import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
 const uploadingProof = ref(false)
@@ -781,6 +815,9 @@ onMounted(loadDetail)
   margin: 0;
   font-size: 20px;
 }
+.journey-in-card {
+  margin-top: 12px;
+}
 .collection-hint {
   margin: 10px 0 0;
   padding: 8px 12px;
@@ -890,10 +927,29 @@ onMounted(loadDetail)
   color: var(--crm-ink-soft);
   font-size: 12px;
 }
-@media (max-width: 720px) {
+@media (max-width: 768px) {
+  .detail-summary {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .detail-summary small {
+    width: 100%;
+  }
+  .contract-title {
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
   .detail-grid,
   .detail-grid.cols-3 {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .detail-cell {
+    padding: 10px 12px;
+  }
+  .proof-cell {
+    align-items: flex-start;
   }
 }
 </style>

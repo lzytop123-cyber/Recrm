@@ -47,59 +47,74 @@
         <el-button type="primary" @click="openCreate">登记应收</el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" stripe @row-click="goDetail">
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="title" label="款项" width="120" show-overflow-tooltip />
-        <el-table-column prop="contract_no" label="合同编号" width="140" />
-        <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip />
-        <el-table-column label="金额" width="120">
-          <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
-        </el-table-column>
-        <el-table-column prop="due_date" label="应收日期" width="110" />
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">
-              {{ PAYMENT_STATUS_LABEL[row.status] || row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="到期情况" width="100">
-          <template #default="{ row }">
-            <el-tag :type="dueTag(row.due_status)" size="small">
-              {{ DUE_STATUS_LABEL[row.due_status || ''] || '-' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="owner_name" label="登记人" width="100" />
-        <el-table-column label="操作" width="140" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
-            <el-button
-              v-if="row.status === 'pending'"
-              link
-              type="success"
-              @click.stop="quickConfirm(row)"
-            >
-              确认
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="crm-table-wrap">
+        <el-table :data="items" v-loading="loading" stripe @row-click="goDetail">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="title" label="款项" width="120" show-overflow-tooltip />
+          <el-table-column prop="contract_no" label="合同编号" width="140" />
+          <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip />
+          <el-table-column label="金额" width="120">
+            <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
+          </el-table-column>
+          <el-table-column prop="due_date" label="应收日期" width="110" />
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag :type="statusTag(row.status)" size="small">
+                {{ PAYMENT_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="到期情况" width="100">
+            <template #default="{ row }">
+              <el-tag :type="dueTag(row.due_status)" size="small">
+                {{ DUE_STATUS_LABEL[row.due_status || ''] || '-' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="owner_name" label="登记人" width="100" />
+          <el-table-column label="操作" width="140" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
+              <el-button
+                v-if="row.status === 'pending'"
+                link
+                type="success"
+                @click.stop="quickConfirm(row)"
+              >
+                确认
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
 
       <div class="pager">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'prev, pager, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 5 : 7"
           @current-change="loadList"
           @size-change="loadList"
         />
       </div>
     </section>
 
-    <el-dialog v-model="createVisible" title="登记应收" width="560px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <el-dialog
+      v-model="createVisible"
+      title="登记应收"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="合同" prop="contract_id">
           <el-select
             v-model="form.contract_id"
@@ -154,6 +169,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   DUE_STATUS_LABEL,
   PAYMENT_METHOD_OPTIONS,
@@ -168,6 +184,7 @@ import {
 import { fetchContracts, type Contract } from '@/api/contracts'
 
 const router = useRouter()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
 const contractLoading = ref(false)
@@ -344,4 +361,22 @@ onMounted(() => {
 })
 </script>
 
+<style scoped>
+.crm-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+@media (max-width: 768px) {
+  .pager {
+    justify-content: center;
+    overflow-x: auto;
+  }
+}
+</style>
 

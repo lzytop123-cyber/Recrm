@@ -222,6 +222,41 @@
   box-shadow: 0 1px 2px oklch(0.3 0.04 255 / 0.08);
 }
 
+.finance-subtabs .finance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .finance-subtabs {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .finance-subtabs .subtab-group {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .finance-subtabs .subtab {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .finance-subtabs .finance-actions {
+    width: 100%;
+  }
+
+  .finance-subtabs .finance-actions .el-button {
+    flex: 1 1 auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .allocation-summary .overview-card {
     transition: none;
@@ -245,6 +280,37 @@
 }
 
 @media (max-width: 640px) {
+  .allocation-summary,
+  .allocation-summary.cols-3,
+  .sales-quota-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .allocation-summary .overview-card,
+  .allocation-summary article {
+    padding: 12px 14px;
+  }
+
+  .allocation-summary strong {
+    font-size: 22px;
+    margin: 4px 0;
+  }
+
+  .sales-quota-strip {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .allocation-toolbar .toolbar-actions {
+    width: 100%;
+  }
+
+  .allocation-toolbar .toolbar-actions .el-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
   .allocation-summary,
   .allocation-summary.cols-3,
   .sales-quota-strip {

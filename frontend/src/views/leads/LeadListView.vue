@@ -181,12 +181,12 @@
         </div>
       </div>
 
-      <div class="crm-table-wrap" :class="{ 'is-fit': embedded }">
+      <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
       <el-table
         :data="items"
         v-loading="loading"
         stripe
-        :height="embedded ? '100%' : undefined"
+        :height="embedded && !isCompact ? '100%' : undefined"
         :row-class-name="rowClassName"
         @row-click="goDetail"
         @selection-change="onSelectionChange"
@@ -311,7 +311,8 @@
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'prev, pager, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 5 : 7"
           @current-change="loadList"
           @size-change="loadList"
         />
@@ -465,7 +466,7 @@
     <el-drawer
       v-model="drawerVisible"
       direction="rtl"
-      size="460px"
+      :size="isCompact ? '100%' : '460px'"
       :with-header="false"
       class="lead-pool-drawer"
       destroy-on-close
@@ -735,6 +736,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import { useUserStore } from '@/stores/user'
 import { fetchEmployees, type Employee } from '@/api/org'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
@@ -771,6 +773,7 @@ const props = withDefaults(
 
 const router = useRouter()
 const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const canManagePool = computed(
   () => userStore.hasPermission('lead:manage') || userStore.hasPermission('*'),
 )
@@ -1662,6 +1665,57 @@ watch(
 .embedded.leads-page .pager,
 .embedded.leads-page .table-footer {
   flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .embedded.leads-page {
+    height: auto;
+    overflow: visible;
+  }
+  .embedded.leads-page > .crm-panel {
+    flex: none;
+    overflow: visible;
+  }
+  .embedded.leads-page .crm-table-wrap.is-fit,
+  .embedded.leads-page .crm-table-wrap {
+    flex: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+  .toolbar-actions {
+    width: 100%;
+  }
+  .toolbar-actions .el-button {
+    width: 100%;
+  }
+  .table-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .pager {
+    justify-content: center;
+    overflow-x: auto;
+  }
+  .quota-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .drawer-top {
+    align-items: flex-start;
+  }
+  .drawer-top h2 {
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .drawer-footer-actions .drawer-action-btn {
+    flex: 1 1 100%;
+  }
+}
+@media (max-width: 420px) {
+  .quota-strip {
+    grid-template-columns: 1fr;
+  }
 }
 .drawer-inner {
   padding: 4px 4px 12px;

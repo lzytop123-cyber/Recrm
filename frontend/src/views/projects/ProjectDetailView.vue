@@ -85,8 +85,14 @@
             </div>
           </div>
         </template>
+        <SalesJourneyBar
+          class="journey-in-card"
+          :project-id="project.id"
+          :sync-key="project.status"
+          hide-self-project
+        />
         <ProjectJourneyBar class="journey-in-card" :project="project" />
-        <el-descriptions :column="3" border class="stack-gap-sm">
+        <el-descriptions :column="descCols" border class="stack-gap-sm">
           <el-descriptions-item label="项目编号">{{ project.project_no }}</el-descriptions-item>
           <el-descriptions-item label="项目名称">{{ project.name }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ typeLabel(project.project_type) }}</el-descriptions-item>
@@ -116,11 +122,11 @@
           <el-descriptions-item label="计划开始">{{ project.start_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="计划结束">{{ project.end_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实际结束">{{ project.actual_end_date || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="交付范围" :span="3">{{ project.scope_desc || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="project.terminate_reason" label="终止原因" :span="3">
+          <el-descriptions-item label="交付范围" :span="descCols">{{ project.scope_desc || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="project.terminate_reason" label="终止原因" :span="descCols">
             {{ project.terminate_reason }}
           </el-descriptions-item>
-          <el-descriptions-item label="备注" :span="3">{{ project.remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="descCols">{{ project.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -154,7 +160,7 @@
             </el-tag>
           </div>
         </template>
-        <el-descriptions :column="2" border>
+        <el-descriptions :column="acceptDescCols" border>
           <el-descriptions-item label="验收结果">
             {{ ACCEPTANCE_RESULT_LABEL[project.acceptance_result || ''] || project.acceptance_result || '—' }}
           </el-descriptions-item>
@@ -169,13 +175,13 @@
           <el-descriptions-item label="提交时间">
             {{ formatDateTime(project.acceptance_submitted_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="结论与遗留安排" :span="2">
+          <el-descriptions-item label="结论与遗留安排" :span="acceptDescCols">
             {{ project.acceptance_conclusion || '—' }}
           </el-descriptions-item>
-          <el-descriptions-item label="遗留问题摘要" :span="2">
+          <el-descriptions-item label="遗留问题摘要" :span="acceptDescCols">
             {{ project.leftover_summary || '—' }}
           </el-descriptions-item>
-          <el-descriptions-item label="验收附件" :span="2">
+          <el-descriptions-item label="验收附件" :span="acceptDescCols">
             <div v-if="acceptanceFiles.length" class="attach-list">
               <a
                 v-for="(file, idx) in acceptanceFiles"
@@ -194,7 +200,7 @@
           <el-descriptions-item
             v-if="project.acceptance_reject_reason"
             label="驳回原因"
-            :span="2"
+            :span="acceptDescCols"
           >
             {{ project.acceptance_reject_reason }}
           </el-descriptions-item>
@@ -358,8 +364,18 @@
       </el-card>
     </template>
 
-    <el-dialog v-model="editVisible" title="编辑项目" width="560px" destroy-on-close>
-      <el-form :model="editForm" label-width="100px">
+    <el-dialog
+      v-model="editVisible"
+      title="编辑项目"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :model="editForm"
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="项目名称" required>
           <el-input v-model="editForm.name" />
         </el-form-item>
@@ -395,8 +411,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="milestoneVisible" title="添加里程碑" width="480px">
-      <el-form :model="milestoneForm" label-width="90px">
+    <el-dialog
+      v-model="milestoneVisible"
+      title="添加里程碑"
+      width="480px"
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :model="milestoneForm"
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="名称" required>
           <el-input v-model="milestoneForm.name" />
         </el-form-item>
@@ -416,7 +441,12 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="terminateVisible" title="终止项目" width="480px">
+    <el-dialog
+      v-model="terminateVisible"
+      title="终止项目"
+      width="480px"
+      :fullscreen="isCompact"
+    >
       <el-input v-model="terminateReason" type="textarea" :rows="3" placeholder="请填写终止原因" />
       <template #footer>
         <el-button @click="terminateVisible = false">取消</el-button>
@@ -430,6 +460,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   ACCEPTANCE_RESULT_LABEL,
   MILESTONE_STATUS_LABEL,
@@ -449,11 +480,15 @@ import {
 import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
 import { fetchTickets, TICKET_STATUS_LABEL, type Ticket } from '@/api/tickets'
 import ProjectJourneyBar from '@/components/projects/ProjectJourneyBar.vue'
+import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const descCols = computed(() => (isCompact.value ? 1 : 3))
+const acceptDescCols = computed(() => (isCompact.value ? 1 : 2))
 const canGoCloseout = computed(() =>
   userStore.hasAnyPermission('project:finance_submit', 'project:complete', 'project:manage'),
 )
@@ -788,6 +823,21 @@ onMounted(loadDetail)
   flex-wrap: wrap;
   color: var(--crm-ink-soft, #909399);
   font-size: 13px;
+}
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .header-actions,
+  .header-meta {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .title-block span {
+    word-break: break-word;
+    line-height: 1.35;
+  }
 }
 </style>
 

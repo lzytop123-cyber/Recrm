@@ -33,14 +33,14 @@
           <el-tag v-if="item.has_conflict" type="danger" size="small">存在冲突</el-tag>
         </div>
       </template>
-      <el-descriptions :column="3" border>
+      <el-descriptions :column="descCols" border>
         <el-descriptions-item label="资源类型">{{ resourceLabel(item.resource_type) }}</el-descriptions-item>
         <el-descriptions-item label="人员">{{ item.employee_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="申请人">{{ item.creator_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="开始时间">{{ formatTime(item.start_time) }}</el-descriptions-item>
         <el-descriptions-item label="结束时间">{{ formatTime(item.end_time) }}</el-descriptions-item>
         <el-descriptions-item label="地点">{{ item.location || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="挂到项目" :span="2">
+        <el-descriptions-item label="挂到项目" :span="descCols > 1 ? 2 : 1">
           <el-button
             v-if="item.project_id"
             link
@@ -53,9 +53,9 @@
         </el-descriptions-item>
         <el-descriptions-item label="确认人">{{ item.confirmed_by_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="确认时间">{{ formatTime(item.confirmed_at) }}</el-descriptions-item>
-        <el-descriptions-item label="说明" :span="3">{{ item.content || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="3">{{ item.remark || '-' }}</el-descriptions-item>
-        <el-descriptions-item v-if="item.cancel_reason" label="取消原因" :span="3">
+        <el-descriptions-item label="说明" :span="descCols">{{ item.content || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="descCols">{{ item.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item v-if="item.cancel_reason" label="取消原因" :span="descCols">
           {{ item.cancel_reason }}
         </el-descriptions-item>
       </el-descriptions>
@@ -65,24 +65,26 @@
       <template #header>
         <span style="color: #f56c6c">冲突排期</span>
       </template>
-      <el-table :data="item.conflicts || []" size="small">
-        <el-table-column prop="title" label="标题" />
-        <el-table-column label="时间" min-width="180">
-          <template #default="{ row }">
-            {{ formatTime(row.start_time) }} ~ {{ formatTime(row.end_time) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            {{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="80">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="$router.push(`/schedules/${row.id}`)">查看</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="crm-table-wrap">
+        <el-table :data="item.conflicts || []" size="small">
+          <el-table-column prop="title" label="标题" min-width="120" />
+          <el-table-column label="时间" min-width="180">
+            <template #default="{ row }">
+              {{ formatTime(row.start_time) }} ~ {{ formatTime(row.end_time) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              {{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="$router.push(`/schedules/${row.id}`)">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </el-card>
   </div>
 </template>
@@ -91,6 +93,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   SCHEDULE_RESOURCE_OPTIONS,
   SCHEDULE_STATUS_LABEL,
@@ -103,6 +106,8 @@ import {
 } from '@/api/schedules'
 
 const route = useRoute()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const descCols = computed(() => (isCompact.value ? 1 : 3))
 const loading = ref(false)
 const item = ref<Schedule | null>(null)
 const scheduleId = computed(() => Number(route.params.id))
@@ -207,3 +212,24 @@ async function onCancel() {
 onMounted(loadDetail)
 </script>
 
+<style scoped>
+.stack-gap {
+  margin-top: 16px;
+}
+.crm-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 768px) {
+  .card-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .card-header > span {
+    width: 100%;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+}
+</style>

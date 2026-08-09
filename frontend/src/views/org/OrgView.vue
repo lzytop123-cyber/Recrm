@@ -40,14 +40,31 @@
     </div>
 
     <div class="org-layout">
-      <el-card class="org-tree-panel" shadow="never">
+      <el-card
+        class="org-tree-panel"
+        :class="{ 'is-collapsed': isCompact && !treeExpanded }"
+        shadow="never"
+      >
         <template #header>
           <div class="card-header">
-            <span>组织架构</span>
-            <el-button link type="primary" size="small" @click="clearDeptFilter">全部</el-button>
+            <button
+              v-if="isCompact"
+              type="button"
+              class="tree-toggle"
+              @click="treeExpanded = !treeExpanded"
+            >
+              <span>组织架构</span>
+              <small>{{ selectedDeptName || '全部部门' }}</small>
+              <span class="tree-caret" :class="{ 'is-open': treeExpanded }">▾</span>
+            </button>
+            <span v-else>组织架构</span>
+            <div class="card-header-actions">
+              <el-button link type="primary" size="small" @click="clearDeptFilter">全部</el-button>
+            </div>
           </div>
         </template>
         <el-tree
+          v-show="!isCompact || treeExpanded"
           ref="deptTreeRef"
           :data="deptTree"
           node-key="id"
@@ -88,7 +105,12 @@
       <el-card class="org-list-panel" shadow="never">
         <div class="toolbar">
           <div class="filters">
-            <el-tag v-if="selectedDeptName" closable type="info" @close="clearDeptFilter">
+            <el-tag
+              v-if="selectedDeptName && !isCompact"
+              closable
+              type="info"
+              @close="clearDeptFilter"
+            >
               {{ selectedDeptName }}
             </el-tag>
             <el-input
@@ -125,7 +147,44 @@
           </div>
         </div>
 
-        <div class="table-wrap">
+        <div v-if="isCompact" class="emp-card-list" v-loading="empLoading">
+          <button
+            v-for="row in employees"
+            :key="row.id"
+            type="button"
+            class="emp-card"
+            @click="goDetail(row)"
+          >
+            <span class="avatar">{{ (row.real_name || row.username || '?').slice(0, 1) }}</span>
+            <div class="emp-card-main">
+              <div class="emp-card-title">
+                <b>{{ row.real_name || row.username }}</b>
+                <el-tag size="small" :type="employmentTagType(row.employment_status, row.is_active)">
+                  {{ row.employment_status || (row.is_active ? '正式' : '离职') }}
+                </el-tag>
+              </div>
+              <p class="emp-card-meta">
+                {{ row.employee_no || row.username }}
+                <template v-if="row.department_name"> · {{ row.department_name }}</template>
+                <template v-if="row.job_title"> · {{ row.job_title }}</template>
+              </p>
+            </div>
+            <div class="emp-card-actions" @click.stop>
+              <el-button
+                v-if="canManageOrg"
+                link
+                type="primary"
+                @click="openEmployeeEdit(row)"
+              >
+                编辑
+              </el-button>
+              <el-button v-else link type="primary" @click="goDetail(row)">档案</el-button>
+            </div>
+          </button>
+          <div v-if="!empLoading && !employees.length" class="emp-card-empty">暂无员工</div>
+        </div>
+
+        <div v-else class="table-wrap">
           <el-table
             :data="employees"
             v-loading="empLoading"
@@ -145,7 +204,12 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="department_name" label="部门" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="department_name"
+              label="部门"
+              min-width="120"
+              show-overflow-tooltip
+            />
             <el-table-column prop="job_title" label="岗位" width="130" show-overflow-tooltip>
               <template #default="{ row }">{{ row.job_title || '—' }}</template>
             </el-table-column>
@@ -180,7 +244,8 @@
             v-model:current-page="page"
             v-model:page-size="pageSize"
             :total="total"
-            layout="total, prev, pager, next"
+            :layout="isCompact ? 'total, prev, next' : 'total, prev, pager, next'"
+            :pager-count="isCompact ? 3 : 7"
             @current-change="loadEmployees"
             @size-change="loadEmployees"
           />
@@ -188,8 +253,17 @@
       </el-card>
     </div>
 
-    <el-dialog v-model="deptVisible" :title="deptForm.id ? '编辑部门' : '新建部门'" width="420px" destroy-on-close>
-      <el-form label-width="80px">
+    <el-dialog
+      v-model="deptVisible"
+      :title="deptForm.id ? '编辑部门' : '新建部门'"
+      width="420px"
+      :fullscreen="isCompact"
+      destroy-on-close
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '80px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="名称">
           <el-input v-model="deptForm.name" />
         </el-form-item>
@@ -210,9 +284,13 @@
       v-model="empVisible"
       :title="empForm.id ? '编辑员工' : '新建员工'"
       width="560px"
+      :fullscreen="isCompact"
       destroy-on-close
     >
-      <el-form label-width="100px">
+      <el-form
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item v-if="!empForm.id" label="用户名">
           <el-input v-model="empForm.username" />
         </el-form-item>
@@ -293,9 +371,14 @@
       v-model="pwdVisible"
       :title="pwdTarget ? `修改密码 · ${pwdTarget.real_name || pwdTarget.username}` : '修改密码'"
       width="420px"
+      :fullscreen="isCompact"
       destroy-on-close
     >
-      <el-form label-width="90px" @submit.prevent>
+      <el-form
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+        @submit.prevent
+      >
         <el-form-item label="新密码" required>
           <el-input
             v-model="pwdForm.password"
@@ -324,9 +407,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type ElTree } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   createDepartment,
   createEmployee,
@@ -349,8 +433,18 @@ import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const treeExpanded = ref(false)
 const canManageOrg = computed(() => userStore.hasPermission('org:manage'))
 const canSyncOrg = computed(() => userStore.hasPermission('org:sync'))
+
+watch(
+  isCompact,
+  (compact) => {
+    treeExpanded.value = !compact
+  },
+  { immediate: true },
+)
 
 const stats = reactive<OrgStats>({
   departments: 0,
@@ -434,7 +528,7 @@ const statCards = computed(() => [
     key: 'pending' as const,
     label: '待入职',
     value: String(stats.pending_onboard || 0),
-    note: '用工状态=待入职',
+    note: '待办理入职',
     active: statFilter.value === 'pending',
   },
   {
@@ -515,6 +609,7 @@ function goDetail(row: Employee) {
 function onDeptClick(data: Department) {
   selectedDeptId.value = data.id
   selectedDeptName.value = data.name
+  if (isCompact.value) treeExpanded.value = false
   reloadEmployees()
 }
 
@@ -873,6 +968,46 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.tree-toggle {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.tree-toggle small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.tree-caret {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.15s ease;
+}
+.tree-caret.is-open {
+  transform: rotate(180deg);
 }
 .tree-node {
   display: flex;
@@ -904,9 +1039,10 @@ onMounted(async () => {
   gap: 10px;
   align-items: center;
 }
-.emp-cell .avatar {
-  width: 28px;
-  height: 28px;
+.emp-cell .avatar,
+.emp-card .avatar {
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #e8eef8;
   color: #2f5bb8;
@@ -914,13 +1050,77 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   flex-shrink: 0;
+}
+.emp-cell .avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
 }
 .emp-cell small {
   display: block;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.emp-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+.emp-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.emp-card:active {
+  background: var(--el-fill-color-light);
+}
+.emp-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.emp-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.emp-card-title b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.emp-card-meta {
+  margin: 4px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emp-card-actions {
+  flex-shrink: 0;
+}
+.emp-card-empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .crm-stat-tile small {
   display: block;
@@ -934,20 +1134,188 @@ onMounted(async () => {
   box-shadow: inset 0 0 0 1px var(--el-color-primary);
 }
 @media (max-width: 960px) {
-  .org-page {
+  .org-page.crm-fit-page {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .org-layout {
+    grid-template-columns: 1fr;
+    flex: none;
     height: auto;
     min-height: 0;
     overflow: visible;
   }
-  .org-layout {
-    grid-template-columns: 1fr;
+
+  .org-tree-panel,
+  .org-list-panel {
     height: auto;
+    overflow: visible;
   }
+
   .org-tree-panel {
     max-height: 280px;
+    overflow: hidden;
   }
+
+  .org-tree-panel :deep(.el-card__body) {
+    overflow: auto;
+  }
+
+  .org-list-panel :deep(.el-card__body) {
+    overflow: visible;
+  }
+
   .table-wrap {
-    min-height: 360px;
+    min-height: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 解除一屏锁定：页面随内容增高，由自身纵向滚动 */
+  .org-page.crm-fit-page {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+  }
+
+  .org-page .page-head {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .org-page .page-head > div:first-child > p:not(.wb-eyebrow) {
+    display: none;
+  }
+
+  .org-page .page-head h1 {
+    font-size: 20px;
+  }
+
+  .org-page .head-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .org-page .head-actions .el-button,
+  .org-page .head-actions .el-dropdown {
+    width: 100%;
+    margin: 0;
+  }
+
+  .org-page .head-actions .el-dropdown .el-button {
+    width: 100%;
+  }
+
+  .org-page .head-actions > .el-button--primary {
+    grid-column: 1 / -1;
+  }
+
+  .org-page :deep(.crm-stats) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 0;
+  }
+
+  .org-page :deep(.crm-stat-tile) {
+    padding: 10px 12px;
+  }
+
+  .org-page :deep(.crm-stat-tile strong) {
+    font-size: 18px;
+  }
+
+  .org-page :deep(.crm-stat-tile small) {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .org-layout {
+    flex: none;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    gap: 8px;
+  }
+
+  .org-tree-panel,
+  .org-list-panel {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .org-tree-panel.is-collapsed :deep(.el-card__header) {
+    padding: 10px 12px;
+  }
+
+  .org-tree-panel.is-collapsed :deep(.el-card__body) {
+    display: none;
+    padding: 0;
+  }
+
+  .org-tree-panel:not(.is-collapsed) {
+    max-height: 240px;
+    overflow: hidden;
+  }
+
+  .org-tree-panel:not(.is-collapsed) :deep(.el-card__body) {
+    overflow: auto;
+  }
+
+  .org-list-panel :deep(.el-card__body) {
+    overflow: visible;
+    padding: 10px 12px;
+  }
+
+  .toolbar {
+    margin-bottom: 8px;
+  }
+
+  .filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .filters > .el-input {
+    grid-column: 1 / -1;
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .filters > .el-select {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .filters > .el-button {
+    grid-column: 1 / -1;
+  }
+
+  .pager {
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  .pager :deep(.el-pagination) {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
   }
 }
 </style>

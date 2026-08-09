@@ -48,7 +48,10 @@
       </button>
     </div>
 
-    <div class="crm-fit-body" :class="{ 'is-scroll': tab !== 'portfolio' || overviewMode === 'board' }">
+    <div
+      class="crm-fit-body"
+      :class="{ 'is-scroll': isCompact || tab !== 'portfolio' || overviewMode === 'board' }"
+    >
     <!-- 项目台账：同一批项目，列表 / 看板两种查看方式 -->
     <template v-if="tab === 'portfolio'">
       <div class="submode-bar">
@@ -56,7 +59,7 @@
           <el-radio-button value="list">列表</el-radio-button>
           <el-radio-button value="board">看板</el-radio-button>
         </el-radio-group>
-        <span class="muted" style="margin-left: 12px">同一批项目 · 点击进入档案</span>
+        <span class="muted submode-hint">同一批项目 · 点击进入档案</span>
       </div>
 
       <section class="portfolio-hero">
@@ -74,14 +77,14 @@
         </button>
       </section>
 
-      <section class="crm-panel" :class="{ 'crm-fit-panel': overviewMode === 'list' }">
+      <section class="crm-panel" :class="{ 'crm-fit-panel': overviewMode === 'list' && !isCompact }">
         <div class="toolbar">
           <div class="filters">
             <el-input
               v-model="keyword"
               placeholder="搜索项目编号/名称"
               clearable
-              style="width: 220px"
+              :style="isCompact ? { width: '100%' } : { width: '220px' }"
               @keyup.enter="loadProjects"
               @clear="loadProjects"
             />
@@ -89,7 +92,7 @@
               v-model="statusFilter"
               clearable
               placeholder="状态"
-              style="width: 140px"
+              :style="isCompact ? { width: '100%' } : { width: '140px' }"
               @change="onStatusFilterChange"
             >
               <el-option
@@ -99,7 +102,12 @@
                 :value="key"
               />
             </el-select>
-            <el-select v-model="portfolioType" clearable placeholder="交付类型" style="width: 150px">
+            <el-select
+              v-model="portfolioType"
+              clearable
+              placeholder="交付类型"
+              :style="isCompact ? { width: '100%' } : { width: '150px' }"
+            >
               <el-option
                 v-for="opt in PROJECT_TYPE_OPTIONS"
                 :key="opt.value"
@@ -117,8 +125,14 @@
         </div>
 
         <template v-if="overviewMode === 'list'">
-          <div class="crm-table-wrap is-fit">
-            <el-table :data="listProjects" v-loading="loading" stripe height="100%" @row-click="goDetail">
+          <div class="crm-table-wrap" :class="{ 'is-fit': !isCompact }">
+            <el-table
+              :data="listProjects"
+              v-loading="loading"
+              stripe
+              :height="isCompact ? undefined : '100%'"
+              @row-click="goDetail"
+            >
               <el-table-column label="项目" min-width="200">
                 <template #default="{ row }">
                   <b>{{ row.name }}</b>
@@ -2197,6 +2211,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   ACCEPTANCE_RESULT_LABEL,
   HEALTH_LABEL,
@@ -2246,6 +2261,8 @@ import {
 } from '@/api/tickets'
 import { useUserStore } from '@/stores/user'
 import { uploadFile } from '@/api/uploads'
+
+const isCompact = useMatchMedia('(max-width: 768px)')
 
 type TabKey = 'portfolio' | 'initiation' | 'execute' | 'acceptance'
 type OverviewMode = 'list' | 'board'
@@ -4588,11 +4605,25 @@ async function applyRouteTabAndLoad() {
 .submode-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 14px;
+}
+.submode-hint {
+  margin-left: 12px;
 }
 .muted {
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--crm-ink-soft);
 }
 .task-logic-hint {
   margin: 0 0 12px;
@@ -4713,11 +4744,6 @@ async function applyRouteTabAndLoad() {
 }
 .ms-row-actions .text-danger {
   color: #c45656;
-}
-@media (max-width: 640px) {
-  .ms-meta-row {
-    grid-template-columns: 1fr;
-  }
 }
 .init-date-row {
   display: grid;
@@ -5045,10 +5071,91 @@ async function applyRouteTabAndLoad() {
   grid-template-columns: 1.4fr 1fr;
   gap: 0 12px;
 }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* 解除一屏锁定，项目台账可整页滑动 */
+  .project-delivery.crm-fit-page {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .project-delivery .crm-fit-body {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .project-delivery .crm-fit-body.is-scroll {
+    overflow: visible;
+  }
+
+  .project-delivery :deep(.crm-fit-panel),
+  .project-delivery :deep(.crm-panel.crm-fit-panel) {
+    flex: none;
+    overflow: visible;
+  }
+
+  .project-delivery :deep(.crm-table-wrap.is-fit),
+  .project-delivery :deep(.crm-table-wrap) {
+    flex: none;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .submode-bar {
+    margin-bottom: 10px;
+  }
+
+  .submode-hint {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .board-legend {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .table-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .ms-meta-row,
+  .init-date-row,
+  .accept-meta-row,
+  .task-form-row,
   .resource-summary-grid,
   .resource-adjust-row {
     grid-template-columns: 1fr;
+  }
+
+  .task-hours-field {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .task-hours-input {
+    width: 100%;
+    max-width: 160px;
+  }
+
+  .card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ms-row-actions {
+    width: 100%;
+  }
+
+  .resource-summary {
+    gap: 10px;
   }
 }
 </style>

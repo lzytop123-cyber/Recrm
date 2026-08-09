@@ -40,7 +40,7 @@
 
     <template v-if="emp && tab === 'overview'">
       <el-row :gutter="12">
-        <el-col :span="16">
+        <el-col :span="mainCol">
           <el-card class="block">
             <template #header>
               <div class="card-head">
@@ -84,7 +84,7 @@
             </div>
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :span="sideCol">
           <el-card class="block">
             <template #header>
               <div class="card-head">
@@ -151,7 +151,7 @@
 
     <template v-else-if="emp && tab === 'contract'">
       <el-row :gutter="12">
-        <el-col :span="14">
+        <el-col :span="contractMainCol">
           <el-card>
             <template #header>
               <div class="card-head">
@@ -175,7 +175,7 @@
             </div>
           </el-card>
         </el-col>
-        <el-col :span="10">
+        <el-col :span="contractSideCol">
           <el-card>
             <template #header>
               <div class="card-head">
@@ -238,22 +238,33 @@
             </div>
           </div>
         </template>
-        <el-table :data="attendance?.days || []" v-loading="attendLoading" stripe>
-          <el-table-column prop="work_date" label="日期" width="120" />
-          <el-table-column prop="status" label="状态" width="100" />
-          <el-table-column label="首次打卡" width="110">
-            <template #default="{ row }">{{ formatPunch(row.first_punch) }}</template>
-          </el-table-column>
-          <el-table-column label="末次打卡" width="110">
-            <template #default="{ row }">{{ formatPunch(row.last_punch) }}</template>
-          </el-table-column>
-          <el-table-column prop="source" label="数据来源" />
-        </el-table>
+        <div class="attend-table-wrap">
+          <el-table :data="attendance?.days || []" v-loading="attendLoading" stripe>
+            <el-table-column prop="work_date" label="日期" width="120" />
+            <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="首次打卡" width="110">
+              <template #default="{ row }">{{ formatPunch(row.first_punch) }}</template>
+            </el-table-column>
+            <el-table-column label="末次打卡" width="110">
+              <template #default="{ row }">{{ formatPunch(row.last_punch) }}</template>
+            </el-table-column>
+            <el-table-column prop="source" label="数据来源" min-width="120" />
+          </el-table>
+        </div>
       </el-card>
     </template>
 
-    <el-dialog v-model="editContract" title="维护合同信息" width="480px" destroy-on-close>
-      <el-form label-width="100px">
+    <el-dialog
+      v-model="editContract"
+      title="维护合同信息"
+      width="480px"
+      :fullscreen="isCompact"
+      destroy-on-close
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '100px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="合同类型">
           <el-input v-model="contractForm.contract_type" />
         </el-form-item>
@@ -279,8 +290,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="transferVisible" title="转岗" width="460px" destroy-on-close>
-      <el-form label-width="90px">
+    <el-dialog
+      v-model="transferVisible"
+      title="转岗"
+      width="460px"
+      :fullscreen="isCompact"
+      destroy-on-close
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="新岗位">
           <el-input v-model="transferForm.job_title" />
         </el-form-item>
@@ -307,6 +327,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   fetchDepartments,
   fetchEmployee,
@@ -323,7 +344,12 @@ import { useUserStore } from '@/stores/user'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const canManageOrg = computed(() => userStore.hasPermission('org:manage'))
+const mainCol = computed(() => (isCompact.value ? 24 : 16))
+const sideCol = computed(() => (isCompact.value ? 24 : 8))
+const contractMainCol = computed(() => (isCompact.value ? 24 : 14))
+const contractSideCol = computed(() => (isCompact.value ? 24 : 10))
 
 const loading = ref(false)
 const attendLoading = ref(false)
@@ -595,5 +621,103 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   font-weight: 400;
+}
+.attend-table-wrap {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .emp-detail {
+    padding-bottom: 16px;
+  }
+
+  .detail-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .detail-head > .el-button {
+    align-self: flex-start;
+  }
+
+  .identity {
+    width: 100%;
+  }
+
+  .name-line h1 {
+    font-size: 18px;
+  }
+
+  .head-meta {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-fill-color-blank);
+  }
+
+  .tabs-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .tabs-row :deep(.el-radio-group) {
+    width: 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tabs-row :deep(.el-radio-button) {
+    flex: 1 0 auto;
+  }
+
+  .tabs-row :deep(.el-radio-button__inner) {
+    width: 100%;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .tab-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tab-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .card-head p {
+    display: none;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .attend-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attend-toolbar :deep(.el-date-editor) {
+    width: 100% !important;
+  }
+
+  .emp-detail :deep(.crm-stats) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .attend-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 </style>

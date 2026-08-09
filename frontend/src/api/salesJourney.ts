@@ -8,7 +8,7 @@ export interface SalesJourneyMilestone {
   status: JourneyMilestoneStatus | string
   at?: string | null
   actor?: string | null
-  entity?: 'lead' | 'customer' | 'opportunity' | 'contract' | string | null
+  entity?: 'lead' | 'customer' | 'opportunity' | 'contract' | 'project' | string | null
   entity_id?: number | null
 }
 
@@ -17,10 +17,13 @@ export interface SalesJourneyLinks {
   customer_id?: number | null
   opportunity_id?: number | null
   contract_id?: number | null
+  project_id?: number | null
   lead_label?: string | null
   customer_name?: string | null
   opportunity_no?: string | null
   contract_no?: string | null
+  project_no?: string | null
+  project_name?: string | null
 }
 
 export interface SalesJourney {
@@ -35,4 +38,12 @@ export function fetchLeadJourney(leadId: number) {
 
 export function fetchOpportunityJourney(opportunityId: number) {
   return request.get<SalesJourney>(`/opportunities/${opportunityId}/journey`)
+}
+
+export function fetchContractJourney(contractId: number) {
+  return request.get<SalesJourney>(`/contracts/${contractId}/journey`)
+}
+
+export function fetchProjectJourney(projectId: number) {
+  return request.get<SalesJourney>(`/projects/${projectId}/journey`)
 }
