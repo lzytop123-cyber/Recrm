@@ -1,10 +1,10 @@
 <template>
-  <div class="crm-page todo-page" v-loading="loading">
+  <div class="crm-page todo-page" :class="{ 'is-compact': isCompact }" v-loading="loading">
     <header class="todo-head">
       <div class="todo-head-copy">
         <p class="todo-eyebrow">经营台</p>
         <h1>我的待办</h1>
-        <p>审批、工单、线索、任务、档期汇总一处；点击条目进入对应业务页处理。</p>
+        <p class="todo-head-desc">审批、工单、线索、任务、档期汇总一处；点击条目进入对应业务页处理。</p>
       </div>
       <div class="todo-head-actions">
         <el-button @click="reload">刷新</el-button>
@@ -41,7 +41,7 @@
       <div class="todo-panel-head">
         <div>
           <strong>{{ listTitle }}</strong>
-          <p>按紧急程度与到期时间优先处理</p>
+          <p class="todo-panel-hint">按紧急程度与到期时间优先处理</p>
         </div>
         <span class="todo-count-chip">{{ filtered.length }} 项</span>
       </div>
@@ -64,14 +64,17 @@
           :class="{ urgent: item.urgency === 'high' }"
           @click="go(item.path)"
         >
-          <span class="todo-cat" :data-cat="item.category">{{ item.category_label }}</span>
+          <div class="todo-row-top">
+            <span class="todo-cat" :data-cat="item.category">{{ item.category_label }}</span>
+            <span v-if="item.status_label" class="todo-status">{{ item.status_label }}</span>
+          </div>
           <div class="todo-row-main">
             <strong>{{ item.title }}</strong>
             <span v-if="item.subtitle" class="todo-sub">{{ item.subtitle }}</span>
           </div>
           <div class="todo-row-meta">
             <span v-if="item.due_at" class="todo-due">{{ formatDue(item.due_at) }}</span>
-            <span v-if="item.status_label" class="todo-status">{{ item.status_label }}</span>
+            <span v-else class="todo-due todo-due--empty" />
             <span class="todo-go">去处理</span>
           </div>
         </button>
@@ -89,8 +92,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchMyTodos, type TodoCategory, type TodoList } from '@/api/todos'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 
 const router = useRouter()
+const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const data = ref<TodoList | null>(null)
 const category = ref<'all' | TodoCategory>('all')
@@ -219,7 +224,8 @@ onMounted(reload)
   color: var(--td-ink);
 }
 
-.todo-head-copy p:last-child {
+.todo-head-copy p:last-child,
+.todo-head-desc {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
@@ -333,7 +339,8 @@ onMounted(reload)
   color: var(--td-ink);
 }
 
-.todo-panel-head p {
+.todo-panel-head p,
+.todo-panel-hint {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--td-ink-faint);
@@ -367,7 +374,8 @@ onMounted(reload)
   appearance: none;
   width: 100%;
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'top main meta';
   align-items: center;
   gap: 12px 14px;
   padding: 13px 14px;
@@ -396,6 +404,15 @@ onMounted(reload)
 .todo-row.urgent {
   border-left: 3px solid var(--td-danger);
   background: color-mix(in oklab, var(--td-danger-soft) 55%, var(--td-mist));
+}
+
+.todo-row-top {
+  grid-area: top;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
 }
 
 .todo-cat {
@@ -444,6 +461,7 @@ onMounted(reload)
 }
 
 .todo-row-main {
+  grid-area: main;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -468,6 +486,7 @@ onMounted(reload)
 }
 
 .todo-row-meta {
+  grid-area: meta;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -487,6 +506,10 @@ onMounted(reload)
 .todo-due {
   color: var(--td-ink-faint);
   font-variant-numeric: tabular-nums;
+}
+
+.todo-due--empty {
+  display: none;
 }
 
 .todo-go {
@@ -539,30 +562,124 @@ onMounted(reload)
   .todo-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 768px) {
+  .todo-page {
+    gap: 10px;
+  }
+
+  .todo-head {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .todo-head-copy h1 {
+    font-size: 20px;
+  }
+
+  .todo-head-desc {
+    display: none;
+  }
+
+  .todo-head-actions {
+    width: 100%;
+  }
+
+  .todo-head-actions .el-button {
+    width: 100%;
+  }
+
+  .todo-kpis {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .todo-kpis::-webkit-scrollbar {
+    display: none;
+  }
+
+  .todo-kpi {
+    flex: 0 0 auto;
+    min-width: 108px;
+    padding: 10px 12px;
+  }
+
+  .todo-kpi:hover {
+    transform: none;
+  }
+
+  .todo-kpi small {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .todo-kpi b {
+    font-size: 18px;
+  }
+
+  .todo-panel {
+    padding: 12px 12px 10px;
+    border-radius: 12px;
+  }
+
+  .todo-panel-hint {
+    display: none;
+  }
 
   .todo-row {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'top'
+      'main'
+      'meta';
     gap: 8px;
+    padding: 12px;
   }
 
-  .todo-cat {
-    justify-self: start;
+  .todo-row-top {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .todo-row-main strong {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .todo-sub {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   .todo-row-meta {
     justify-content: space-between;
     width: 100%;
   }
+
+  .todo-due--empty {
+    display: block;
+  }
+
+  .todo-go::after {
+    content: '';
+  }
 }
 
 @media (max-width: 640px) {
-  .todo-head {
-    flex-direction: column;
-    padding: 14px 16px;
-  }
-
-  .todo-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .todo-kpi {
+    min-width: 96px;
   }
 }
 </style>

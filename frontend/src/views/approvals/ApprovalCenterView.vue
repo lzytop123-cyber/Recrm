@@ -1,10 +1,10 @@
 <template>
-  <div class="crm-page approvals-page crm-fit-page" v-loading="loading">
+  <div class="crm-page approvals-page crm-fit-page" :class="{ 'is-compact': isCompact }" v-loading="loading">
     <header class="approvals-head">
       <div class="approvals-head-copy">
         <p class="approvals-eyebrow">经营台</p>
         <h1>审批中心</h1>
-        <p>汇总待我审批、我发起与已处理事项；通过后回各自业务模块生效。</p>
+        <p class="approvals-head-desc">汇总待我审批、我发起与已处理事项；通过后回各自业务模块生效。</p>
       </div>
       <div class="approvals-head-actions">
         <el-button @click="reload">刷新</el-button>
@@ -32,7 +32,7 @@
       <div class="approvals-panel-head">
         <div>
           <strong>{{ listTitle }}</strong>
-          <p>按提交时间与业务类型筛选处理</p>
+          <p class="approvals-panel-hint">按提交时间与业务类型筛选处理</p>
         </div>
         <span class="approvals-count-chip">{{ total }} 项</span>
       </div>
@@ -54,7 +54,52 @@
         </div>
       </div>
 
-      <div class="crm-table-wrap">
+      <div v-if="isCompact" class="approval-card-list">
+        <article v-for="row in items" :key="row.id" class="approval-card">
+          <button type="button" class="approval-card-body" @click="openItem(row)">
+            <div class="approval-card-top">
+              <el-tag size="small" type="info">{{ row.category }}</el-tag>
+              <el-tag size="small" :type="statusTag(row.status_label)">{{ row.status_label }}</el-tag>
+            </div>
+            <strong class="approval-card-title">{{ row.title }}</strong>
+            <p class="approval-card-meta">
+              <span>{{ row.applicant_name || '—' }}</span>
+              <span v-if="row.source_id"> · {{ row.source_id }}</span>
+            </p>
+            <p class="approval-card-sub">
+              <span v-if="row.node">{{ row.node }}</span>
+              <span v-if="row.submitted_at" class="approval-card-time">{{ formatTime(row.submitted_at) }}</span>
+            </p>
+            <p v-if="row.summary" class="approval-card-summary">{{ row.summary }}</p>
+          </button>
+          <div class="approval-card-actions">
+            <el-button link type="primary" @click="openItem(row)">查看</el-button>
+            <template v-if="activeTab === 'pending' && row.can_act">
+              <el-button
+                v-if="row.actions.includes('approve')"
+                link
+                type="success"
+                :loading="actingId === row.id"
+                @click="act(row, true)"
+              >
+                通过
+              </el-button>
+              <el-button
+                v-if="row.actions.includes('reject')"
+                link
+                type="danger"
+                :loading="actingId === row.id"
+                @click="act(row, false)"
+              >
+                驳回
+              </el-button>
+            </template>
+          </div>
+        </article>
+        <div v-if="!items.length" class="approval-card-empty">暂无审批事项</div>
+      </div>
+
+      <div v-else class="crm-table-wrap">
         <el-table :data="items" stripe empty-text="暂无审批事项" height="100%">
           <el-table-column label="类型" width="110">
             <template #default="{ row }">
@@ -108,7 +153,8 @@
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'total, prev, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 3 : 7"
           @current-change="loadList"
         />
       </div>
@@ -117,9 +163,10 @@
     <el-drawer
       v-model="detailVisible"
       :title="detailTitle"
-      size="520px"
+      :size="isCompact ? '100%' : '520px'"
       destroy-on-close
       class="approval-detail-drawer"
+      :class="{ 'is-compact': isCompact }"
     >
       <div v-loading="detailLoading" class="approval-drawer">
         <template v-if="detail">
@@ -405,8 +452,10 @@ import {
 } from '@/api/projects'
 import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 import { parseAttachmentList } from '@/utils/attachments'
+import { useMatchMedia } from '@/composables/useMatchMedia'
 
 const router = useRouter()
+const isCompact = useMatchMedia('(max-width: 768px)')
 
 const tabs = [
   { key: 'pending', label: '待我审批', statKey: 'pending' as const, note: '需尽快处理' },
@@ -788,7 +837,8 @@ onMounted(reload)
   color: var(--ap-ink);
 }
 
-.approvals-head-copy p:last-child {
+.approvals-head-copy p:last-child,
+.approvals-head-desc {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
@@ -916,7 +966,8 @@ onMounted(reload)
   color: var(--ap-ink);
 }
 
-.approvals-panel-head p {
+.approvals-panel-head p,
+.approvals-panel-hint {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--ap-ink-faint);
@@ -1283,6 +1334,101 @@ onMounted(reload)
   background: #fff;
 }
 
+.approval-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+
+.approval-card {
+  border: 1px solid var(--ap-line);
+  border-radius: 12px;
+  background: var(--ap-mist);
+  overflow: hidden;
+}
+
+.approval-card-body {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.approval-card-body:active {
+  background: #fff;
+}
+
+.approval-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.approval-card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ap-ink);
+  line-height: 1.4;
+}
+
+.approval-card-meta,
+.approval-card-sub,
+.approval-card-summary {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ap-ink-faint);
+  line-height: 1.4;
+}
+
+.approval-card-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ap-ink-soft);
+}
+
+.approval-card-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-card-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.approval-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 8px 4px;
+  border-top: 1px solid color-mix(in oklab, var(--ap-line) 70%, transparent);
+  background: #fff;
+}
+
+.approval-card-empty {
+  padding: 36px 12px;
+  text-align: center;
+  color: var(--ap-ink-faint);
+  font-size: 13px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .approvals-kpi {
     transition: none;
@@ -1293,14 +1439,123 @@ onMounted(reload)
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* 解除一屏锁定，整页可上下滑 */
+  .approvals-page.crm-fit-page {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .approvals-page .crm-fit-panel,
+  .approvals-page.crm-fit-page .crm-panel.crm-fit-panel {
+    flex: none;
+    overflow: visible;
+  }
+
+  .approvals-page {
+    gap: 10px;
+  }
+
   .approvals-head {
     flex-direction: column;
-    padding: 14px 16px;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .approvals-head-copy h1 {
+    font-size: 20px;
+  }
+
+  .approvals-head-desc {
+    display: none;
+  }
+
+  .approvals-head-actions {
+    width: 100%;
+  }
+
+  .approvals-head-actions .el-button {
+    width: 100%;
   }
 
   .approvals-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .approvals-kpi {
+    min-height: 0;
+    gap: 4px;
+    padding: 10px 10px 8px;
+  }
+
+  .approvals-kpi:hover {
+    transform: none;
+  }
+
+  .approvals-kpi small {
+    font-size: 11px;
+  }
+
+  .approvals-kpi b {
+    font-size: 18px;
+  }
+
+  .approvals-kpi-note {
+    display: none;
+  }
+
+  .approvals-panel {
+    padding: 12px;
+  }
+
+  .approvals-panel-hint {
+    display: none;
+  }
+
+  .toolbar {
+    margin-bottom: 10px;
+  }
+
+  .filters {
+    width: 100%;
+    display: grid;
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .filters > .el-input,
+  .filters > .el-select {
+    width: 100% !important;
+  }
+
+  .filters > .el-button {
+    width: 100%;
+  }
+
+  .pager {
+    justify-content: center;
+    margin-top: 10px;
+  }
+
+  .drawer-hero h2 {
+    font-size: 16px;
+  }
+
+  .amount-card b {
+    font-size: 22px;
+  }
+
+  .drawer-actions {
+    gap: 8px;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .drawer-actions .el-button {
+    flex: 1 1 calc(50% - 4px);
   }
 }
 

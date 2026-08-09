@@ -175,7 +175,9 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules, InputInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { fetchFeishuAuthorizeUrlApi, fetchFeishuConfigApi } from '@/api/auth'
+import { getToken } from '@/api/request'
 import { useUserStore } from '@/stores/user'
+import { navigateAfterLogin, resolvePostLoginPath } from '@/utils/postLoginNavigate'
 
 const router = useRouter()
 const route = useRoute()
@@ -207,6 +209,21 @@ watch(showPasswordForm, (visible) => {
 })
 
 onMounted(async () => {
+  // 已有登录态时不要停在登录页（移动端返回 / WebView 残留常见）
+  if (getToken()) {
+    if (!userStore.user) {
+      try {
+        await userStore.fetchProfile()
+      } catch {
+        /* 交给下方表单重新登录 */
+      }
+    }
+    if (userStore.user) {
+      await navigateAfterLogin(router, route.query.redirect, userStore.homePath)
+      return
+    }
+  }
+
   for (let i = 0; i < 3; i++) {
     try {
       const { data } = await fetchFeishuConfigApi()
@@ -226,7 +243,7 @@ onMounted(async () => {
 async function onFeishuLogin() {
   feishuLoading.value = true
   try {
-    const redirect = (route.query.redirect as string) || '/dashboard'
+    const redirect = resolvePostLoginPath(route.query.redirect, userStore.homePath || '/dashboard')
     const { data } = await fetchFeishuAuthorizeUrlApi(redirect)
     window.location.href = data.authorize_url
   } catch {
@@ -244,8 +261,7 @@ async function onSubmit() {
   try {
     await userStore.login(form.username, form.password)
     ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || userStore.homePath
-    router.replace(redirect)
+    await navigateAfterLogin(router, route.query.redirect, userStore.homePath)
   } catch {
     // 错误已在 axios 拦截器提示
   } finally {

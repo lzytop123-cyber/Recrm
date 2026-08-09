@@ -994,25 +994,4 @@ async function onReturn() {
     acting.value = false
   }
 }
-
-function openScanner(mode?: string) {
-  if (typeof mode === 'string' && mode) scanMode.value = mode
-  scanResult.value = null
-  scannerVisible.value = true
-}
-
-async function doScan() {
-  acting.value = true
-  try {
-    const { data } = await scanAsset({ mode: scanMode.value })
-    scanResult.value = { message: data.message, asset: data.asset }
-    if (data.inventory) inventory.value = data.inventory
-    ElMessage.success(data.message)
-    await reload()
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '扫码失败')
-  } finally {
-    acting.value = false
-  }
-}
 </script>

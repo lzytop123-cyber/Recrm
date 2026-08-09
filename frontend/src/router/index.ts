@@ -217,18 +217,33 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   document.title = `${(to.meta.title as string) || '页面'} - 中泰旭鼎CRM`
 
+  const token = getToken()
+  const userStore = useUserStore()
+
   if (to.meta.public) {
+    // 已登录访问登录页时直接进首页，避免移动端停在登录成功态
+    if (to.path === '/login' && token) {
+      if (!userStore.user) {
+        try {
+          await userStore.fetchProfile()
+        } catch {
+          userStore.logout()
+          next()
+          return
+        }
+      }
+      next({ path: userStore.homePath || '/dashboard' })
+      return
+    }
     next()
     return
   }
 
-  const token = getToken()
   if (!token) {
     next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 
-  const userStore = useUserStore()
   if (!userStore.user) {
     try {
       await userStore.fetchProfile()
@@ -242,14 +257,16 @@ router.beforeEach(async (to, _from, next) => {
   const required = to.meta.permission as string | undefined
   if (required && !userStore.hasPermission(required)) {
     ElMessage.warning('无权访问该页面')
-    next({ path: userStore.homePath })
+    const fallback = userStore.homePath || '/todos'
+    next({ path: fallback === to.path ? '/todos' : fallback })
     return
   }
 
   // 第二期模块：菜单已隐藏，直链访问也暂不开放
   if (to.meta.phase2) {
     ElMessage.info('目标绩效将在第二期开放')
-    next({ path: userStore.homePath })
+    const fallback = userStore.homePath || '/todos'
+    next({ path: fallback === to.path ? '/todos' : fallback })
     return
   }
 

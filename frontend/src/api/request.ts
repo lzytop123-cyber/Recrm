@@ -45,6 +45,15 @@ request.interceptors.response.use(
           : error.message || '请求失败'
 
     if (status === 401) {
+      const reqAuth = String(error.config?.headers?.Authorization || '')
+      const current = getToken()
+      // 登录成功后：更早发出的请求（旧 token / 无 token）返回 401 时，不能清掉新 token
+      if (current) {
+        if (!reqAuth || (reqAuth.startsWith('Bearer ') && reqAuth !== `Bearer ${current}`)) {
+          return Promise.reject(error)
+        }
+      }
+
       clearToken()
       if (router.currentRoute.value.path === '/login') {
         // 登录页上的 401（如密码错误）需要直接提示，不能静默

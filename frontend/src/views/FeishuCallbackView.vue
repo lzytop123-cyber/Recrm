@@ -18,6 +18,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { feishuCallbackApi } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
+import { navigateAfterLogin } from '@/utils/postLoginNavigate'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,7 +37,7 @@ onMounted(async () => {
     const { data } = await feishuCallbackApi(code, state)
     userStore.loginWithFeishuResult(data)
     ElMessage.success('飞书登录成功')
-    router.replace(data.redirect || userStore.homePath)
+    await navigateAfterLogin(router, data.redirect || route.query.redirect, userStore.homePath)
   } catch (e: unknown) {
     const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
     error.value = typeof detail === 'string' ? detail : '飞书登录失败，请重试或联系管理员'
