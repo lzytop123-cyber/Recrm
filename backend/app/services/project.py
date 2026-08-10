@@ -1189,6 +1189,7 @@ def add_milestone(db: Session, user: User, project_id: int, payload: MilestoneCr
     ms = ProjectMilestone(
         project_id=project.id,
         name=payload.name.strip(),
+        start_date=payload.start_date,
         deadline=payload.deadline,
         actual_date=payload.actual_date,
         role=payload.role,
@@ -1451,6 +1452,7 @@ def create_task(db: Session, user: User, payload: ProjectTaskCreate) -> ProjectT
         criteria=payload.criteria,
         assignee_id=assignee_id,
         department_id=assignee.department_id,
+        start_date=payload.start_date,
         due_date=payload.due_date,
         planned_hours=payload.planned_hours or Decimal("0"),
         actual_hours=Decimal("0"),

@@ -77,7 +77,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'opportunities',
-        redirect: { path: '/sales', query: { tab: 'customers' } },
+        redirect: { path: '/sales', query: { tab: 'opportunities' } },
       },
       {
         path: 'opportunities/:id',
@@ -113,13 +113,13 @@ const routes: RouteRecordRaw[] = [
         path: 'projects/delivery',
         name: 'ProjectDeliveryWork',
         component: () => import('@/views/projects/ProjectDeliveryView.vue'),
-        meta: { title: '交付执行', permission: 'project:view' },
+        meta: { title: '项目管理', permission: 'project:view' },
       },
       {
         path: 'projects',
         name: 'Projects',
         component: () => import('@/views/projects/ProjectDeliveryView.vue'),
-        meta: { title: '项目台账', permission: 'project:view' },
+        meta: { title: '项目管理', permission: 'project:view' },
       },
       {
         path: 'projects/:id',

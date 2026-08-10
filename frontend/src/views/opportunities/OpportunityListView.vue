@@ -149,7 +149,10 @@
               :value="c.id"
             />
           </el-select>
-          <div class="field-hint">商机必须关联已完成查重的客户主体。</div>
+          <div class="field-hint">
+            商机必须关联已建档的客户主体。
+            <el-button link type="primary" @click="goCreateCustomer">没有客户？去录入</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="业务类型" prop="business_type">
           <el-select v-model="form.business_type" style="width: 100%">
@@ -331,6 +334,11 @@ function goDetail(row: Opportunity) {
   router.push(`/opportunities/${row.id}`)
 }
 
+function goCreateCustomer() {
+  createVisible.value = false
+  router.push({ path: '/sales', query: { tab: 'customers' } })
+}
+
 function openCreate() {
   form.title = ''
   form.customer_id = route.query.customer_id ? Number(route.query.customer_id) : undefined
@@ -370,8 +378,37 @@ watch(
   },
 )
 
+watch(
+  () => route.query.customer_id,
+  () => {
+    reload()
+  },
+)
+
+function consumeCreateQuery() {
+  if (route.query.create !== '1' && route.query.create !== 'true') return
+  const nextQuery: Record<string, string> = { tab: 'opportunities' }
+  if (route.query.customer_id) nextQuery.customer_id = String(route.query.customer_id)
+  router.replace({ path: '/sales', query: nextQuery })
+}
+
+watch(
+  () => route.query.create,
+  (flag) => {
+    if (!props.embedded) return
+    if (flag === '1' || flag === 'true') {
+      openCreate()
+      consumeCreateQuery()
+    }
+  },
+)
+
 onMounted(() => {
   reload()
+  if (props.embedded && (route.query.create === '1' || route.query.create === 'true')) {
+    openCreate()
+    consumeCreateQuery()
+  }
 })
 </script>
 

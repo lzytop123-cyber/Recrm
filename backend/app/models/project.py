@@ -359,7 +359,8 @@ class ProjectMilestone(Base):
         Integer, ForeignKey("projects.id"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    deadline: Mapped[Optional[date]] = mapped_column(Date)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, comment="计划开始")
+    deadline: Mapped[Optional[date]] = mapped_column(Date, comment="计划结束")
     actual_date: Mapped[Optional[date]] = mapped_column(Date, comment="实际/预测完成日")
     role: Mapped[Optional[str]] = mapped_column(String(50), comment="责任角色")
     deliverable: Mapped[Optional[str]] = mapped_column(String(200), comment="必交成果")
@@ -413,7 +414,8 @@ class ProjectTask(Base):
     department_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("departments.id"), nullable=True
     )
-    due_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, comment="计划开始")
+    due_date: Mapped[Optional[date]] = mapped_column(Date, index=True, comment="计划结束")
     planned_hours: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), default=0)
     actual_hours: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), default=0)
     status: Mapped[str] = mapped_column(

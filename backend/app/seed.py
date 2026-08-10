@@ -120,11 +120,13 @@ ROLES = [
     ]),
     ("销售", "sales", "department", [
         # 无 lead:manage：待分配线索池仅管理层/中层可看，销售只处理已分配线索
+        # ticket:view：承接协作工单后需进「我的待办」接单/处理
         "dashboard:view",
         "lead:view", "customer:view", "customer:manage",
         "opportunity:view", "opportunity:manage",
         "contract:view", "contract:complete",
         "payment:view", "payment:claim",
+        "ticket:view",
         "knowledge:view",
     ]),
     ("交付负责人", "delivery_lead", "department", [

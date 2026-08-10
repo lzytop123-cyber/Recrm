@@ -81,8 +81,40 @@ class CustomerOut(BaseModel):
     creator_name: Optional[str] = None
 
 
+class CustomerOpportunityBrief(BaseModel):
+    id: int
+    opportunity_no: str
+    title: str
+    stage: str
+    expected_amount: float = 0
+    owner_name: Optional[str] = None
+    next_action_at: Optional[datetime] = None
+    updated_at: datetime
+
+
+class CustomerTimelineItem(BaseModel):
+    """客户页统一轨迹：线索跟进 / 商机活动 / 客户级跟进。"""
+
+    key: str
+    source: str  # lead | opportunity | customer
+    occurred_at: datetime
+    title: str
+    content: str
+    user_name: Optional[str] = None
+    method: Optional[str] = None
+    lead_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
+    opportunity_title: Optional[str] = None
+    activity_type: Optional[str] = None
+    evidence: Optional[str] = None
+    next_action_at: Optional[datetime] = None
+
+
 class CustomerDetailOut(CustomerOut):
     follow_ups: List[CustomerFollowUpOut] = []
+    opportunities: List[CustomerOpportunityBrief] = []
+    timeline: List[CustomerTimelineItem] = []
+    last_activity_at: Optional[datetime] = None
 
 
 class CustomerListOut(BaseModel):

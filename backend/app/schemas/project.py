@@ -84,6 +84,7 @@ class ProjectLeftoverCloseRequest(BaseModel):
 
 class MilestoneCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    start_date: Optional[date] = None
     deadline: Optional[date] = None
     actual_date: Optional[date] = None
     role: Optional[str] = Field(None, max_length=50)
@@ -95,6 +96,7 @@ class MilestoneCreate(BaseModel):
 
 class MilestoneUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    start_date: Optional[date] = None
     deadline: Optional[date] = None
     actual_date: Optional[date] = None
     role: Optional[str] = None
@@ -114,6 +116,7 @@ class MilestoneOut(BaseModel):
     id: int
     project_id: int
     name: str
+    start_date: Optional[date] = None
     deadline: Optional[date] = None
     actual_date: Optional[date] = None
     role: Optional[str] = None
@@ -149,6 +152,7 @@ class ProjectTaskCreate(BaseModel):
     criteria: Optional[str] = None
     milestone_id: Optional[int] = None
     assignee_id: Optional[int] = None
+    start_date: Optional[date] = None
     due_date: Optional[date] = None
     planned_hours: Optional[Decimal] = Field(default=Decimal("0"), ge=0)
     remark: Optional[str] = None
@@ -159,6 +163,7 @@ class ProjectTaskUpdate(BaseModel):
     criteria: Optional[str] = None
     milestone_id: Optional[int] = None
     assignee_id: Optional[int] = None
+    start_date: Optional[date] = None
     due_date: Optional[date] = None
     planned_hours: Optional[Decimal] = Field(None, ge=0)
     actual_hours: Optional[Decimal] = Field(None, ge=0)
@@ -177,6 +182,7 @@ class ProjectTaskOut(BaseModel):
     criteria: Optional[str] = None
     assignee_id: Optional[int] = None
     department_id: Optional[int] = None
+    start_date: Optional[date] = None
     due_date: Optional[date] = None
     planned_hours: Optional[Decimal] = None
     actual_hours: Optional[Decimal] = None

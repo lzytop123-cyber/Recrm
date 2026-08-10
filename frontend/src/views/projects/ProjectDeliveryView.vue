@@ -3,11 +3,11 @@
     <header class="sales-head">
       <div class="sales-head-copy">
         <p class="wb-eyebrow">经营台</p>
-        <h1>{{ workbench === 'portfolio' ? '项目台账' : '交付执行' }}</h1>
+        <h1>项目管理</h1>
         <p>{{ workbenchDesc }}</p>
       </div>
       <div class="sales-head-actions">
-        <el-button v-if="workbench === 'delivery' && tab === 'initiation'" type="primary" @click="openInitiation">
+        <el-button v-if="tab === 'initiation'" type="primary" @click="openInitiation">
           ＋ 发起项目立项
         </el-button>
         <el-button
@@ -35,12 +35,25 @@
       </div>
     </header>
 
-    <div v-if="workbench === 'delivery'" class="project-tabs">
+    <div class="project-tabs" role="tablist" aria-label="项目管理分区">
       <button
-        v-for="item in visibleTabs"
+        type="button"
+        class="project-tab"
+        role="tab"
+        :aria-selected="tab === 'portfolio'"
+        :class="{ active: tab === 'portfolio' }"
+        @click="setTab('portfolio')"
+      >
+        项目台账
+      </button>
+      <span class="project-tab-sep" aria-hidden="true">交付</span>
+      <button
+        v-for="item in deliveryTabs"
         :key="item.key"
         type="button"
         class="project-tab"
+        role="tab"
+        :aria-selected="tab === item.key"
         :class="{ active: tab === item.key }"
         @click="setTab(item.key)"
       >
@@ -508,8 +521,14 @@
               <div v-if="row.role" class="muted">{{ row.role }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="计划日期" width="100">
-            <template #default="{ row }">{{ formatShortDate(row.deadline) }}</template>
+          <el-table-column label="计划日期" width="150">
+            <template #default="{ row }">
+              {{
+                row.start_date && row.deadline
+                  ? `${formatShortDate(row.start_date)} ~ ${formatShortDate(row.deadline)}`
+                  : formatShortDate(row.deadline || row.start_date)
+              }}
+            </template>
           </el-table-column>
           <el-table-column prop="deliverable" label="必交成果" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">{{ row.deliverable || '—' }}</template>
@@ -820,8 +839,14 @@
           </el-table-column>
           <el-table-column prop="assignee_name" label="责任人" width="100" />
           <el-table-column prop="department_name" label="部门" width="110" />
-          <el-table-column label="截止日期" width="110">
-            <template #default="{ row }">{{ formatDate(row.due_date) || '—' }}</template>
+          <el-table-column label="计划日期" width="150">
+            <template #default="{ row }">
+              {{
+                row.start_date && row.due_date
+                  ? `${formatShortDate(row.start_date)} ~ ${formatShortDate(row.due_date)}`
+                  : formatDate(row.due_date || row.start_date) || '—'
+              }}
+            </template>
           </el-table-column>
           <el-table-column label="计划/实际工时" width="120">
             <template #default="{ row }">
@@ -1495,40 +1520,49 @@
             />
           </el-form-item>
           <div class="ms-meta-row">
-            <el-form-item label="计划完成日期">
+            <el-form-item label="计划开始">
+              <el-date-picker
+                v-model="msForm.start_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="开始日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="计划结束">
               <el-date-picker
                 v-model="msForm.deadline"
                 type="date"
                 value-format="YYYY-MM-DD"
-                placeholder="选一个目标日期"
+                placeholder="结束日期"
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="责任角色">
-              <el-select
-                v-model="msForm.role"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                :loading="resourceLoading"
-                placeholder="从本项目资源安排选择"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="opt in planMilestoneOwnerOptions"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                >
-                  <div class="ms-owner-opt">
-                    <span>{{ opt.label }}</span>
-                    <small>{{ opt.hint }}</small>
-                  </div>
-                </el-option>
-              </el-select>
-            </el-form-item>
           </div>
+          <el-form-item label="责任角色">
+            <el-select
+              v-model="msForm.role"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              :loading="resourceLoading"
+              placeholder="从本项目资源安排选择"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="opt in planMilestoneOwnerOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              >
+                <div class="ms-owner-opt">
+                  <span>{{ opt.label }}</span>
+                  <small>{{ opt.hint }}</small>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
           <p class="sub ms-block-tip">
             {{
               planMilestoneOwnerOptions.length > 1
@@ -1851,29 +1885,32 @@
           </el-select>
           <div v-if="taskAssigneeHint" class="muted" style="margin-top: 6px">{{ taskAssigneeHint }}</div>
         </el-form-item>
-        <div class="task-form-row">
-          <el-form-item label="截止日期" prop="due_date">
-            <el-date-picker
-              v-model="taskForm.due_date"
-              type="date"
-              value-format="YYYY-MM-DD"
-              style="width: 100%"
+        <el-form-item label="计划时间" prop="dateRange">
+          <el-date-picker
+            v-model="taskForm.dateRange"
+            type="datetimerange"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            format="YYYY-MM-DD HH:mm"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            :default-time="taskDefaultTime"
+            style="width: 100%"
+            @change="onTaskDateRangeChange"
+          />
+        </el-form-item>
+        <el-form-item label="计划工时" prop="planned_hours">
+          <div class="task-hours-field">
+            <el-input-number
+              v-model="taskForm.planned_hours"
+              :min="0"
+              :precision="1"
+              :max="taskHoursMax > 0 ? taskHoursMax : undefined"
+              controls-position="right"
+              class="task-hours-input"
             />
-          </el-form-item>
-          <el-form-item label="计划工时" prop="planned_hours" label-width="80px">
-            <div class="task-hours-field">
-              <el-input-number
-                v-model="taskForm.planned_hours"
-                :min="0"
-                :precision="1"
-                :max="taskHoursMax > 0 ? taskHoursMax : undefined"
-                controls-position="right"
-                class="task-hours-input"
-              />
-              <span class="task-hours-unit">小时</span>
-            </div>
-          </el-form-item>
-        </div>
+            <span class="task-hours-unit">小时</span>
+          </div>
+        </el-form-item>
         <p v-if="taskFormHoursHint" class="sub task-budget-hint" :class="{ 'hours-over': taskFormOverBudget }">
           {{ taskFormHoursHint }}
         </p>
@@ -2371,6 +2408,8 @@ const ALL_TABS: { key: TabKey; label: string }[] = [
   { key: 'acceptance', label: '验收与收尾' },
 ]
 
+const deliveryTabs = ALL_TABS.filter((t) => t.key !== 'portfolio')
+
 /** 交付类型 → 匹配飞书部门名的关键词 */
 const DEPT_HINTS: Record<string, string[]> = {
   ai_custom: ['讲师', '技术', '交付', '研发', '产品', 'AI'],
@@ -2401,19 +2440,16 @@ const canCompleteProject = computed(() =>
   userStore.hasAnyPermission('project:complete', 'project:manage'),
 )
 
+/** 路径仍区分深链：/projects=台账，/projects/delivery=交付子页 */
 const workbench = computed<Workbench>(() =>
   route.path.startsWith('/projects/delivery') ? 'delivery' : 'portfolio',
 )
-const visibleTabs = computed(() =>
-  workbench.value === 'portfolio'
-    ? ALL_TABS.filter((t) => t.key === 'portfolio')
-    : ALL_TABS.filter((t) => t.key !== 'portfolio'),
-)
-const workbenchDesc = computed(() =>
-  workbench.value === 'portfolio'
-    ? '同一批项目，用列表或看板查看；点进去看档案和进度。'
-    : '立项交接、计划基线、任务工时与验收结项；日常干活从这里进。',
-)
+const workbenchDesc = computed(() => {
+  if (tab.value === 'portfolio') return '同一批项目用列表或看板总览；点进去看档案。交付干活请切右侧三个 Tab。'
+  if (tab.value === 'initiation') return '合同交接与立项发起；通过后进入执行做计划基线与任务。'
+  if (tab.value === 'execute') return '计划基线、任务工时与日常推进；这是交付主战场。'
+  return '内部验收、财务核对与结项收尾。'
+})
 
 const tab = ref<TabKey>('portfolio')
 const overviewMode = ref<OverviewMode>('list')
@@ -2618,10 +2654,19 @@ const resourceSubmitLabel = computed(() => {
 const msForm = reactive({
   name: '',
   role: '',
+  start_date: '',
   deadline: '',
   deliverable: '',
   evidence: '',
 })
+
+/** 与排期会议一致：工作时段 08:00-19:00 */
+const WORK_HOUR_START = 8
+const WORK_HOUR_END = 19
+const taskDefaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, WORK_HOUR_START, 0, 0),
+  new Date(2000, 0, 1, WORK_HOUR_END, 0, 0),
+]
 
 const taskForm = reactive({
   project_id: undefined as number | undefined,
@@ -2629,8 +2674,8 @@ const taskForm = reactive({
   title: '',
   criteria: '',
   assignee_id: undefined as number | undefined,
-  due_date: '',
-  planned_hours: 8,
+  dateRange: null as [string, string] | null,
+  planned_hours: undefined as number | undefined,
 })
 const taskRules = computed<FormRules>(() => ({
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -2639,7 +2684,7 @@ const taskRules = computed<FormRules>(() => ({
     : [],
   title: [{ required: true, message: '请填写任务名称', trigger: 'blur' }],
   criteria: [{ required: true, message: '请填写完成标准', trigger: 'blur' }],
-  due_date: [{ required: true, message: '请选择截止日期', trigger: 'change' }],
+  dateRange: [{ required: true, message: '请选择计划时间', trigger: 'change' }],
   planned_hours: [{ required: true, message: '请填写计划工时', trigger: 'blur' }],
 }))
 
@@ -4115,6 +4160,7 @@ async function openMilestone() {
   if (!planProjectId.value) return ElMessage.warning('请先选择项目')
   msForm.name = ''
   msForm.role = ''
+  msForm.start_date = ''
   msForm.deadline = ''
   msForm.deliverable = ''
   msForm.evidence = ''
@@ -4133,6 +4179,7 @@ async function onAddMilestone() {
     await addMilestone(planProjectId.value, {
       name: msForm.name.trim(),
       role: msForm.role.trim() || undefined,
+      start_date: msForm.start_date || undefined,
       deadline: msForm.deadline || undefined,
       deliverable: msForm.deliverable.trim() || undefined,
       // 证据要求写入 remark；真正完成证据在执行阶段再提交
@@ -4305,10 +4352,49 @@ async function applyAssigneeFromMilestone() {
 
 async function onTaskMilestoneChange() {
   const ms = findTaskMilestone(taskForm.milestone_id)
-  if (ms?.deadline) {
-    taskForm.due_date = ms.deadline
-  }
+  applyTaskDateFromMilestone(ms)
   await applyAssigneeFromMilestone()
+}
+
+function parseTaskDateTime(v: string) {
+  const raw = v.includes('T') ? v : v.replace(' ', 'T')
+  const d = new Date(raw.length === 10 ? `${raw}T00:00:00` : raw)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function toTaskDateTime(day: string, hour: number, minute = 0) {
+  const d = day.slice(0, 10)
+  return `${d}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`
+}
+
+function applyTaskHoursFromRange(range?: [string, string] | null) {
+  if (!range?.[0] || !range?.[1]) return
+  const s = parseTaskDateTime(range[0])
+  const e = parseTaskDateTime(range[1])
+  if (!s || !e || e <= s) return
+  // 选几点到几点，就按实际时长计工时
+  let hours = (e.getTime() - s.getTime()) / 3600000
+  const remain = Number(taskFormBudget.value?.remaining_hours || 0)
+  const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+  if (budget > 0 && remain >= 0) {
+    hours = Math.min(hours, remain)
+  }
+  taskForm.planned_hours = Math.round(hours * 10) / 10
+}
+
+function onTaskDateRangeChange(range: [string, string] | null) {
+  applyTaskHoursFromRange(range)
+}
+
+function applyTaskDateFromMilestone(ms?: ProjectMilestone | null) {
+  if (!ms) return
+  const startDay = ms.start_date || ms.deadline
+  const endDay = ms.deadline || ms.start_date
+  if (!startDay || !endDay) return
+  taskForm.dateRange = [
+    toTaskDateTime(startDay, WORK_HOUR_START),
+    toTaskDateTime(endDay, WORK_HOUR_END),
+  ]
 }
 
 async function onTaskProjectChange(projectId: number) {
@@ -4317,10 +4403,12 @@ async function onTaskProjectChange(projectId: number) {
   await Promise.all([loadTaskMilestones(projectId), loadTaskFormBudget(projectId)])
   const open = taskMilestoneOptions.value.find((m) => m.status !== 'done')
   if (open) taskForm.milestone_id = open.id
-  const remain = Number(taskFormBudget.value?.remaining_hours || 0)
-  const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
-  if (budget > 0 && remain >= 0) {
-    taskForm.planned_hours = Math.min(Number(taskForm.planned_hours || 8), remain)
+  if (taskForm.planned_hours != null) {
+    const remain = Number(taskFormBudget.value?.remaining_hours || 0)
+    const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
+    if (budget > 0 && remain >= 0) {
+      taskForm.planned_hours = Math.min(Number(taskForm.planned_hours), remain)
+    }
   }
   await onTaskMilestoneChange()
 }
@@ -4331,8 +4419,8 @@ async function openTaskCreate() {
   taskForm.title = ''
   taskForm.criteria = ''
   taskForm.assignee_id = undefined
-  taskForm.due_date = ''
-  taskForm.planned_hours = 8
+  taskForm.dateRange = null
+  taskForm.planned_hours = undefined
   taskAssigneeHint.value = ''
   const preferredId = preferredTaskMilestoneId.value
   preferredTaskMilestoneId.value = undefined
@@ -4350,12 +4438,7 @@ async function openTaskCreate() {
     const open = preferred || taskMilestoneOptions.value.find((m) => m.status !== 'done')
     if (open) {
       taskForm.milestone_id = open.id
-      if (open.deadline) taskForm.due_date = open.deadline
-    }
-    const remain = Number(taskFormBudget.value?.remaining_hours || 0)
-    const budget = Number(taskFormBudget.value?.resource_budget_hours || 0)
-    if (budget > 0) {
-      taskForm.planned_hours = Math.min(8, Math.max(0, remain))
+      applyTaskDateFromMilestone(open)
     }
     await applyAssigneeFromMilestone()
   } else {
@@ -4381,7 +4464,8 @@ async function onCreateTask() {
       title: taskForm.title,
       criteria: taskForm.criteria,
       assignee_id: taskForm.assignee_id,
-      due_date: taskForm.due_date,
+      start_date: taskForm.dateRange?.[0]?.slice(0, 10) || undefined,
+      due_date: taskForm.dateRange?.[1]?.slice(0, 10) || undefined,
       planned_hours: taskForm.planned_hours,
     })
     ElMessage.success('任务已创建')

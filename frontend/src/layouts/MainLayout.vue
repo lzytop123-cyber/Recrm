@@ -206,6 +206,8 @@ watch(
 
 const activeMenu = computed(() => {
   const path = route.path
+  // 项目管理：台账 /projects 与交付深链 /projects/delivery 共用一个菜单项
+  if (path === '/projects' || path.startsWith('/projects/')) return '/projects'
   const prefixes = [
     '/sales',
     '/leads',
@@ -213,8 +215,6 @@ const activeMenu = computed(() => {
     '/opportunities',
     '/contracts',
     '/payments',
-    '/projects/delivery',
-    '/projects',
     '/okrs',
     '/assets',
     '/timesheets',
@@ -235,7 +235,8 @@ const salesCrumb = computed(() => {
   if (route.path !== '/sales' && !route.path.startsWith('/sales')) return ''
   const tab = String(route.query.tab || '')
   if (tab === 'mine') return '我的线索'
-  if (tab === 'customers') return '客户与商机'
+  if (tab === 'customers') return '客户档案'
+  if (tab === 'opportunities') return '商机'
   if (tab === 'pool') return '线索总览'
   return '线索总览'
 })

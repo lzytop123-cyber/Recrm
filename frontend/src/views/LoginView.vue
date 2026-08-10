@@ -1,168 +1,115 @@
 <template>
   <div class="login-page">
     <div class="login-bg" aria-hidden="true">
-      <div class="login-bg__void" />
-      <div class="login-bg__horizon" />
-      <div class="login-bg__orb login-bg__orb--a" />
-      <div class="login-bg__orb login-bg__orb--b" />
-      <div class="login-bg__grain" />
+      <ColorBendsMount
+        v-if="showLanyard"
+        :colors="loginBgColors"
+        :transparent="true"
+      />
+      <div v-else class="login-bg__image" />
       <div class="login-bg__vignette" />
     </div>
 
-    <div class="login-shell" role="main">
-      <aside class="login-hero" aria-labelledby="login-brand-title">
-        <div class="login-hero__content">
-          <div class="login-brand">
-            <img
-              class="login-logo"
-              src="/ztxd-logo.png"
-              alt="中泰旭鼎"
-              width="68"
-              height="68"
-            />
-            <div>
-              <p class="login-eyebrow">中泰旭鼎 · 经营台</p>
-              <h1 id="login-brand-title" class="title">中泰旭鼎CRM</h1>
+    <div class="login-stage" role="main">
+      <LanyardMount
+        v-if="showLanyard"
+        class="login-lanyard"
+        with-login
+        :position="[0, 0, 11.85]"
+        :gravity="[0, -32, 0]"
+        :fov="17"
+        :transparent="true"
+        :feishu-enabled="feishuEnabled"
+        :loading="loading"
+        :feishu-loading="feishuLoading"
+        :hint="hintText"
+        @submit="onCardSubmit"
+        @feishu="onFeishuLogin"
+      />
+
+      <!-- reduced-motion：平面工牌，视觉与 3D 卡面一致 -->
+      <section v-else class="login-fallback" aria-label="登录">
+        <div class="login-fallback__card">
+          <div class="login-fallback__slot" aria-hidden="true" />
+          <div class="login-fallback__tape" aria-hidden="true">高效办公 高效沟通</div>
+
+          <header class="login-fallback__header">
+            <div class="login-fallback__mark" aria-hidden="true">
+              <span>CRM</span>
+              <span>OKR</span>
             </div>
-          </div>
-
-          <p class="hero-lead">把线索、合同、交付与考核收进同一条经营链路</p>
-
-          <svg
-            class="flow-path"
-            viewBox="0 0 360 88"
-            fill="none"
-            role="img"
-            aria-label="经营链路：线索到交付"
-          >
-            <path
-              class="flow-path__line"
-              d="M12 44 C 70 12, 110 76, 170 44 S 260 8, 348 44"
-              stroke="url(#flowGrad)"
-              stroke-width="1.6"
-              stroke-linecap="round"
-            />
-            <g class="flow-path__nodes">
-              <circle cx="12" cy="44" r="4.5" />
-              <circle cx="120" cy="52" r="4.5" />
-              <circle cx="230" cy="28" r="4.5" />
-              <circle cx="348" cy="44" r="4.5" />
-            </g>
-            <defs>
-              <linearGradient id="flowGrad" x1="0" y1="0" x2="360" y2="0">
-                <stop offset="0%" stop-color="#e8a06e" stop-opacity="0.25" />
-                <stop offset="45%" stop-color="#c45c26" />
-                <stop offset="100%" stop-color="#7aa0c8" stop-opacity="0.55" />
-              </linearGradient>
-            </defs>
-          </svg>
-
-          <ol class="flow-labels">
-            <li>线索</li>
-            <li>客户</li>
-            <li>合同</li>
-            <li>交付</li>
-          </ol>
-        </div>
-      </aside>
-
-      <section class="login-panel" aria-labelledby="login-form-title">
-        <div class="login-card">
-          <header class="login-card__header">
-            <h2 id="login-form-title" class="panel-title">进入工作台</h2>
-            <p class="panel-desc">用飞书账号，或公司账号密码登录</p>
+            <div class="login-fallback__seal" aria-hidden="true">
+              <span>企业经营</span>
+              <span>工作台</span>
+            </div>
           </header>
 
-          <el-button
-            v-if="feishuEnabled"
-            class="feishu-btn"
-            size="large"
-            :loading="feishuLoading"
-            :aria-busy="feishuLoading"
-            @click="onFeishuLogin"
-          >
-            <span class="feishu-btn__inner">
-              <el-icon v-if="!feishuLoading" :size="18"><ChatDotRound /></el-icon>
-              飞书登录
-            </span>
-          </el-button>
+          <div class="login-fallback__title">
+            <h1>中泰旭鼎集团</h1>
+            <p>ZHONGTAIXUDING GROUP</p>
+          </div>
 
-          <button
-            v-if="feishuEnabled && !showPasswordForm"
-            type="button"
-            class="password-toggle"
-            @click="showPasswordForm = true"
-          >
-            使用账号密码登录
-          </button>
+          <ul class="login-fallback__tags" aria-label="功能标签">
+            <li>财务报表</li>
+            <li>数据统计</li>
+            <li>销售管理</li>
+          </ul>
 
-          <template v-if="!feishuEnabled || showPasswordForm">
-            <div v-if="feishuEnabled" class="divider" role="separator">
-              <span>账号密码</span>
-            </div>
+          <div class="login-fallback__rule" aria-hidden="true" />
+
+          <div class="login-fallback__body">
+            <button
+              v-if="feishuEnabled"
+              type="button"
+              class="feishu-btn"
+              :disabled="feishuLoading"
+              :aria-busy="feishuLoading"
+              @click="onFeishuLogin"
+            >
+              {{ feishuLoading ? '跳转中…' : '飞书登录' }}
+            </button>
 
             <el-form
               ref="formRef"
               class="login-form"
               :model="form"
               :rules="rules"
-              label-position="top"
-              require-asterisk-position="right"
               @keyup.enter="onSubmit"
             >
-              <el-form-item label="用户名" prop="username">
+              <el-form-item prop="username">
                 <el-input
                   ref="usernameInputRef"
                   v-model="form.username"
-                  size="large"
                   name="username"
                   autocomplete="username"
-                  placeholder="请输入用户名"
+                  placeholder="用户名"
                   clearable
                 />
               </el-form-item>
-              <el-form-item label="密码" prop="password">
+              <el-form-item prop="password">
                 <el-input
                   v-model="form.password"
-                  size="large"
                   type="password"
                   name="password"
                   autocomplete="current-password"
-                  placeholder="请输入密码"
+                  placeholder="密  码"
                   show-password
                   clearable
                 />
               </el-form-item>
-              <el-button
+              <button
+                type="button"
                 class="submit-btn"
-                size="large"
-                :loading="loading"
+                :disabled="loading"
                 :aria-busy="loading"
                 @click="onSubmit"
               >
-                登录
-              </el-button>
+                {{ loading ? '登录中…' : '登 录' }}
+              </button>
             </el-form>
+          </div>
 
-            <button
-              v-if="feishuEnabled"
-              type="button"
-              class="password-toggle"
-              @click="showPasswordForm = false"
-            >
-              收起账号密码
-            </button>
-          </template>
-
-          <p class="hint" role="note">
-            {{
-              feishuEnabled
-                ? '未绑定飞书时请联系管理员开通'
-                : '默认管理员：admin / admin123'
-            }}
-          </p>
-
-          <p class="trust-line">内部系统 · 权限分级 · 操作可追溯</p>
+          <p class="hint" role="note">{{ hintText }}</p>
         </div>
       </section>
     </div>
@@ -170,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules, InputInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -178,6 +125,13 @@ import { fetchFeishuAuthorizeUrlApi, fetchFeishuConfigApi } from '@/api/auth'
 import { getToken } from '@/api/request'
 import { useUserStore } from '@/stores/user'
 import { navigateAfterLogin, resolvePostLoginPath } from '@/utils/postLoginNavigate'
+
+const LanyardMount = defineAsyncComponent(() => import('@/components/lanyard/LanyardMount.vue'))
+const ColorBendsMount = defineAsyncComponent(
+  () => import('@/components/backgrounds/ColorBendsMount.vue'),
+)
+
+const loginBgColors = ['#29ffdb', '#bc719d', '#7cff67', '#da0b0b']
 
 const router = useRouter()
 const route = useRoute()
@@ -188,7 +142,10 @@ const usernameInputRef = ref<InputInstance>()
 const loading = ref(false)
 const feishuLoading = ref(false)
 const feishuEnabled = ref(false)
-const showPasswordForm = ref(false)
+const showLanyard = ref(
+  typeof window !== 'undefined' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+)
 const form = reactive({
   username: '',
   password: '',
@@ -199,14 +156,14 @@ const rules: FormRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+const hintText = computed(() =>
+  feishuEnabled.value ? '未绑定飞书时请联系管理员开通' : '默认管理员：admin / admin123',
+)
+
 async function focusUsername() {
   await nextTick()
   usernameInputRef.value?.focus?.()
 }
-
-watch(showPasswordForm, (visible) => {
-  if (visible) void focusUsername()
-})
 
 onMounted(async () => {
   // 已有登录态时不要停在登录页（移动端返回 / WebView 残留常见）
@@ -228,16 +185,14 @@ onMounted(async () => {
     try {
       const { data } = await fetchFeishuConfigApi()
       feishuEnabled.value = data.enabled
-      showPasswordForm.value = !data.enabled
-      if (!data.enabled) await focusUsername()
+      if (!data.enabled && !showLanyard.value) await focusUsername()
       return
     } catch {
       if (i < 2) await new Promise((r) => setTimeout(r, 800))
     }
   }
   feishuEnabled.value = false
-  showPasswordForm.value = true
-  await focusUsername()
+  if (!showLanyard.value) await focusUsername()
 })
 
 async function onFeishuLogin() {
@@ -268,30 +223,36 @@ async function onSubmit() {
     loading.value = false
   }
 }
+
+/** 3D 工牌表单提交：走同一套 login 接口 */
+async function onCardSubmit(username: string, password: string) {
+  loading.value = true
+  try {
+    await userStore.login(username, password)
+    ElMessage.success('登录成功')
+    await navigateAfterLogin(router, route.query.redirect, userStore.homePath)
+  } catch {
+    // 错误已在 axios 拦截器提示
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style scoped>
-/* 墨色经营台 · Midnight Ledger
-   void #070d18 · ink #101c30 · steel #2a4a6e · copper #c45c26 · mist #a7b6c8 · paper #f3f6fa */
 .login-page {
-  --login-void: #070d18;
-  --login-ink: #101c30;
-  --login-steel: #2a4a6e;
-  --login-copper: #c45c26;
-  --login-copper-soft: #e8925a;
-  --login-mist: #a7b6c8;
-  --login-paper: #f3f6fa;
-  --login-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --badge-bg: #d1d1d1;
+  --badge-yellow: #ffc145;
+  --badge-ink: #0a0a0a;
+  --badge-muted: #9a9a9a;
+  --badge-field: #c8c8c8;
+  --badge-field-border: #5a5a5a;
 
   position: relative;
   isolation: isolate;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: clamp(16px, 3vw, 40px);
   overflow: hidden;
-  color: var(--login-paper);
-  background: var(--login-void);
+  background: #070d18;
 }
 
 .login-bg {
@@ -302,454 +263,324 @@ async function onSubmit() {
   overflow: hidden;
 }
 
-.login-bg__void {
+.login-bg__image {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(165deg, #050a12 0%, #0c1628 42%, #13243d 72%, #1a3352 100%);
-}
-
-.login-bg__horizon {
-  position: absolute;
-  left: -10%;
-  right: -10%;
-  bottom: 18%;
-  height: 42%;
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 100%, rgba(196, 92, 38, 0.34), transparent 70%),
-    radial-gradient(ellipse 45% 40% at 72% 80%, rgba(74, 122, 181, 0.22), transparent 65%);
-  filter: blur(10px);
-  animation: horizon-breathe 12s var(--login-ease) infinite alternate;
-}
-
-.login-bg__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(4px);
-}
-
-.login-bg__orb--a {
-  top: -8%;
-  left: -6%;
-  width: min(520px, 70vw);
-  height: min(520px, 70vw);
-  background: radial-gradient(circle at 40% 40%, rgba(232, 146, 90, 0.28), transparent 62%);
-  animation: orb-a 16s ease-in-out infinite alternate;
-}
-
-.login-bg__orb--b {
-  top: 8%;
-  right: -10%;
-  width: min(460px, 58vw);
-  height: min(460px, 58vw);
-  background: radial-gradient(circle at 45% 40%, rgba(90, 140, 200, 0.3), transparent 64%);
-  animation: orb-b 18s ease-in-out infinite alternate;
-}
-
-.login-bg__grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 200px 200px;
+  background: #070d18 url('/login-bg.png') center / cover no-repeat;
 }
 
 .login-bg__vignette {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 75% 70% at 50% 48%, transparent 30%, rgba(4, 8, 16, 0.72) 100%);
+    radial-gradient(ellipse 70% 65% at 50% 45%, transparent 35%, rgba(4, 8, 16, 0.4) 100%);
 }
 
-.login-shell {
+.login-stage {
   position: relative;
   z-index: 1;
-  width: min(980px, 100%);
-  display: grid;
-  grid-template-columns: 1.12fr 0.88fr;
-  min-height: min(560px, calc(100vh - 48px));
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 22px;
-  background: color-mix(in oklab, var(--login-ink) 78%, transparent);
-  backdrop-filter: blur(22px) saturate(1.2);
-  -webkit-backdrop-filter: blur(22px) saturate(1.2);
-  box-shadow:
-    0 40px 100px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset;
-  animation: shell-enter 560ms var(--login-ease) both;
+  width: 100%;
+  height: 100vh;
+  min-height: 560px;
 }
 
-.login-hero {
-  position: relative;
-  padding: clamp(28px, 4vw, 48px);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.login-hero__content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+.login-lanyard {
+  width: 100%;
   height: 100%;
 }
 
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.login-logo {
-  width: 68px;
-  height: 68px;
-  flex-shrink: 0;
-  border-radius: 16px;
-  object-fit: cover;
-  background: #000;
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.login-eyebrow {
-  margin: 0 0 6px;
-  color: var(--login-copper-soft);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-}
-
-.title {
-  margin: 0;
-  color: #f7fafc;
-  font-family: 'Noto Serif SC', 'Songti SC', 'Noto Sans SC', serif;
-  font-size: clamp(28px, 3.4vw, 36px);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.15;
-}
-
-.hero-lead {
-  margin: 0;
-  max-width: 28em;
-  color: var(--login-mist);
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-.flow-path {
-  width: min(100%, 360px);
-  height: auto;
-  margin-top: auto;
-}
-
-.flow-path__line {
-  stroke-dasharray: 420;
-  stroke-dashoffset: 420;
-  animation: draw-flow 1.4s var(--login-ease) 0.25s forwards;
-}
-
-.flow-path__nodes circle {
-  fill: var(--login-copper-soft);
-  opacity: 0;
-  animation: node-in 420ms var(--login-ease) forwards;
-}
-
-.flow-path__nodes circle:nth-child(1) { animation-delay: 0.45s; }
-.flow-path__nodes circle:nth-child(2) { animation-delay: 0.65s; }
-.flow-path__nodes circle:nth-child(3) { animation-delay: 0.85s; }
-.flow-path__nodes circle:nth-child(4) { animation-delay: 1.05s; }
-
-.flow-labels {
+.login-fallback {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  width: min(100%, 360px);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  color: rgba(167, 182, 200, 0.88);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
 }
 
-.flow-labels li {
+.login-fallback__card {
+  position: relative;
+  width: min(340px, 100%);
+  min-height: 520px;
+  padding: 28px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 28px;
+  color: var(--badge-ink);
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 55%),
+    var(--badge-bg);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+}
+
+.login-fallback__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+  mix-blend-mode: soft-light;
+  z-index: 0;
+}
+
+.login-fallback__card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.login-fallback__slot {
+  width: 52px;
+  height: 14px;
+  margin: 0 auto 10px;
+  border-radius: 999px;
+  background: #1a1a1a;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.login-fallback__tape {
+  position: absolute;
+  top: 18px;
+  right: -10px;
+  z-index: 2;
+  width: 132px;
+  padding: 6px 12px;
+  background: var(--badge-yellow);
+  color: var(--badge-ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+  transform: rotate(-20deg);
+  box-shadow: 1px 3px 6px rgba(0, 0, 0, 0.22);
+  clip-path: polygon(
+    0% 6%,
+    4% 0%,
+    4% 14%,
+    0% 22%,
+    4% 30%,
+    0% 38%,
+    4% 46%,
+    0% 54%,
+    4% 62%,
+    0% 70%,
+    4% 78%,
+    0% 86%,
+    4% 94%,
+    0% 100%,
+    96% 100%,
+    100% 94%,
+    96% 86%,
+    100% 78%,
+    96% 70%,
+    100% 62%,
+    96% 54%,
+    100% 46%,
+    96% 38%,
+    100% 30%,
+    96% 22%,
+    100% 14%,
+    96% 0%
+  );
+}
+
+.login-fallback__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-right: 6px;
+  margin-top: 4px;
+}
+
+.login-fallback__mark {
+  display: flex;
+  flex-direction: column;
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+}
+
+.login-fallback__seal {
+  width: 70px;
+  height: 70px;
+  margin-top: 4px;
+  margin-right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: 50%;
+  background: var(--badge-yellow);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+.login-fallback__title {
+  margin-top: 18px;
   text-align: center;
 }
 
-.login-panel {
-  display: grid;
-  place-items: center;
-  padding: clamp(24px, 3vw, 40px) clamp(20px, 3vw, 36px);
-  background:
-    linear-gradient(180deg, rgba(243, 246, 250, 0.97), rgba(236, 241, 247, 0.98));
-}
-
-.login-card {
-  width: min(352px, 100%);
-}
-
-.login-card__header {
-  margin-bottom: 28px;
-}
-
-.panel-title {
+.login-fallback__title h1 {
   margin: 0;
-  color: #0f2744;
-  font-family: 'Noto Serif SC', 'Songti SC', 'Noto Sans SC', serif;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
 }
 
-.panel-desc {
-  margin: 8px 0 0;
-  color: #5a6b7d;
-  font-size: 13px;
-  line-height: 1.5;
+.login-fallback__title p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+}
+
+.login-fallback__tags {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.login-fallback__tags li {
+  min-width: 72px;
+  padding: 6px 10px;
+  background: var(--badge-yellow);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.2;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.16);
+  clip-path: polygon(
+    0% 10%,
+    4% 0%,
+    4% 20%,
+    0% 30%,
+    4% 40%,
+    0% 50%,
+    4% 60%,
+    0% 70%,
+    4% 80%,
+    0% 90%,
+    4% 100%,
+    96% 100%,
+    100% 90%,
+    96% 80%,
+    100% 70%,
+    96% 60%,
+    100% 50%,
+    96% 40%,
+    100% 30%,
+    96% 20%,
+    100% 10%,
+    96% 0%
+  );
+}
+
+.login-fallback__rule {
+  height: 4px;
+  margin: 18px 4px 16px;
+  background: var(--badge-yellow);
+  border-radius: 0;
+}
+
+.login-fallback__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feishu-btn,
+.submit-btn {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .feishu-btn {
-  width: 100%;
-  min-height: 46px;
-  color: #fff !important;
-  border: 0 !important;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #1b4f8a, #143d6b) !important;
-  box-shadow: 0 10px 24px rgba(20, 61, 107, 0.28);
-  transition:
-    transform 180ms var(--login-ease),
-    box-shadow 180ms var(--login-ease),
-    filter 180ms var(--login-ease);
+  color: #fff;
+  background: #0a0a0a;
+  letter-spacing: 0.12em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-.feishu-btn:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 14px 28px rgba(20, 61, 107, 0.34);
+.feishu-btn:disabled,
+.submit-btn:disabled {
+  opacity: 0.72;
+  cursor: wait;
 }
 
-.feishu-btn:active {
-  transform: scale(0.985);
+.submit-btn {
+  color: var(--badge-ink);
+  background: var(--badge-yellow);
+  letter-spacing: 0.35em;
+  text-indent: 0.35em;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
-.feishu-btn__inner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+.login-form :deep(.el-form-item) {
+  margin-bottom: 12px;
 }
 
-.password-toggle {
-  display: block;
-  width: 100%;
-  margin-top: 16px;
-  padding: 8px 0;
-  border: 0;
-  color: #5a6b7d;
-  font-size: 13px;
-  text-align: center;
-  background: transparent;
-  cursor: pointer;
-  transition: color 160ms var(--login-ease);
-}
-
-.password-toggle:hover {
-  color: #1b4f8a;
-}
-
-.password-toggle:focus-visible {
-  outline: 2px solid #4a7ab5;
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 22px 0;
-  color: #8a97a8;
-  font-size: 12px;
-}
-
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #d5dde7;
-}
-
-.login-form :deep(.el-form-item__label) {
-  color: #0f2744;
-  font-weight: 600;
+.login-form :deep(.el-form-item__error) {
+  padding-top: 2px;
 }
 
 .login-form :deep(.el-input__wrapper) {
-  min-height: 46px;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 0 0 1px #d5dde7 inset;
-  transition: box-shadow 180ms var(--login-ease);
-}
-
-.login-form :deep(.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px #b8c2cf inset;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--badge-field) !important;
+  box-shadow: 0 0 0 1.5px var(--badge-field-border) inset !important;
 }
 
 .login-form :deep(.el-input__wrapper.is-focus) {
   box-shadow:
-    0 0 0 1px #1b4f8a inset,
-    0 0 0 3px rgba(74, 122, 181, 0.22);
+    0 0 0 1.5px #111 inset,
+    0 0 0 2px rgba(255, 193, 69, 0.45) !important;
 }
 
-.submit-btn {
-  width: 100%;
-  margin-top: 8px;
-  min-height: 46px;
-  color: #fff !important;
-  border: 0 !important;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #c45c26, #a74a1c) !important;
-  box-shadow:
-    0 12px 28px rgba(196, 92, 38, 0.32),
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
-  transition:
-    transform 180ms var(--login-ease),
-    box-shadow 180ms var(--login-ease),
-    filter 180ms var(--login-ease);
+.login-form :deep(.el-input__inner) {
+  color: var(--badge-ink);
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
-.submit-btn:hover {
-  filter: brightness(1.05);
-  box-shadow: 0 16px 32px rgba(196, 92, 38, 0.38);
-}
-
-.submit-btn:active {
-  transform: scale(0.985);
+.login-form :deep(.el-input__inner::placeholder) {
+  color: #2a2a2a;
+  opacity: 0.85;
 }
 
 .hint {
-  margin: 22px 0 0;
-  color: #8a97a8;
-  font-size: 12px;
-  text-align: center;
-  line-height: 1.5;
-}
-
-.trust-line {
   margin: 14px 0 0;
-  color: #6b7c90;
-  font-size: 12px;
+  color: var(--badge-muted);
+  font-size: 11px;
+  font-weight: 500;
   text-align: center;
-  letter-spacing: 0.04em;
-}
-
-@keyframes shell-enter {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes draw-flow {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes node-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes horizon-breathe {
-  from {
-    opacity: 0.85;
-    transform: translateY(6px) scale(1);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(-4px) scale(1.04);
-  }
-}
-
-@keyframes orb-a {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(24px, 30px, 0); }
-}
-
-@keyframes orb-b {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(-28px, 18px, 0); }
-}
-
-@media (max-width: 860px) {
-  .login-shell {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-
-  .login-hero {
-    min-height: 200px;
-    border-right: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .flow-path,
-  .flow-labels {
-    display: none;
-  }
-}
-
-@media (max-width: 480px) {
-  .login-page {
-    padding: 12px;
-    place-items: stretch;
-  }
-
-  .login-shell {
-    min-height: calc(100vh - 24px);
-    border-radius: 18px;
-  }
-
-  .login-logo {
-    width: 56px;
-    height: 56px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .login-shell,
-  .login-bg__horizon,
-  .login-bg__orb,
-  .flow-path__line,
-  .flow-path__nodes circle {
-    animation: none !important;
-  }
-
-  .flow-path__line {
-    stroke-dashoffset: 0;
-  }
-
-  .flow-path__nodes circle {
-    opacity: 1;
-  }
-
-  .feishu-btn,
-  .submit-btn,
-  .password-toggle,
-  .login-form :deep(.el-input__wrapper) {
-    transition: none;
-  }
+  line-height: 1.4;
+  letter-spacing: 0.02em;
 }
 </style>

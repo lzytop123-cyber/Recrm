@@ -16,6 +16,7 @@ export interface ProjectMilestone {
   id: number
   project_id: number
   name: string
+  start_date?: string | null
   deadline?: string | null
   actual_date?: string | null
   role?: string | null
@@ -142,6 +143,7 @@ export interface ProjectTask {
   criteria?: string | null
   assignee_id?: number | null
   department_id?: number | null
+  start_date?: string | null
   due_date?: string | null
   planned_hours?: number | string | null
   actual_hours?: number | string | null
@@ -326,6 +328,7 @@ export function addMilestone(
   projectId: number,
   data: {
     name: string
+    start_date?: string
     deadline?: string
     actual_date?: string
     role?: string
@@ -477,6 +480,7 @@ export function createProjectTask(data: {
   criteria?: string
   milestone_id?: number
   assignee_id?: number
+  start_date?: string
   due_date?: string
   planned_hours?: number
   remark?: string

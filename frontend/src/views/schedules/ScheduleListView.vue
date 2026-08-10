@@ -620,7 +620,7 @@ const rules = computed<FormRules>(() => ({
       : [],
 }))
 
-const workHours = Array.from({ length: 14 }, (_, i) => i + 7) // 07-20，覆盖常见早晚场
+const workHours = Array.from({ length: 11 }, (_, i) => i + 8) // 08-18，早上八点到晚上七点
 const hourStart = workHours[0]
 const hourEnd = workHours[workHours.length - 1]
 

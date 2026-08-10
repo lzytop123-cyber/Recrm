@@ -41,8 +41,40 @@ export interface CustomerFollowUp {
   user_name?: string | null
 }
 
+export interface CustomerOpportunityBrief {
+  id: number
+  opportunity_no: string
+  title: string
+  stage: string
+  expected_amount: number
+  owner_name?: string | null
+  next_action_at?: string | null
+  updated_at: string
+}
+
+export type CustomerTimelineSource = 'lead' | 'opportunity' | 'customer'
+
+export interface CustomerTimelineItem {
+  key: string
+  source: CustomerTimelineSource | string
+  occurred_at: string
+  title: string
+  content: string
+  user_name?: string | null
+  method?: string | null
+  lead_id?: number | null
+  opportunity_id?: number | null
+  opportunity_title?: string | null
+  activity_type?: string | null
+  evidence?: string | null
+  next_action_at?: string | null
+}
+
 export interface CustomerDetail extends Customer {
   follow_ups: CustomerFollowUp[]
+  opportunities: CustomerOpportunityBrief[]
+  timeline: CustomerTimelineItem[]
+  last_activity_at?: string | null
 }
 
 export interface CustomerStats {
@@ -77,6 +109,14 @@ export const COMPANY_SIZE_OPTIONS = [
   { value: 'large', label: '大型' },
   { value: 'group', label: '集团' },
 ]
+
+export const CUSTOMER_FOLLOW_METHOD_LABEL: Record<string, string> = {
+  phone: '电话',
+  wechat: '微信',
+  email: '邮件',
+  meeting: '面谈',
+  visit: '拜访',
+}
 
 export function fetchCustomerStats() {
   return request.get<CustomerStats>('/customers/stats')

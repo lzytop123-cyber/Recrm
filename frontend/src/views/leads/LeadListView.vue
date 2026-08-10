@@ -1200,14 +1200,14 @@ function goConvertedOpportunity() {
   drawerVisible.value = false
   if (oid) router.push(`/opportunities/${oid}`)
   else if (cid) router.push(`/customers/${cid}`)
-  else router.push('/sales?tab=customers')
+  else router.push({ path: '/sales', query: { tab: 'opportunities' } })
 }
 
 function goConvertedCustomer() {
   const cid = drawerLead.value?.converted_customer_id
   drawerVisible.value = false
   if (cid) router.push(`/customers/${cid}`)
-  else router.push('/sales?tab=customers')
+  else router.push({ path: '/sales', query: { tab: 'customers' } })
 }
 
 function openDrawerFollow() {
@@ -1281,7 +1281,9 @@ async function submitDrawerConvert() {
     drawerConvertVisible.value = false
     drawerVisible.value = false
     if (data.opportunity_id) {
-      router.push(`/sales?tab=customers`)
+      router.push({ path: '/sales', query: { tab: 'opportunities' } })
+    } else if (data.customer_id) {
+      router.push(`/customers/${data.customer_id}`)
     } else {
       reload()
     }

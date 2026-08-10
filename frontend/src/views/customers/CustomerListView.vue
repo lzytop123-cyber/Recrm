@@ -1,5 +1,5 @@
 <template>
-  <div class="crm-page customers-page">
+  <div class="crm-page customers-page" :class="{ embedded }">
     <div class="crm-stats" :style="{ '--crm-stats-cols': String(statCards.length) }">
       <button
         v-for="item in statCards"
@@ -13,7 +13,7 @@
       </button>
     </div>
 
-    <section class="crm-panel">
+    <section class="crm-panel" :class="{ 'crm-fit-panel': embedded }">
       <div class="toolbar">
         <div class="filters">
           <el-radio-group v-model="scope" @change="reload">
@@ -38,47 +38,76 @@
           />
           <el-button type="primary" @click="reload">查询</el-button>
         </div>
-        <el-button type="primary" @click="openCreate">录入客户</el-button>
+        <el-button v-if="!embedded" type="primary" @click="openCreate">录入客户</el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" stripe @row-click="goDetail">
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="name" label="客户名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="contact_name" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="120" />
-        <el-table-column prop="industry" label="行业" width="100" />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">
-              {{ CUSTOMER_STATUS_LABEL[row.status] || row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="owner_name" label="负责人" width="100" />
-        <el-table-column label="来源" width="100">
-          <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
+        <el-table
+          :data="items"
+          v-loading="loading"
+          stripe
+          :height="embedded && !isCompact ? '100%' : undefined"
+          @row-click="goDetail"
+        >
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="name" label="客户名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="contact_name" label="联系人" width="100" />
+          <el-table-column prop="phone" label="电话" width="120" />
+          <el-table-column prop="industry" label="行业" width="100" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="statusTag(row.status)" size="small">
+                {{ CUSTOMER_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="owner_name" label="负责人" width="100" />
+          <el-table-column label="来源" width="100">
+            <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" :width="embedded ? 160 : 120" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
+              <el-button
+                v-if="canViewOpportunities"
+                link
+                type="primary"
+                @click.stop="goCreateOpportunity(row)"
+              >
+                新建商机
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
 
       <div class="pager">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
+          :layout="isCompact ? 'prev, pager, next' : 'total, prev, pager, next'"
+          :pager-count="isCompact ? 5 : 7"
           @current-change="loadList"
           @size-change="loadList"
         />
       </div>
     </section>
 
-    <el-dialog v-model="createVisible" title="录入客户" width="560px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+    <el-dialog
+      v-model="createVisible"
+      title="录入客户"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
         <el-form-item label="客户名称" prop="name">
           <el-input v-model="form.name" placeholder="公司全称，必填" />
         </el-form-item>
@@ -127,10 +156,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import { useMatchMedia } from '@/composables/useMatchMedia'
+import { useUserStore } from '@/stores/user'
 import {
   COMPANY_SIZE_OPTIONS,
   CUSTOMER_SOURCE_OPTIONS,
@@ -142,7 +173,21 @@ import {
   type CustomerStats,
 } from '@/api/customers'
 
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    openCreateSignal?: number
+  }>(),
+  { embedded: false, openCreateSignal: 0 },
+)
+
 const router = useRouter()
+const userStore = useUserStore()
+const isCompact = useMatchMedia('(max-width: 768px)')
+const canViewOpportunities = computed(
+  () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
+)
+
 const loading = ref(false)
 const saving = ref(false)
 const items = ref<Customer[]>([])
@@ -236,6 +281,13 @@ function goDetail(row: Customer) {
   router.push(`/customers/${row.id}`)
 }
 
+function goCreateOpportunity(row: Customer) {
+  router.push({
+    path: '/sales',
+    query: { tab: 'opportunities', customer_id: String(row.id), create: '1' },
+  })
+}
+
 function openCreate() {
   form.name = ''
   form.short_name = ''
@@ -265,9 +317,57 @@ async function onCreate() {
   }
 }
 
+watch(
+  () => props.openCreateSignal,
+  (v, old) => {
+    if (props.embedded && v && v !== old) openCreate()
+  },
+)
+
 onMounted(() => {
   reload()
 })
 </script>
 
-
+<style scoped>
+.embedded .crm-stats {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.embedded.customers-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embedded.customers-page > .crm-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.embedded.customers-page .crm-table-wrap.is-fit {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.embedded.customers-page .pager {
+  flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .embedded.customers-page {
+    height: auto;
+    overflow: visible;
+  }
+  .embedded.customers-page > .crm-panel {
+    flex: none;
+    overflow: visible;
+  }
+  .embedded.customers-page .crm-table-wrap.is-fit,
+  .embedded.customers-page .crm-table-wrap {
+    flex: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+</style>

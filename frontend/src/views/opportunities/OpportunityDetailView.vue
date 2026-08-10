@@ -343,7 +343,7 @@ function openFollow() {
 }
 
 function goBack() {
-  router.push({ path: '/sales', query: { tab: 'customers' } })
+  router.push({ path: '/sales', query: { tab: 'opportunities' } })
 }
 
 function typeLabel(code?: string) {

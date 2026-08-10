@@ -20,8 +20,25 @@ from app.models.customer import (
     Customer,
     CustomerFollowUp,
 )
+from app.models.lead import LeadFollowUp
+from app.models.opportunity import OPP_STAGE_LABEL, Opportunity, OpportunityActivity
 from app.models.user import User
 from app.schemas.customer import CustomerCreate, CustomerFollowUpCreate, CustomerUpdate
+
+_METHOD_LABEL = {
+    "phone": "电话",
+    "wechat": "微信",
+    "email": "邮件",
+    "meeting": "面谈",
+    "visit": "拜访",
+}
+
+_ACTIVITY_LABEL = {
+    "follow": "销售跟进",
+    "stage_change": "阶段变更",
+    "create": "创建商机",
+    "contract": "合同",
+}
 
 
 def _now() -> datetime:
@@ -174,6 +191,103 @@ def list_customers(
     return total, [enrich_customer(db, x) for x in items]
 
 
+def _build_customer_timeline(
+    db: Session, customer: Customer, opportunities: list[Opportunity]
+) -> list[dict]:
+    """聚合线索跟进 + 商机活动 + 客户级跟进，按时间倒序。"""
+    items: list[dict] = []
+    opp_title = {o.id: o.title for o in opportunities}
+
+    if customer.source_lead_id:
+        lead_fus = (
+            db.query(LeadFollowUp)
+            .filter(LeadFollowUp.lead_id == customer.source_lead_id)
+            .order_by(LeadFollowUp.follow_at.desc())
+            .all()
+        )
+        for fu in lead_fus:
+            method_label = _METHOD_LABEL.get(fu.method, fu.method)
+            items.append(
+                {
+                    "key": f"lead_fu:{fu.id}",
+                    "source": "lead",
+                    "occurred_at": fu.follow_at,
+                    "title": f"线索跟进 · {method_label}",
+                    "content": fu.content,
+                    "user_name": _user_name(db, fu.user_id),
+                    "method": fu.method,
+                    "lead_id": fu.lead_id,
+                    "opportunity_id": None,
+                    "opportunity_title": None,
+                    "activity_type": None,
+                    "evidence": fu.customer_feedback,
+                    "next_action_at": fu.next_follow_at,
+                }
+            )
+
+    opp_ids = [o.id for o in opportunities]
+    if opp_ids:
+        acts = (
+            db.query(OpportunityActivity)
+            .filter(OpportunityActivity.opportunity_id.in_(opp_ids))
+            .order_by(OpportunityActivity.created_at.desc())
+            .all()
+        )
+        for act in acts:
+            type_label = _ACTIVITY_LABEL.get(act.activity_type, act.activity_type)
+            stage_hint = ""
+            if act.to_stage:
+                stage_hint = f" → {OPP_STAGE_LABEL.get(act.to_stage, act.to_stage)}"
+            items.append(
+                {
+                    "key": f"opp_act:{act.id}",
+                    "source": "opportunity",
+                    "occurred_at": act.created_at,
+                    "title": f"{type_label}{stage_hint}",
+                    "content": act.content or "",
+                    "user_name": _user_name(db, act.user_id),
+                    "method": None,
+                    "lead_id": None,
+                    "opportunity_id": act.opportunity_id,
+                    "opportunity_title": opp_title.get(act.opportunity_id),
+                    "activity_type": act.activity_type,
+                    "evidence": act.evidence,
+                    "next_action_at": act.next_action_at,
+                }
+            )
+
+    for fu in customer.follow_ups or []:
+        method_label = _METHOD_LABEL.get(fu.method, fu.method)
+        items.append(
+            {
+                "key": f"customer_fu:{fu.id}",
+                "source": "customer",
+                "occurred_at": fu.follow_at,
+                "title": f"客户跟进 · {method_label}",
+                "content": fu.content,
+                "user_name": _user_name(db, fu.user_id),
+                "method": fu.method,
+                "lead_id": None,
+                "opportunity_id": None,
+                "opportunity_title": None,
+                "activity_type": None,
+                "evidence": None,
+                "next_action_at": fu.next_follow_at,
+            }
+        )
+
+    def _sort_key(item: dict) -> datetime:
+        t = item.get("occurred_at")
+        if not t:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if getattr(t, "tzinfo", None) is None:
+            return t.replace(tzinfo=timezone.utc)
+        return t
+
+    items.sort(key=_sort_key, reverse=True)
+    return items
+
+
 def get_customer_detail(db: Session, user: User, customer_id: int) -> Customer:
     customer = (
         db.query(Customer)
@@ -187,6 +301,33 @@ def get_customer_detail(db: Session, user: User, customer_id: int) -> Customer:
     customer.follow_ups = sorted(customer.follow_ups or [], key=lambda x: x.id, reverse=True)
     for fu in customer.follow_ups:
         fu.user_name = _user_name(db, fu.user_id)  # type: ignore[attr-defined]
+
+    opportunities = (
+        db.query(Opportunity)
+        .filter(Opportunity.customer_id == customer_id)
+        .order_by(Opportunity.updated_at.desc())
+        .all()
+    )
+    briefs = []
+    for opp in opportunities:
+        briefs.append(
+            {
+                "id": opp.id,
+                "opportunity_no": opp.opportunity_no,
+                "title": opp.title,
+                "stage": opp.stage,
+                "expected_amount": float(opp.expected_amount or 0),
+                "owner_name": _user_name(db, opp.owner_id),
+                "next_action_at": opp.next_action_at,
+                "updated_at": opp.updated_at,
+            }
+        )
+    timeline = _build_customer_timeline(db, customer, opportunities)
+    customer.opportunities = briefs  # type: ignore[attr-defined]
+    customer.timeline = timeline  # type: ignore[attr-defined]
+    customer.last_activity_at = (  # type: ignore[attr-defined]
+        timeline[0]["occurred_at"] if timeline else customer.last_followed_at
+    )
     return enrich_customer(db, customer)
 
 

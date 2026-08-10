@@ -11,7 +11,10 @@
         <el-button v-if="tab === 'pool' || tab === 'mine'" type="primary" @click="leadCreateTick++">
           录入线索
         </el-button>
-        <el-button v-else-if="tab === 'customers'" type="primary" @click="oppCreateTick++">
+        <el-button v-else-if="tab === 'customers'" type="primary" @click="customerCreateTick++">
+          录入客户
+        </el-button>
+        <el-button v-else-if="tab === 'opportunities'" type="primary" @click="oppCreateTick++">
           新建商机
         </el-button>
       </div>
@@ -40,8 +43,13 @@
         :embedded="true"
         :open-create-signal="leadCreateTick"
       />
-      <OpportunityListView
+      <CustomerListView
         v-else-if="tab === 'customers'"
+        :embedded="true"
+        :open-create-signal="customerCreateTick"
+      />
+      <OpportunityListView
+        v-else-if="tab === 'opportunities'"
         :embedded="true"
         :open-create-signal="oppCreateTick"
       />
@@ -55,15 +63,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import LeadListView from '@/views/leads/LeadListView.vue'
+import CustomerListView from '@/views/customers/CustomerListView.vue'
 import OpportunityListView from '@/views/opportunities/OpportunityListView.vue'
 
-type SalesTab = 'pool' | 'mine' | 'customers'
+type SalesTab = 'pool' | 'mine' | 'customers' | 'opportunities'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const canManagePool = computed(
   () => userStore.hasPermission('lead:manage') || userStore.hasPermission('*'),
+)
+const canViewCustomers = computed(
+  () => userStore.hasPermission('customer:view') || userStore.hasPermission('*'),
 )
 const canViewOpportunities = computed(
   () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
@@ -72,7 +84,8 @@ const canViewOpportunities = computed(
 const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [
   { key: 'pool', label: '线索总览', visible: () => canManagePool.value },
   { key: 'mine', label: '我的线索', visible: () => true },
-  { key: 'customers', label: '客户与商机', visible: () => canViewOpportunities.value },
+  { key: 'customers', label: '客户档案', visible: () => canViewCustomers.value },
+  { key: 'opportunities', label: '商机', visible: () => canViewOpportunities.value },
 ]
 
 const visibleTabs = computed(() => allTabs.filter((t) => t.visible()))
@@ -80,11 +93,15 @@ const visibleTabs = computed(() => allTabs.filter((t) => t.visible()))
 function normalizeTab(raw?: string | null): SalesTab {
   if (raw === 'pool' && canManagePool.value) return 'pool'
   if (raw === 'mine') return 'mine'
-  if (raw === 'customers' && canViewOpportunities.value) return 'customers'
+  if (raw === 'customers' && canViewCustomers.value) return 'customers'
+  // 兼容旧「客户与商机」深链：无客户档案权限时落到商机
+  if (raw === 'customers' && canViewOpportunities.value) return 'opportunities'
+  if (raw === 'opportunities' && canViewOpportunities.value) return 'opportunities'
   return canManagePool.value ? 'pool' : 'mine'
 }
 
 const leadCreateTick = ref(0)
+const customerCreateTick = ref(0)
 const oppCreateTick = ref(0)
 
 const tab = ref<SalesTab>(normalizeTab(route.query.tab as string))
@@ -92,7 +109,8 @@ const tab = ref<SalesTab>(normalizeTab(route.query.tab as string))
 const headDesc = computed(() => {
   if (tab.value === 'pool') return '查看全公司线索状态，并对待分配线索执行批量或逐条分配。'
   if (tab.value === 'mine') return '查看分配给当前登录人的线索并持续跟进、转化或释放。'
-  return '维护客户档案与商机阶段，推进方案报价与赢单。'
+  if (tab.value === 'customers') return '维护客户主体档案，作为商机、合同与项目的统一挂载点。'
+  return '推进商机阶段与赢单，商机必须关联已建档的客户主体。'
 })
 
 watch(
@@ -108,7 +126,7 @@ watch(
 )
 
 watch(
-  () => [canManagePool.value, canViewOpportunities.value],
+  () => [canManagePool.value, canViewCustomers.value, canViewOpportunities.value],
   () => {
     if (route.query.tab === 'contracts') return
     const next = normalizeTab(route.query.tab as string)
@@ -122,7 +140,9 @@ watch(
 
 function setTab(next: SalesTab) {
   tab.value = next
-  router.replace({ path: '/sales', query: { tab: next } })
+  // 切换 Tab 时清掉仅对商机有意义的筛选参数，避免残留
+  const query: Record<string, string> = { tab: next }
+  router.replace({ path: '/sales', query })
 }
 
 function onImport() {
@@ -227,6 +247,7 @@ function onImport() {
   }
 
   .sales-center :deep(.embedded.leads-page),
+  .sales-center :deep(.embedded.customers-page),
   .sales-center :deep(.embedded.opportunities-page) {
     height: auto;
     overflow: visible;
