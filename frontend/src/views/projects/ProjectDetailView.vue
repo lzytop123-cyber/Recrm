@@ -5,22 +5,39 @@
       <div class="actions" v-if="project">
         <el-button
           v-if="!['completed', 'terminated'].includes(project.status)"
+          v-perm="'project:manage'"
           type="primary"
           @click="editVisible = true"
         >
           编辑
         </el-button>
-        <el-button v-if="project.status === 'initiating'" type="warning" @click="onPlan">进入计划</el-button>
+        <el-button
+          v-if="project.status === 'initiating'"
+          v-perm="'project:manage'"
+          type="warning"
+          @click="onPlan"
+        >
+          进入计划
+        </el-button>
         <el-button
           v-if="['initiating', 'planning'].includes(project.status)"
+          v-perm="'project:manage'"
           type="success"
           @click="onExecute"
         >
           进入执行
         </el-button>
-        <el-button v-if="project.status === 'executing'" type="warning" @click="onAccepting">进入验收</el-button>
+        <el-button
+          v-if="project.status === 'executing'"
+          v-perm="'project:manage'"
+          type="warning"
+          @click="onAccepting"
+        >
+          进入验收
+        </el-button>
         <el-button
           v-if="project.status === 'accepting' && project.acceptance_approval_status !== 'pending'"
+          v-perm.any="['project:accept_submit', 'project:manage']"
           type="success"
           @click="goAcceptanceWorkbench"
         >
@@ -43,6 +60,7 @@
         </el-button>
         <el-button
           v-if="!['completed', 'terminated'].includes(project.status)"
+          v-perm="'project:manage'"
           type="danger"
           plain
           @click="terminateVisible = true"

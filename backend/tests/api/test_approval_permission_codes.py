@@ -78,6 +78,9 @@ def test_seed_roles_include_board_and_new_perms() -> None:
     assert "project:accept_approve" in by_code["delivery_lead"][3]
     assert "project:accept_submit" in by_code["delivery_lead"][3]
     assert "contract:complete" in by_code["sales"][3]
+    assert "asset:manage" in {p[1] for p in PERMISSIONS}
+    assert "system:manage" in {p[1] for p in PERMISSIONS}
+    assert "asset:manage" in by_code["asset_admin"][3]
 
 
 def test_admin_role_code_still_bypasses(db_session: Session) -> None:

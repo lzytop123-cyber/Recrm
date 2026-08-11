@@ -198,6 +198,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   OPP_STAGE_LABEL,
@@ -212,6 +213,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const { businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
@@ -305,13 +307,21 @@ const stageOptions = [
 ]
 
 const opportunityId = computed(() => Number(route.params.id))
-const canEdit = computed(() => !!opp.value && !['won', 'lost'].includes(opp.value.stage))
+const canEdit = computed(
+  () =>
+    !!opp.value &&
+    !['won', 'lost'].includes(opp.value.stage) &&
+    (userStore.hasPermission('opportunity:manage') || userStore.hasPermission('*')),
+)
 const linkedContractId = computed(() => opp.value?.linked_contract_id || null)
 const canDraft = computed(
   () =>
     !!opp.value &&
     (opp.value.stage === 'negotiation' || opp.value.stage === 'won') &&
-    !linkedContractId.value,
+    !linkedContractId.value &&
+    (userStore.hasPermission('opportunity:manage') ||
+      userStore.hasPermission('contract:manage') ||
+      userStore.hasPermission('*')),
 )
 
 function goLinkedContract() {

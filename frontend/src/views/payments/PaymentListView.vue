@@ -44,7 +44,7 @@
           />
           <el-button type="primary" @click="reload">查询</el-button>
         </div>
-        <el-button type="primary" @click="openCreate">登记应收</el-button>
+        <el-button v-perm.any="['payment:manage', 'contract:manage']" type="primary" @click="openCreate">登记应收</el-button>
       </div>
 
       <div class="crm-table-wrap">
@@ -77,6 +77,7 @@
               <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
               <el-button
                 v-if="row.status === 'pending'"
+                v-perm.any="['payment:confirm', 'payment:manage']"
                 link
                 type="success"
                 @click.stop="quickConfirm(row)"
@@ -181,7 +182,7 @@ import {
   type Payment,
   type PaymentStats,
 } from '@/api/payments'
-import { fetchContracts, type Contract } from '@/api/contracts'
+import { fetchDirectoryContracts, type DirectoryContract } from '@/api/directory'
 
 const router = useRouter()
 const isCompact = useMatchMedia('(max-width: 768px)')
@@ -197,7 +198,7 @@ const status = ref<string | undefined>()
 const dueStatus = ref<string | undefined>()
 const keyword = ref('')
 const stats = ref<PaymentStats | null>(null)
-const contractOptions = ref<Contract[]>([])
+const contractOptions = ref<DirectoryContract[]>([])
 
 const createVisible = ref(false)
 const formRef = ref<FormInstance>()
@@ -273,7 +274,7 @@ function onStatClick(item: { status?: string; due_status?: string }) {
 async function searchContracts(q: string) {
   contractLoading.value = true
   try {
-    const { data } = await fetchContracts({ keyword: q || undefined, page: 1, page_size: 20 })
+    const { data } = await fetchDirectoryContracts({ keyword: q || undefined, page: 1, page_size: 20 })
     contractOptions.value = data.items
   } finally {
     contractLoading.value = false

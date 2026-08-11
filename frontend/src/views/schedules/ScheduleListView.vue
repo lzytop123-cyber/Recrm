@@ -525,7 +525,12 @@ import {
   type Schedule,
   type ScheduleConflict,
 } from '@/api/schedules'
-import { fetchProjects, fetchProjectTasks, type Project, type ProjectTask } from '@/api/projects'
+import {
+  fetchDirectoryProjects,
+  fetchDirectoryProjectTasks,
+  type DirectoryProject,
+  type DirectoryProjectTask,
+} from '@/api/directory'
 
 type ViewMode = 'week' | 'month'
 type RoleFilter = 'all' | 'instructor' | 'streamer' | 'shooting_edit'
@@ -563,8 +568,8 @@ const personTreeHasPeople = computed(() => {
   }
   return walk(personTree.value)
 })
-const projectOptions = ref<Project[]>([])
-const taskOptions = ref<ProjectTask[]>([])
+const projectOptions = ref<DirectoryProject[]>([])
+const taskOptions = ref<DirectoryProjectTask[]>([])
 const anchor = ref(startOfDay(new Date()))
 
 const roleFilterLabel = computed(
@@ -1104,7 +1109,11 @@ async function openConflict(c: ScheduleConflict) {
 async function searchProjects(q: string) {
   projectLoading.value = true
   try {
-    const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 30 })
+    const { data } = await fetchDirectoryProjects({
+      keyword: q || undefined,
+      page: 1,
+      page_size: 30,
+    })
     projectOptions.value = data.items
   } finally {
     projectLoading.value = false
@@ -1115,7 +1124,7 @@ async function onProjectChange(pid?: number) {
   form.project_task_id = undefined
   taskOptions.value = []
   if (!pid) return
-  const { data } = await fetchProjectTasks({ project_id: pid, page: 1, page_size: 100 })
+  const { data } = await fetchDirectoryProjectTasks({ project_id: pid, page: 1, page_size: 100 })
   taskOptions.value = data.items
 }
 
@@ -1155,7 +1164,7 @@ async function openCreate(presetProjectId?: number) {
     await searchProjects('')
     const hit = projectOptions.value.find((p) => p.id === presetProjectId)
     if (!hit) {
-      const { data } = await fetchProjects({ page: 1, page_size: 100 })
+      const { data } = await fetchDirectoryProjects({ page: 1, page_size: 100 })
       projectOptions.value = data.items
     }
     if (projectOptions.value.some((p) => p.id === presetProjectId)) {

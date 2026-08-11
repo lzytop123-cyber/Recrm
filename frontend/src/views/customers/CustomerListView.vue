@@ -38,7 +38,7 @@
           />
           <el-button type="primary" @click="reload">查询</el-button>
         </div>
-        <el-button v-if="!embedded" type="primary" @click="openCreate">录入客户</el-button>
+        <el-button v-if="!embedded" v-perm="'customer:manage'" type="primary" @click="openCreate">录入客户</el-button>
       </div>
 
       <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
@@ -69,7 +69,7 @@
             <template #default="{ row }">
               <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
               <el-button
-                v-if="canViewOpportunities"
+                v-if="canManageOpportunities"
                 link
                 type="primary"
                 @click.stop="goCreateOpportunity(row)"
@@ -186,6 +186,9 @@ const userStore = useUserStore()
 const isCompact = useMatchMedia('(max-width: 768px)')
 const canViewOpportunities = computed(
   () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
+)
+const canManageOpportunities = computed(
+  () => userStore.hasPermission('opportunity:manage') || userStore.hasPermission('*'),
 )
 
 const loading = ref(false)

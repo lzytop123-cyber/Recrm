@@ -52,8 +52,7 @@ def _now() -> datetime:
 
 
 def can_manage_knowledge(user: User) -> bool:
-    codes = {r.code for r in user.roles}
-    return bool(codes & {"admin", "executive", "middle_manager"}) or user_can(user, "knowledge:manage")
+    return user_can(user, "knowledge:manage")
 
 
 def _ensure_seed(db: Session) -> None:

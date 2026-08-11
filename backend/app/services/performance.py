@@ -112,8 +112,12 @@ def suggested_okr_for_user(db: Session, user_id: int, month_period: str) -> tupl
 
 
 def can_manage_performance(user: User) -> bool:
+    from app.core.rbac import user_can
+
+    if user_can(user, "org:manage"):
+        return True
     codes = {r.code for r in user.roles}
-    return bool(codes & {"admin", "middle_manager", "executive", "hr"})
+    return bool(codes & {"executive", "middle_manager", "hr_supervisor"})
 
 
 def enrich_assessment(

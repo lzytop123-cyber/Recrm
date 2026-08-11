@@ -7,7 +7,7 @@
         <p>{{ workbenchDesc }}</p>
       </div>
       <div class="sales-head-actions">
-        <el-button v-if="tab === 'initiation'" type="primary" @click="openInitiation">
+        <el-button v-if="tab === 'initiation'" v-perm="'project:manage'" type="primary" @click="openInitiation">
           ＋ 发起项目立项
         </el-button>
         <el-button
@@ -19,6 +19,7 @@
         </el-button>
         <el-button
           v-else-if="tab === 'execute' && executeMode === 'tasks'"
+          v-perm="'project:manage'"
           type="primary"
           @click="openTaskCreate"
         >
@@ -2381,8 +2382,12 @@ import {
   type ResourceRoleMember,
   type ResourceRoleOption,
 } from '@/api/projects'
-import { fetchContracts, type Contract } from '@/api/contracts'
-import { fetchEmployees, type Employee } from '@/api/org'
+import {
+  fetchDirectoryContracts,
+  fetchDirectoryPeople,
+  type DirectoryContract,
+  type DirectoryPerson,
+} from '@/api/directory'
 import { fetchSchedules, SCHEDULE_STATUS_LABEL, type Schedule } from '@/api/schedules'
 import {
   fetchTickets,
@@ -2595,8 +2600,8 @@ const acceptAttachUrl = ref('')
 const acceptAttachSize = ref(0)
 const contractLoading = ref(false)
 const empLoading = ref(false)
-const contractOptions = ref<Contract[]>([])
-const employees = ref<Employee[]>([])
+const contractOptions = ref<DirectoryContract[]>([])
+const employees = ref<DirectoryPerson[]>([])
 const roleOptions = ref<ResourceRoleOption[]>([])
 const roleEmployees = ref<ResourceRoleMember[]>([])
 const roleOptionsHint = ref('')
@@ -3434,7 +3439,7 @@ async function searchContracts(q: string) {
   contractLoading.value = true
   try {
     const [{ data }, occupied] = await Promise.all([
-      fetchContracts({ keyword: q || undefined, page: 1, page_size: 50 }),
+      fetchDirectoryContracts({ keyword: q || undefined, page: 1, page_size: 50 }),
       fetchProjects({ page: 1, page_size: 100 }),
     ])
     const busyContractIds = new Set(
@@ -3454,7 +3459,7 @@ async function searchContracts(q: string) {
 async function searchEmployees(q: string) {
   empLoading.value = true
   try {
-    const { data } = await fetchEmployees({ keyword: q || undefined, page: 1, page_size: 30 })
+    const { data } = await fetchDirectoryPeople({ keyword: q || undefined, page: 1, page_size: 30 })
     employees.value = data.items
   } finally {
     empLoading.value = false
@@ -3915,7 +3920,7 @@ function evidenceTone(row: ProjectMilestone) {
 
 function canManagePlanForProject(project?: Project | null) {
   if (!project) return false
-  if (userStore.hasPermission('*')) return true
+  if (userStore.hasPermission('*') || userStore.hasPermission('project:manage')) return true
   const codes = (userStore.user?.roles || []).map((r) => r.code)
   if (codes.includes('admin')) return true
   if (!codes.includes('dept_head')) return false
@@ -4314,9 +4319,7 @@ async function ensureAssigneeOption(userId: number, name?: string) {
       username: name || String(userId),
       real_name: name || String(userId),
       is_active: true,
-      created_at: '',
-      updated_at: '',
-    } as Employee,
+    } as DirectoryPerson,
     ...employees.value,
   ]
 }

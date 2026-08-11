@@ -84,6 +84,7 @@
             </el-button>
             <el-button
               v-if="row.status === 'submitted'"
+              v-perm="'timesheet:approve'"
               link
               type="success"
               @click.stop="quickApprove(row)"
@@ -173,7 +174,7 @@ import {
   type Timesheet,
   type TimesheetStats,
 } from '@/api/timesheets'
-import { fetchProjects, type Project } from '@/api/projects'
+import { fetchDirectoryProjects, type DirectoryProject } from '@/api/directory'
 
 const router = useRouter()
 const loading = ref(false)
@@ -188,7 +189,7 @@ const status = ref<string | undefined>()
 const workType = ref<string | undefined>()
 const dateRange = ref<string[] | null>(null)
 const stats = ref<TimesheetStats | null>(null)
-const projectOptions = ref<Project[]>([])
+const projectOptions = ref<DirectoryProject[]>([])
 
 const createVisible = ref(false)
 const formRef = ref<FormInstance>()
@@ -244,7 +245,7 @@ function onStatClick(item: { status?: string; scope?: string }) {
 async function searchProjects(q: string) {
   projectLoading.value = true
   try {
-    const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 20 })
+    const { data } = await fetchDirectoryProjects({ keyword: q || undefined, page: 1, page_size: 20 })
     projectOptions.value = data.items
   } finally {
     projectLoading.value = false

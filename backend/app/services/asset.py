@@ -11,6 +11,7 @@ from typing import List, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.rbac import user_can
 from app.models.asset import (
     ASSET_CATEGORIES,
     ASSET_STATUS_AVAILABLE,
@@ -75,8 +76,8 @@ def _dept_name(db: Session, dept_id: Optional[int]) -> Optional[str]:
 
 
 def can_manage_assets(user: User) -> bool:
-    codes = {r.code for r in user.roles}
-    return bool(codes & {"admin", "middle_manager", "executive", "operations", "hr"})
+    """资产管理：认 asset:manage（含 admin 放行）；不再硬编码角色。"""
+    return user_can(user, "asset:manage")
 
 
 def _months_owned(purchase: Optional[date]) -> int:

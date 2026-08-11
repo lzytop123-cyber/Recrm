@@ -43,7 +43,7 @@
           </el-select>
           <el-button @click="reload">查询</el-button>
         </div>
-        <el-button v-if="!embedded" type="primary" @click="openCreate">＋ 新建商机</el-button>
+        <el-button v-if="!embedded" v-perm="'opportunity:manage'" type="primary" @click="openCreate">＋ 新建商机</el-button>
       </div>
 
       <div class="crm-table-wrap" :class="{ 'is-fit': embedded && !isCompact }">
@@ -151,7 +151,7 @@
           </el-select>
           <div class="field-hint">
             商机必须关联已建档的客户主体。
-            <el-button link type="primary" @click="goCreateCustomer">没有客户？去录入</el-button>
+            <el-button v-perm="'customer:manage'" link type="primary" @click="goCreateCustomer">没有客户？去录入</el-button>
           </div>
         </el-form-item>
         <el-form-item label="业务类型" prop="business_type">
@@ -201,7 +201,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
-import { fetchCustomers, type Customer } from '@/api/customers'
+import { fetchDirectoryCustomers, type DirectoryCustomer } from '@/api/directory'
 import {
   useBusinessTypes,
   OPP_STAGE_LABEL,
@@ -228,7 +228,7 @@ const loading = ref(false)
 const saving = ref(false)
 const customerLoading = ref(false)
 const items = ref<Opportunity[]>([])
-const customerOptions = ref<Customer[]>([])
+const customerOptions = ref<DirectoryCustomer[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
@@ -295,7 +295,7 @@ function priorityTag(s: string) {
 async function searchCustomers(q: string) {
   customerLoading.value = true
   try {
-    const { data } = await fetchCustomers({ keyword: q || undefined, page: 1, page_size: 30 })
+    const { data } = await fetchDirectoryCustomers({ keyword: q || undefined, page: 1, page_size: 30 })
     customerOptions.value = data.items
   } finally {
     customerLoading.value = false

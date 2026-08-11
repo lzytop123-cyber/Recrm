@@ -17,8 +17,23 @@
         >
           提交审批
         </el-button>
-        <el-button v-if="item.status === 'submitted'" type="success" @click="onApprove">审批通过</el-button>
-        <el-button v-if="item.status === 'submitted'" type="danger" plain @click="onReject">驳回</el-button>
+        <el-button
+          v-if="item.status === 'submitted'"
+          v-perm="'timesheet:approve'"
+          type="success"
+          @click="onApprove"
+        >
+          审批通过
+        </el-button>
+        <el-button
+          v-if="item.status === 'submitted'"
+          v-perm="'timesheet:approve'"
+          type="danger"
+          plain
+          @click="onReject"
+        >
+          驳回
+        </el-button>
       </div>
     </div>
 
@@ -120,14 +135,14 @@ import {
   updateTimesheet,
   type Timesheet,
 } from '@/api/timesheets'
-import { fetchProjects, type Project } from '@/api/projects'
+import { fetchDirectoryProjects, type DirectoryProject } from '@/api/directory'
 
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const item = ref<Timesheet | null>(null)
 const editVisible = ref(false)
-const projectOptions = ref<Project[]>([])
+const projectOptions = ref<DirectoryProject[]>([])
 
 const editForm = reactive({
   work_date: '',
@@ -170,7 +185,7 @@ function fillEdit() {
 }
 
 async function searchProjects(q: string) {
-  const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 20 })
+  const { data } = await fetchDirectoryProjects({ keyword: q || undefined, page: 1, page_size: 20 })
   projectOptions.value = data.items
 }
 

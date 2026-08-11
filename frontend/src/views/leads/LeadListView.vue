@@ -747,7 +747,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import { useUserStore } from '@/stores/user'
-import { fetchEmployees, type Employee } from '@/api/org'
+import { fetchDirectoryPeople, type DirectoryPerson } from '@/api/directory'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import type { SalesJourney } from '@/api/salesJourney'
 import { useBusinessTypes } from '@/api/dictionaries'
@@ -841,7 +841,7 @@ const batchOwnerIds = ref<number[]>([])
 const batchMethod = ref<'average' | 'manual'>('average')
 const batchReason = ref('')
 const manualOwnerMap = reactive<Record<number, number | undefined>>({})
-const employees = ref<Employee[]>([])
+const employees = ref<DirectoryPerson[]>([])
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
@@ -1238,7 +1238,7 @@ async function openDrawerTransfer() {
   if (!employees.value.length) {
     empLoading.value = true
     try {
-      const { data } = await fetchEmployees({ page: 1, page_size: 100, is_active: true })
+      const { data } = await fetchDirectoryPeople({ page: 1, page_size: 100, is_active: true })
       employees.value = data.items || []
     } finally {
       empLoading.value = false
@@ -1534,7 +1534,7 @@ async function openBatchAssign(ids?: number[]) {
   batchVisible.value = true
   empLoading.value = true
   try {
-    const { data } = await fetchEmployees({ page: 1, page_size: 100, is_active: true })
+    const { data } = await fetchDirectoryPeople({ page: 1, page_size: 100, is_active: true })
     employees.value = data.items
   } finally {
     empLoading.value = false

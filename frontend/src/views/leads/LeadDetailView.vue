@@ -258,7 +258,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { fetchEmployees, type Employee } from '@/api/org'
+import { fetchDirectoryPeople, type DirectoryPerson } from '@/api/directory'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   LEAD_RETURN_REASON_OPTIONS,
@@ -287,7 +287,7 @@ const saving = ref(false)
 const empLoading = ref(false)
 const lead = ref<LeadDetail | null>(null)
 const quota = ref<LeadQuota | null>(null)
-const employees = ref<Employee[]>([])
+const employees = ref<DirectoryPerson[]>([])
 
 const followVisible = ref(false)
 const convertVisible = ref(false)
@@ -425,7 +425,7 @@ async function openAssign() {
   assignVisible.value = true
   empLoading.value = true
   try {
-    const { data } = await fetchEmployees({ page: 1, page_size: 100, is_active: true })
+    const { data } = await fetchDirectoryPeople({ page: 1, page_size: 100, is_active: true })
     employees.value = data.items
   } finally {
     empLoading.value = false

@@ -335,8 +335,15 @@ import {
   type Ticket,
   type TicketStats,
 } from '@/api/tickets'
-import { fetchProjects, fetchProjectTasks, TASK_STATUS_LABEL, type Project, type ProjectTask } from '@/api/projects'
-import { fetchDepartments, type Department } from '@/api/org'
+import { TASK_STATUS_LABEL } from '@/api/projects'
+import {
+  fetchDirectoryDepartments,
+  fetchDirectoryProjects,
+  fetchDirectoryProjectTasks,
+  type DirectoryDepartment,
+  type DirectoryProject,
+  type DirectoryProjectTask,
+} from '@/api/directory'
 
 type FocusFilter = 'near_sla' | 'overdue' | 'pending_confirm'
 
@@ -351,21 +358,21 @@ const createVisible = ref(false)
 const slaVisible = ref(false)
 const items = ref<Ticket[]>([])
 const stats = ref<TicketStats | null>(null)
-const projectOptions = ref<Project[]>([])
-const linkableProjectOptions = ref<Project[]>([])
-const taskOptions = ref<ProjectTask[]>([])
-const departments = ref<Department[]>([])
+const projectOptions = ref<DirectoryProject[]>([])
+const linkableProjectOptions = ref<DirectoryProject[]>([])
+const taskOptions = ref<DirectoryProjectTask[]>([])
+const departments = ref<DirectoryDepartment[]>([])
 const assignees = ref<AssigneeOption[]>([])
 const assigneeLoading = ref(false)
 const focusFilter = ref<FocusFilter | null>(null)
 
-type DeptSelectNode = Department & { disabled?: boolean }
+type DeptSelectNode = DirectoryDepartment & { disabled?: boolean }
 
-function isRootDepartment(d: Pick<Department, 'code' | 'name' | 'parent_id'>) {
+function isRootDepartment(d: Pick<DirectoryDepartment, 'code' | 'name' | 'parent_id'>) {
   return (d.code || '').toUpperCase() === 'ROOT'
 }
 
-function markDepartmentTree(nodes: Department[]): DeptSelectNode[] {
+function markDepartmentTree(nodes: DirectoryDepartment[]): DeptSelectNode[] {
   return (nodes || []).map((n) => ({
     ...n,
     disabled: isRootDepartment(n),
@@ -374,7 +381,7 @@ function markDepartmentTree(nodes: Department[]): DeptSelectNode[] {
 }
 
 function flattenDepartments(
-  nodes: Department[],
+  nodes: DirectoryDepartment[],
   prefix = '',
 ): { id: number; label: string }[] {
   const out: { id: number; label: string }[] = []
@@ -540,7 +547,11 @@ function goDetail(row: Ticket) {
 async function searchProjects(q: string) {
   projectLoading.value = true
   try {
-    const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 50 })
+    const { data } = await fetchDirectoryProjects({
+      keyword: q || undefined,
+      page: 1,
+      page_size: 50,
+    })
     // 列表筛选：可看已结项项目上的历史工单；终止项目一般不再关注
     projectOptions.value = data.items.filter((p) => p.status !== 'terminated')
   } finally {
@@ -551,7 +562,11 @@ async function searchProjects(q: string) {
 async function searchLinkableProjects(q: string) {
   projectLoading.value = true
   try {
-    const { data } = await fetchProjects({ keyword: q || undefined, page: 1, page_size: 50 })
+    const { data } = await fetchDirectoryProjects({
+      keyword: q || undefined,
+      page: 1,
+      page_size: 50,
+    })
     // 与后端一致：已结项 / 已终止不可再挂协作工单
     linkableProjectOptions.value = data.items.filter(
       (p) => p.status !== 'terminated' && p.status !== 'completed',
@@ -561,7 +576,7 @@ async function searchLinkableProjects(q: string) {
   }
 }
 
-function projectOptionLabel(p: Project) {
+function projectOptionLabel(p: DirectoryProject) {
   const st =
     p.status === 'executing'
       ? '执行中'
@@ -582,7 +597,7 @@ function projectOptionLabel(p: Project) {
 const taskTotalForProject = ref(0)
 const taskDoneForProject = ref(0)
 
-function taskOptionLabel(t: ProjectTask) {
+function taskOptionLabel(t: DirectoryProjectTask) {
   const st = TASK_STATUS_LABEL[t.status] || t.status
   return `${t.task_no} · ${t.title}（${st}）`
 }
@@ -613,7 +628,7 @@ async function loadTasksForProject(pid?: number) {
   if (!pid) return
   taskLoading.value = true
   try {
-    const { data } = await fetchProjectTasks({ project_id: pid, page: 1, page_size: 100 })
+    const { data } = await fetchDirectoryProjectTasks({ project_id: pid, page: 1, page_size: 100 })
     const list = data.items || []
     taskTotalForProject.value = list.length
     taskDoneForProject.value = list.filter((t) => t.status === 'done').length
@@ -732,7 +747,7 @@ async function applyRouteQuery() {
 }
 
 onMounted(async () => {
-  const [{ data: depts }] = await Promise.all([fetchDepartments(), searchProjects('')])
+  const [{ data: depts }] = await Promise.all([fetchDirectoryDepartments(), searchProjects('')])
   departments.value = depts
   await applyRouteQuery()
   await reload()

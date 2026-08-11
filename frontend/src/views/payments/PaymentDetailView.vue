@@ -3,9 +3,31 @@
     <div class="top-bar">
       <el-button @click="$router.push('/payments')">返回列表</el-button>
       <div class="actions" v-if="payment">
-        <el-button v-if="payment.status === 'pending'" type="primary" @click="editVisible = true">编辑</el-button>
-        <el-button v-if="payment.status === 'pending'" type="success" @click="confirmVisible = true">确认到账</el-button>
-        <el-button v-if="payment.status === 'confirmed'" type="danger" plain @click="onRefund">退款</el-button>
+        <el-button
+          v-if="payment.status === 'pending'"
+          v-perm="'payment:manage'"
+          type="primary"
+          @click="editVisible = true"
+        >
+          编辑
+        </el-button>
+        <el-button
+          v-if="payment.status === 'pending'"
+          v-perm.any="['payment:confirm', 'payment:manage']"
+          type="success"
+          @click="confirmVisible = true"
+        >
+          确认到账
+        </el-button>
+        <el-button
+          v-if="payment.status === 'confirmed'"
+          v-perm.any="['payment:refund', 'payment:manage']"
+          type="danger"
+          plain
+          @click="onRefund"
+        >
+          退款
+        </el-button>
       </div>
     </div>
 

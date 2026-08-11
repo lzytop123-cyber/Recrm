@@ -27,7 +27,7 @@
           <div class="tab-pane-body">
             <div class="toolbar">
               <span class="hint">admin 角色受保护，不可改权限/删除</span>
-              <el-button type="primary" @click="openRoleCreate">新建角色</el-button>
+              <el-button v-if="canManageSystem" type="primary" @click="openRoleCreate">新建角色</el-button>
             </div>
             <div class="crm-table-wrap">
               <el-table :data="roles" stripe height="100%">
@@ -45,15 +45,18 @@
                 <el-table-column prop="description" label="说明" min-width="140" show-overflow-tooltip />
                 <el-table-column label="操作" width="140" fixed="right">
                   <template #default="{ row }">
-                    <el-button link type="primary" @click="openRoleEdit(row)">编辑</el-button>
-                    <el-button
-                      v-if="row.code !== 'admin'"
-                      link
-                      type="danger"
-                      @click="onDeleteRole(row)"
-                    >
-                      删除
-                    </el-button>
+                    <template v-if="canManageSystem">
+                      <el-button link type="primary" @click="openRoleEdit(row)">编辑</el-button>
+                      <el-button
+                        v-if="row.code !== 'admin'"
+                        link
+                        type="danger"
+                        @click="onDeleteRole(row)"
+                      >
+                        删除
+                      </el-button>
+                    </template>
+                    <span v-else class="hint">只读</span>
                   </template>
                 </el-table-column>
               </el-table>
@@ -126,7 +129,7 @@
               <span class="hint">
                 项目类型 / 合同类型 / 线索需求方向共用此字典。编码 other 请保留。
               </span>
-              <div class="filters">
+              <div v-if="canManageSystem" class="filters">
                 <el-button @click="addBusinessTypeRow">新增类型</el-button>
                 <el-button type="primary" :loading="dictSaving" @click="saveBusinessTypes">
                   保存
@@ -139,29 +142,43 @@
                   <template #default="{ row }">
                     <el-input
                       v-model="row.value"
-                      :disabled="row._locked"
+                      :disabled="row._locked || !canManageSystem"
                       placeholder="如 ai_product"
                     />
                   </template>
                 </el-table-column>
                 <el-table-column label="名称" min-width="160">
                   <template #default="{ row }">
-                    <el-input v-model="row.label" placeholder="显示名称" />
+                    <el-input
+                      v-model="row.label"
+                      :disabled="!canManageSystem"
+                      placeholder="显示名称"
+                    />
                   </template>
                 </el-table-column>
                 <el-table-column label="排序" width="110">
                   <template #default="{ row }">
-                    <el-input-number v-model="row.sort" :min="0" :max="9999" controls-position="right" />
+                    <el-input-number
+                      v-model="row.sort"
+                      :min="0"
+                      :max="9999"
+                      :disabled="!canManageSystem"
+                      controls-position="right"
+                    />
                   </template>
                 </el-table-column>
                 <el-table-column label="启用" width="90" align="center">
                   <template #default="{ row }">
-                    <el-switch v-model="row.enabled" :disabled="row.value === 'other'" />
+                    <el-switch
+                      v-model="row.enabled"
+                      :disabled="row.value === 'other' || !canManageSystem"
+                    />
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="90" fixed="right">
                   <template #default="{ row, $index }">
                     <el-button
+                      v-if="canManageSystem"
                       link
                       type="danger"
                       :disabled="row.value === 'other'"
@@ -169,6 +186,7 @@
                     >
                       删除
                     </el-button>
+                    <span v-else class="hint">—</span>
                   </template>
                 </el-table-column>
               </el-table>
@@ -252,8 +270,14 @@ import {
   updateDictionary,
   type DictionaryItem,
 } from '@/api/dictionaries'
+import { useUserStore } from '@/stores/user'
 
 type BusinessTypeRow = DictionaryItem & { _locked?: boolean }
+
+const userStore = useUserStore()
+const canManageSystem = computed(
+  () => userStore.hasPermission('system:manage') || userStore.hasPermission('*'),
+)
 
 const loading = ref(false)
 const saving = ref(false)

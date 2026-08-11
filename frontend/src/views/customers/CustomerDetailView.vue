@@ -3,9 +3,10 @@
     <div class="top-bar">
       <el-button @click="$router.push('/customers')">返回列表</el-button>
       <div class="actions" v-if="customer">
-        <el-button type="primary" @click="editVisible = true">编辑</el-button>
-        <el-button @click="openFollow">客户跟进</el-button>
+        <el-button v-perm="'customer:manage'" type="primary" @click="editVisible = true">编辑</el-button>
+        <el-button v-perm="'customer:manage'" @click="openFollow">客户跟进</el-button>
         <el-button
+          v-perm="'opportunity:manage'"
           @click="
             $router.push({
               path: '/sales',

@@ -11,10 +11,10 @@
         <el-button v-if="tab === 'pool' || tab === 'mine'" type="primary" @click="leadCreateTick++">
           录入线索
         </el-button>
-        <el-button v-else-if="tab === 'customers'" type="primary" @click="customerCreateTick++">
+        <el-button v-else-if="tab === 'customers' && canManageCustomers" type="primary" @click="customerCreateTick++">
           录入客户
         </el-button>
-        <el-button v-else-if="tab === 'opportunities'" type="primary" @click="oppCreateTick++">
+        <el-button v-else-if="tab === 'opportunities' && canManageOpportunities" type="primary" @click="oppCreateTick++">
           新建商机
         </el-button>
       </div>
@@ -77,8 +77,14 @@ const canManagePool = computed(
 const canViewCustomers = computed(
   () => userStore.hasPermission('customer:view') || userStore.hasPermission('*'),
 )
+const canManageCustomers = computed(
+  () => userStore.hasPermission('customer:manage') || userStore.hasPermission('*'),
+)
 const canViewOpportunities = computed(
   () => userStore.hasPermission('opportunity:view') || userStore.hasPermission('*'),
+)
+const canManageOpportunities = computed(
+  () => userStore.hasPermission('opportunity:manage') || userStore.hasPermission('*'),
 )
 
 const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [

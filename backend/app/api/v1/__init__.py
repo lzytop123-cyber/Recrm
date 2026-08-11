@@ -9,6 +9,7 @@ from app.api.v1 import (
     contracts,
     customers,
     dashboard,
+    directory,
     finance,
     knowledge,
     leads,
@@ -50,6 +51,7 @@ api_router.include_router(knowledge.router)
 api_router.include_router(timesheets.router)
 api_router.include_router(tickets.router)
 api_router.include_router(schedules.router)
+api_router.include_router(directory.router)
 api_router.include_router(org.router)
 api_router.include_router(system.router)
 api_router.include_router(notifications.router)

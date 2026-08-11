@@ -775,7 +775,7 @@ import {
   type Contract,
   type ContractStats,
 } from '@/api/contracts'
-import { fetchCustomers, type Customer } from '@/api/customers'
+import { fetchDirectoryCustomers, type DirectoryCustomer } from '@/api/directory'
 import {
   createAllocation,
   createReceipt,
@@ -852,7 +852,7 @@ const keyword = ref('')
 const stats = ref<ContractStats | null>(null)
 const financeStats = ref<FinanceStats | null>(null)
 const financeTab = ref<'contracts' | 'receivables' | 'reconciliation'>('contracts')
-const customerOptions = ref<Customer[]>([])
+const customerOptions = ref<DirectoryCustomer[]>([])
 const claimContracts = ref<Contract[]>([])
 
 const createVisible = ref(false)
@@ -1123,7 +1123,7 @@ function setFinanceTab(tab: typeof financeTab.value) {
 async function searchCustomers(q: string) {
   customerLoading.value = true
   try {
-    const { data } = await fetchCustomers({ keyword: q || undefined, page: 1, page_size: 20 })
+    const { data } = await fetchDirectoryCustomers({ keyword: q || undefined, page: 1, page_size: 20 })
     customerOptions.value = data.items
   } finally {
     customerLoading.value = false

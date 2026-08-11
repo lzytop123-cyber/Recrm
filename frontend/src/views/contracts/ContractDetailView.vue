@@ -49,7 +49,13 @@
         >
           签署
         </el-button>
-        <el-button v-if="contract.status === 'signed'" type="primary" @click="onActivate">进入执行</el-button>
+        <el-button
+          v-if="contract.status === 'signed' && canActivateContract"
+          type="primary"
+          @click="onActivate"
+        >
+          进入执行
+        </el-button>
         <el-button
           v-if="contract.status === 'active' && canCompleteContract"
           :type="isCollectionCollected ? 'success' : 'info'"
@@ -60,6 +66,7 @@
         </el-button>
         <el-button
           v-if="canTerminate"
+          v-perm.any="['contract:manage']"
           type="danger"
           plain
           @click="terminateVisible = true"
@@ -421,6 +428,14 @@ const contractId = computed(() => Number(route.params.id))
 const canTerminate = computed(() => {
   const s = contract.value?.status
   return s === 'signed' || s === 'active'
+})
+
+/** 进入执行：管理权或负责人/创建人 */
+const canActivateContract = computed(() => {
+  if (!contract.value || contract.value.status !== 'signed') return false
+  if (userStore.hasAnyPermission('contract:manage')) return true
+  const uid = userStore.user?.id
+  return contract.value.owner_id === uid || contract.value.creator_id === uid
 })
 
 const canWithdraw = computed(() => {
