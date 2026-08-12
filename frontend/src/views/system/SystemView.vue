@@ -211,10 +211,19 @@
     >
       <el-form label-width="100px" class="role-form">
         <el-form-item label="名称">
-          <el-input v-model="roleForm.name" :disabled="roleForm.code === 'admin'" />
+          <el-input
+            v-model="roleForm.name"
+            :disabled="roleForm.code === 'admin'"
+            @input="onRoleNameInput"
+          />
         </el-form-item>
         <el-form-item v-if="!roleForm.id" label="编码">
-          <el-input v-model="roleForm.code" />
+          <el-input
+            v-model="roleForm.code"
+            placeholder="根据名称自动生成，可改"
+            @input="onRoleCodeInput"
+          />
+          <div class="field-hint">保存后不可修改；英文名会转成小写蛇形，中文名生成 role_ 前缀编码</div>
         </el-form-item>
         <el-form-item label="默认范围">
           <el-select
@@ -347,6 +356,7 @@ const businessTypeRows = ref<BusinessTypeRow[]>([])
 const businessTypeDictName = ref('业务类型')
 
 const roleVisible = ref(false)
+const roleCodeManual = ref(false)
 const roleForm = reactive({
   id: 0,
   name: '',
@@ -361,6 +371,33 @@ type PermModuleCard = {
   module: string
   label: string
   items: PermissionItem[]
+}
+
+/** 由名称生成角色编码：优先 ASCII 蛇形；纯中文则 role_ + 稳定短码 */
+function nameToRoleCode(name: string): string {
+  const raw = name.trim()
+  if (!raw) return ''
+  const ascii = raw
+    .toLowerCase()
+    .replace(/[\s\-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  if (ascii.length >= 2) return ascii.slice(0, 50)
+  let h = 0
+  for (let i = 0; i < raw.length; i++) {
+    h = (Math.imul(h, 31) + raw.charCodeAt(i)) >>> 0
+  }
+  return `role_${h.toString(36)}`.slice(0, 50)
+}
+
+function onRoleNameInput() {
+  if (roleForm.id || roleCodeManual.value) return
+  roleForm.code = nameToRoleCode(roleForm.name)
+}
+
+function onRoleCodeInput() {
+  roleCodeManual.value = true
 }
 
 const statCards = computed(() => [
@@ -555,6 +592,7 @@ function openRoleCreate() {
   roleForm.data_scope = 'personal'
   roleForm.module_scopes = {}
   roleForm.permission_ids = []
+  roleCodeManual.value = false
   roleVisible.value = true
 }
 
@@ -574,6 +612,13 @@ async function saveRole() {
     ElMessage.warning('请填写角色名称')
     return
   }
+  if (!roleForm.id && !roleForm.code.trim()) {
+    roleForm.code = nameToRoleCode(roleForm.name)
+  }
+  if (!roleForm.id && !roleForm.code.trim()) {
+    ElMessage.warning('请填写角色编码')
+    return
+  }
   saving.value = true
   try {
     if (roleForm.id) {
@@ -585,10 +630,6 @@ async function saveRole() {
         permission_ids: roleForm.code === 'admin' ? undefined : roleForm.permission_ids,
       })
     } else {
-      if (!roleForm.code.trim()) {
-        ElMessage.warning('请填写角色编码')
-        return
-      }
       await createSystemRole({
         name: roleForm.name,
         code: roleForm.code,
