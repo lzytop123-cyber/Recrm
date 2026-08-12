@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.project import Project
 from app.models.timesheet import (
     TIMESHEET_STATUS_APPROVED,
@@ -58,7 +58,7 @@ def assert_can_view(user: User, ts: Timesheet) -> None:
         return
     if ts.user_id == user.id:
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "timesheet")
     if scope == "company":
         return
     if scope == "department" and user.department_id and ts.department_id == user.department_id:
@@ -147,7 +147,7 @@ def list_timesheets(
     q = db.query(Timesheet)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "timesheet")
 
     if scope_filter == "mine":
         q = q.filter(Timesheet.user_id == user.id)

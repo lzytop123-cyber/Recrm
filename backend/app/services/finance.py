@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, widest_data_scope
+from app.core.rbac import resolve_data_scope
 from app.models.contract import Contract
 from app.models.customer import Customer
 from app.models.finance import (
@@ -75,7 +75,7 @@ def _apply_contract_scope(query, user: User):
     role_codes = {role.code for role in user.roles}
     if "admin" in role_codes:
         return query
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "contract")
     if scope == "company":
         return query
     if scope == "department" and user.department_id:

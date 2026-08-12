@@ -1,11 +1,11 @@
 """
 RBAC：角色表。
-data_scope 控制数据可见范围：company / department / personal。
+data_scope 为默认数据可见范围；module_scopes 可按模块覆盖。
 """
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,9 +23,13 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, comment="角色名称")
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, comment="角色编码")
     description: Mapped[Optional[str]] = mapped_column(Text, comment="说明")
-    # 数据可见范围：company=全公司, department=本部门, personal=仅个人
+    # 默认数据可见范围：company=全公司, department=本部门, personal=仅个人
     data_scope: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="personal", comment="数据可见范围"
+        String(20), nullable=False, default="personal", comment="默认数据可见范围"
+    )
+    # 按模块覆盖，如 {"lead":"department","ticket":"personal"}；缺省走 data_scope
+    module_scopes: Mapped[Dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, comment="模块数据范围覆盖"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

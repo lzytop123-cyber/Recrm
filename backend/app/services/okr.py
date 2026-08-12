@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import collect_data_scopes, widest_data_scope
+from app.core.rbac import resolve_data_scope
 from app.models.okr import (
     OKR_LEVELS,
     OKR_PERIODS,
@@ -72,7 +72,7 @@ def assert_can_view(user: User, okr: Okr) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes:
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "okr")
     if scope == "company":
         return
     if okr.owner_id == user.id or okr.creator_id == user.id:
@@ -195,7 +195,7 @@ def list_okrs(
     q = db.query(Okr).options(joinedload(Okr.key_results))
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "okr")
 
     if scope_filter == "mine":
         q = q.filter(or_(Okr.owner_id == user.id, Okr.creator_id == user.id))

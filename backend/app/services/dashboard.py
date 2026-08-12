@@ -10,7 +10,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.contract import (
     CONTRACT_STATUS_ACTIVE,
     CONTRACT_STATUS_COMPLETED,
@@ -381,7 +381,7 @@ def _mom_delta(curr: Decimal, prev: Decimal) -> tuple[str, str]:
 def build_dashboard(db: Session, user: User) -> dict:
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = "company" if is_admin else widest_data_scope(collect_data_scopes(user) or {"personal"})
+    scope = resolve_data_scope(user, "dashboard")
     display_name = user.real_name or user.username
     now = datetime.now().astimezone()
     as_of = f"截至今天 {now.strftime('%H:%M')}，集中查看经营、回款、项目和组织执行状态。"

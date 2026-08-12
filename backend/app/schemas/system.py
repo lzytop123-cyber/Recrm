@@ -1,6 +1,6 @@
 """系统管理 Schema。"""
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,7 @@ class RoleOut(BaseModel):
     code: str
     description: Optional[str] = None
     data_scope: str
+    module_scopes: Dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     permission_ids: List[int] = []
@@ -34,6 +35,7 @@ class RoleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=50)
     description: Optional[str] = None
     data_scope: Optional[str] = Field(None, pattern="^(company|department|personal)$")
+    module_scopes: Optional[Dict[str, str]] = None
     permission_ids: Optional[List[int]] = None
 
 
@@ -42,8 +44,8 @@ class RoleCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=50)
     description: Optional[str] = None
     data_scope: str = Field(default="personal", pattern="^(company|department|personal)$")
+    module_scopes: Dict[str, str] = Field(default_factory=dict)
     permission_ids: List[int] = []
-
 
 class AuditLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

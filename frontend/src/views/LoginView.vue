@@ -1,63 +1,31 @@
 <template>
   <div class="login-page">
     <div class="login-bg" aria-hidden="true">
-      <ColorBendsMount
-        v-if="showLanyard"
-        :colors="loginBgColors"
-        :transparent="true"
-      />
-      <div v-else class="login-bg__image" />
+      <div class="login-bg__image" />
       <div class="login-bg__vignette" />
     </div>
 
     <div class="login-stage" role="main">
-      <LanyardMount
-        v-if="showLanyard"
-        class="login-lanyard"
-        with-login
-        :position="[0, 0, 11.85]"
-        :gravity="[0, -32, 0]"
-        :fov="17"
-        :transparent="true"
-        :feishu-enabled="feishuEnabled"
-        :loading="loading"
-        :feishu-loading="feishuLoading"
-        :hint="hintText"
-        @submit="onCardSubmit"
-        @feishu="onFeishuLogin"
-      />
+      <section class="login-card-wrap" aria-label="登录">
+        <div class="login-card">
+          <div class="login-card__slot" aria-hidden="true" />
+          <div class="login-card__tape" aria-hidden="true">高效办公 · 高效沟通</div>
 
-      <!-- reduced-motion：平面工牌，视觉与 3D 卡面一致 -->
-      <section v-else class="login-fallback" aria-label="登录">
-        <div class="login-fallback__card">
-          <div class="login-fallback__slot" aria-hidden="true" />
-          <div class="login-fallback__tape" aria-hidden="true">高效办公 高效沟通</div>
-
-          <header class="login-fallback__header">
-            <div class="login-fallback__mark" aria-hidden="true">
-              <span>CRM</span>
-              <span>OKR</span>
-            </div>
-            <div class="login-fallback__seal" aria-hidden="true">
-              <span>企业经营</span>
-              <span>工作台</span>
-            </div>
+          <header class="login-card__brand">
+            <p class="login-card__product">CRM · OKR</p>
+            <h1>中泰旭鼎集团</h1>
+            <p class="login-card__en">ZHONGTAIXUDING GROUP</p>
           </header>
 
-          <div class="login-fallback__title">
-            <h1>中泰旭鼎集团</h1>
-            <p>ZHONGTAIXUDING GROUP</p>
-          </div>
-
-          <ul class="login-fallback__tags" aria-label="功能标签">
+          <ul class="login-card__tags" aria-label="功能标签">
             <li>财务报表</li>
             <li>数据统计</li>
             <li>销售管理</li>
           </ul>
 
-          <div class="login-fallback__rule" aria-hidden="true" />
+          <div class="login-card__rule" aria-hidden="true" />
 
-          <div class="login-fallback__body">
+          <div class="login-card__body">
             <button
               v-if="feishuEnabled"
               type="button"
@@ -68,6 +36,10 @@
             >
               {{ feishuLoading ? '跳转中…' : '飞书登录' }}
             </button>
+
+            <div v-if="feishuEnabled" class="login-card__divider" role="separator">
+              <span>或使用账号密码</span>
+            </div>
 
             <el-form
               ref="formRef"
@@ -92,7 +64,7 @@
                   type="password"
                   name="password"
                   autocomplete="current-password"
-                  placeholder="密  码"
+                  placeholder="密码"
                   show-password
                   clearable
                 />
@@ -100,6 +72,7 @@
               <button
                 type="button"
                 class="submit-btn"
+                :class="{ 'is-secondary': feishuEnabled }"
                 :disabled="loading"
                 :aria-busy="loading"
                 @click="onSubmit"
@@ -117,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules, InputInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -125,13 +98,6 @@ import { fetchFeishuAuthorizeUrlApi, fetchFeishuConfigApi } from '@/api/auth'
 import { getToken } from '@/api/request'
 import { useUserStore } from '@/stores/user'
 import { navigateAfterLogin, resolvePostLoginPath } from '@/utils/postLoginNavigate'
-
-const LanyardMount = defineAsyncComponent(() => import('@/components/lanyard/LanyardMount.vue'))
-const ColorBendsMount = defineAsyncComponent(
-  () => import('@/components/backgrounds/ColorBendsMount.vue'),
-)
-
-const loginBgColors = ['#29ffdb', '#bc719d', '#7cff67', '#da0b0b']
 
 const router = useRouter()
 const route = useRoute()
@@ -142,18 +108,14 @@ const usernameInputRef = ref<InputInstance>()
 const loading = ref(false)
 const feishuLoading = ref(false)
 const feishuEnabled = ref(false)
-const showLanyard = ref(
-  typeof window !== 'undefined' &&
-    !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-)
 const form = reactive({
   username: '',
   password: '',
 })
 
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'submit' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'submit' }],
 }
 
 const hintText = computed(() =>
@@ -185,14 +147,14 @@ onMounted(async () => {
     try {
       const { data } = await fetchFeishuConfigApi()
       feishuEnabled.value = data.enabled
-      if (!data.enabled && !showLanyard.value) await focusUsername()
+      if (!data.enabled) await focusUsername()
       return
     } catch {
       if (i < 2) await new Promise((r) => setTimeout(r, 800))
     }
   }
   feishuEnabled.value = false
-  if (!showLanyard.value) await focusUsername()
+  await focusUsername()
 })
 
 async function onFeishuLogin() {
@@ -223,30 +185,16 @@ async function onSubmit() {
     loading.value = false
   }
 }
-
-/** 3D 工牌表单提交：走同一套 login 接口 */
-async function onCardSubmit(username: string, password: string) {
-  loading.value = true
-  try {
-    await userStore.login(username, password)
-    ElMessage.success('登录成功')
-    await navigateAfterLogin(router, route.query.redirect, userStore.homePath)
-  } catch {
-    // 错误已在 axios 拦截器提示
-  } finally {
-    loading.value = false
-  }
-}
 </script>
 
 <style scoped>
 .login-page {
-  --badge-bg: #d1d1d1;
+  --badge-bg: #d6d6d6;
   --badge-yellow: #ffc145;
-  --badge-ink: #0a0a0a;
-  --badge-muted: #9a9a9a;
-  --badge-field: #c8c8c8;
-  --badge-field-border: #5a5a5a;
+  --badge-ink: #111111;
+  --badge-muted: #6e6e6e;
+  --badge-field: #f3f3f3;
+  --badge-field-border: #3f3f3f;
 
   position: relative;
   isolation: isolate;
@@ -273,67 +221,62 @@ async function onCardSubmit(username: string, password: string) {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 70% 65% at 50% 45%, transparent 35%, rgba(4, 8, 16, 0.4) 100%);
+    radial-gradient(ellipse 70% 65% at 50% 45%, transparent 35%, rgba(4, 8, 16, 0.45) 100%);
 }
 
 .login-stage {
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 100vh;
-  min-height: 560px;
+  min-height: 100vh;
 }
 
-.login-lanyard {
-  width: 100%;
-  height: 100%;
-}
-
-.login-fallback {
+.login-card-wrap {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  padding: 24px;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
 }
 
-.login-fallback__card {
+.login-card {
   position: relative;
-  width: min(340px, 100%);
-  min-height: 520px;
-  padding: 28px 22px 18px;
+  width: min(420px, 100%);
+  padding: 32px 28px 24px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: 28px;
   color: var(--badge-ink);
   background:
-    radial-gradient(ellipse 120% 80% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 55%),
+    radial-gradient(ellipse 120% 80% at 50% 0%, rgba(255, 255, 255, 0.28), transparent 55%),
     var(--badge-bg);
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
 }
 
-.login-fallback__card::before {
+.login-card::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.28;
+  opacity: 0.22;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 140px 140px;
   mix-blend-mode: soft-light;
   z-index: 0;
 }
 
-.login-fallback__card > * {
+.login-card > * {
   position: relative;
   z-index: 1;
 }
 
-.login-fallback__slot {
-  width: 52px;
+.login-card__slot {
+  width: 56px;
   height: 14px;
-  margin: 0 auto 10px;
+  margin: 0 auto 18px;
   border-radius: 999px;
   background: #1a1a1a;
   box-shadow:
@@ -341,23 +284,23 @@ async function onCardSubmit(username: string, password: string) {
     0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
-.login-fallback__tape {
+.login-card__tape {
   position: absolute;
-  top: 18px;
-  right: -10px;
+  top: 26px;
+  right: -18px;
   z-index: 2;
-  width: 132px;
-  padding: 6px 12px;
+  width: 148px;
+  padding: 8px 16px;
   background: var(--badge-yellow);
   color: var(--badge-ink);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1.15;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
   text-align: center;
   white-space: nowrap;
-  transform: rotate(-20deg);
-  box-shadow: 1px 3px 6px rgba(0, 0, 0, 0.22);
+  transform: rotate(-18deg);
+  box-shadow: 1px 3px 6px rgba(0, 0, 0, 0.2);
   clip-path: polygon(
     0% 6%,
     4% 0%,
@@ -389,84 +332,57 @@ async function onCardSubmit(username: string, password: string) {
   );
 }
 
-.login-fallback__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding-right: 6px;
-  margin-top: 4px;
+.login-card__brand {
+  margin-top: 2px;
+  padding-right: 64px;
+  text-align: left;
 }
 
-.login-fallback__mark {
-  display: flex;
-  flex-direction: column;
-  font-size: 32px;
-  font-weight: 900;
-  line-height: 0.9;
-  letter-spacing: -0.03em;
-}
-
-.login-fallback__seal {
-  width: 70px;
-  height: 70px;
-  margin-top: 4px;
-  margin-right: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  border-radius: 50%;
-  background: var(--badge-yellow);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
-  font-size: 12px;
+.login-card__product {
+  margin: 0 0 12px;
+  font-size: 14px;
   font-weight: 800;
-  line-height: 1.2;
-  text-align: center;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.18em;
+  color: #333;
 }
 
-.login-fallback__title {
-  margin-top: 18px;
-  text-align: center;
-}
-
-.login-fallback__title h1 {
+.login-card__brand h1 {
   margin: 0;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: 0.06em;
+  font-size: clamp(30px, 7vw, 34px);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
 }
 
-.login-fallback__title p {
-  margin: 5px 0 0;
+.login-card__en {
+  margin: 8px 0 0;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1.2;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  color: #3a3a3a;
 }
 
-.login-fallback__tags {
+.login-card__tags {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 16px 0 0;
   padding: 0;
   list-style: none;
 }
 
-.login-fallback__tags li {
-  min-width: 72px;
-  padding: 6px 10px;
+.login-card__tags li {
+  padding: 6px 11px;
   background: var(--badge-yellow);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-align: center;
   line-height: 1.2;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
   clip-path: polygon(
     0% 10%,
     4% 0%,
@@ -493,38 +409,69 @@ async function onCardSubmit(username: string, password: string) {
   );
 }
 
-.login-fallback__rule {
-  height: 4px;
-  margin: 18px 4px 16px;
+.login-card__rule {
+  height: 3px;
+  margin: 18px 0 16px;
   background: var(--badge-yellow);
-  border-radius: 0;
 }
 
-.login-fallback__body {
-  flex: 1 1 auto;
+.login-card__body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+}
+
+.login-card__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--badge-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.login-card__divider::before,
+.login-card__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .feishu-btn,
 .submit-btn {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: 50px;
   border: 0;
   border-radius: 999px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.feishu-btn:hover:not(:disabled),
+.submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.feishu-btn:active:not(:disabled),
+.submit-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .feishu-btn {
   color: #fff;
   background: #0a0a0a;
-  letter-spacing: 0.12em;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.14em;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
 }
 
 .feishu-btn:disabled,
@@ -534,11 +481,24 @@ async function onCardSubmit(username: string, password: string) {
 }
 
 .submit-btn {
+  margin-top: 2px;
   color: var(--badge-ink);
   background: var(--badge-yellow);
-  letter-spacing: 0.35em;
-  text-indent: 0.35em;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.submit-btn.is-secondary {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px solid #222;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+}
+
+.submit-btn.is-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .login-form :deep(.el-form-item) {
@@ -546,41 +506,77 @@ async function onCardSubmit(username: string, password: string) {
 }
 
 .login-form :deep(.el-form-item__error) {
-  padding-top: 2px;
+  position: static;
+  margin-top: 6px;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .login-form :deep(.el-input__wrapper) {
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 50px;
+  padding: 0 18px;
   border-radius: 999px;
   background: var(--badge-field) !important;
   box-shadow: 0 0 0 1.5px var(--badge-field-border) inset !important;
+  transition: box-shadow 140ms ease;
+}
+
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1.5px #1a1a1a inset !important;
 }
 
 .login-form :deep(.el-input__wrapper.is-focus) {
   box-shadow:
     0 0 0 1.5px #111 inset,
-    0 0 0 2px rgba(255, 193, 69, 0.45) !important;
+    0 0 0 3px rgba(255, 193, 69, 0.4) !important;
 }
 
 .login-form :deep(.el-input__inner) {
   color: var(--badge-ink);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
 }
 
 .login-form :deep(.el-input__inner::placeholder) {
-  color: #2a2a2a;
-  opacity: 0.85;
+  color: #666;
+  font-weight: 500;
+  opacity: 1;
 }
 
 .hint {
-  margin: 14px 0 0;
+  margin: 18px 0 0;
   color: var(--badge-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.45;
   letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feishu-btn,
+  .submit-btn,
+  .login-form :deep(.el-input__wrapper) {
+    transition: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 26px 20px 18px;
+    border-radius: 24px;
+  }
+
+  .login-card__brand {
+    padding-right: 52px;
+  }
+
+  .login-card__tape {
+    width: 132px;
+    right: -22px;
+    font-size: 10px;
+  }
 }
 </style>

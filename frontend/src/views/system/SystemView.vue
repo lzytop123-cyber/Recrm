@@ -33,9 +33,15 @@
               <el-table :data="roles" stripe height="100%">
                 <el-table-column prop="name" label="角色" width="120" />
                 <el-table-column prop="code" label="编码" width="130" />
-                <el-table-column label="数据范围" width="100">
+                <el-table-column label="数据范围" width="120">
                   <template #default="{ row }">
                     {{ DATA_SCOPE_LABEL[row.data_scope] || row.data_scope }}
+                    <span
+                      v-if="row.module_scopes && Object.keys(row.module_scopes).length"
+                      class="hint"
+                    >
+                      +{{ Object.keys(row.module_scopes).length }}
+                    </span>
                   </template>
                 </el-table-column>
                 <el-table-column label="权限数" width="80">
@@ -199,17 +205,18 @@
     <el-dialog
       v-model="roleVisible"
       :title="roleForm.id ? '编辑角色' : '新建角色'"
-      width="640px"
+      width="800px"
+      class="role-dialog"
       destroy-on-close
     >
-      <el-form label-width="90px">
+      <el-form label-width="100px" class="role-form">
         <el-form-item label="名称">
           <el-input v-model="roleForm.name" :disabled="roleForm.code === 'admin'" />
         </el-form-item>
         <el-form-item v-if="!roleForm.id" label="编码">
           <el-input v-model="roleForm.code" />
         </el-form-item>
-        <el-form-item label="数据范围">
+        <el-form-item label="默认范围">
           <el-select
             v-model="roleForm.data_scope"
             style="width: 100%"
@@ -222,19 +229,57 @@
               :value="key"
             />
           </el-select>
+          <div class="field-hint">未单独设置的模块使用此默认范围</div>
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="roleForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="权限">
-          <el-checkbox-group v-model="roleForm.permission_ids" :disabled="roleForm.code === 'admin'">
-            <div v-for="(list, module) in permissionGroups" :key="module" class="perm-group">
-              <div class="perm-module">{{ module || '其他' }}</div>
-              <el-checkbox v-for="p in list" :key="p.id" :value="p.id">
-                {{ p.name }} ({{ p.code }})
-              </el-checkbox>
+        <el-form-item label="按模块授权">
+          <div class="perm-modules" :class="{ 'is-disabled': roleForm.code === 'admin' }">
+            <div v-for="group in permissionModuleCards" :key="group.module" class="perm-card">
+              <div class="perm-card-head">
+                <div class="perm-card-title">
+                  <strong>{{ group.label }}</strong>
+                  <span class="perm-card-code">{{ group.module }}</span>
+                </div>
+                <div class="perm-card-actions">
+                  <el-select
+                    :model-value="moduleScopeValue(group.module)"
+                    size="small"
+                    style="width: 120px"
+                    :disabled="roleForm.code === 'admin'"
+                    @update:model-value="(v: string) => setModuleScope(group.module, v)"
+                  >
+                    <el-option label="跟随默认" value="__default__" />
+                    <el-option
+                      v-for="(label, key) in DATA_SCOPE_LABEL"
+                      :key="key"
+                      :label="label"
+                      :value="key"
+                    />
+                  </el-select>
+                  <el-checkbox
+                    :model-value="isModuleFullyChecked(group)"
+                    :indeterminate="isModulePartial(group)"
+                    :disabled="roleForm.code === 'admin'"
+                    @change="(checked: boolean | string | number) => toggleModule(group, !!checked)"
+                  >
+                    全选
+                  </el-checkbox>
+                </div>
+              </div>
+              <el-checkbox-group
+                v-model="roleForm.permission_ids"
+                :disabled="roleForm.code === 'admin'"
+                class="perm-card-body"
+              >
+                <el-checkbox v-for="p in group.items" :key="p.id" :value="p.id" class="perm-item">
+                  <span class="perm-name">{{ p.name }}</span>
+                  <span class="perm-code">{{ p.code }}</span>
+                </el-checkbox>
+              </el-checkbox-group>
             </div>
-          </el-checkbox-group>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -250,6 +295,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   DATA_SCOPE_LABEL,
+  MODULE_LABEL,
+  MODULE_ORDER,
   createSystemRole,
   deleteSystemRole,
   fetchAuditLogs,
@@ -306,8 +353,15 @@ const roleForm = reactive({
   code: '',
   description: '',
   data_scope: 'personal',
+  module_scopes: {} as Record<string, string>,
   permission_ids: [] as number[],
 })
+
+type PermModuleCard = {
+  module: string
+  label: string
+  items: PermissionItem[]
+}
 
 const statCards = computed(() => [
   { label: '角色', value: stats.value?.roles ?? 0 },
@@ -316,16 +370,61 @@ const statCards = computed(() => [
   { label: '审计日志', value: stats.value?.audit_logs ?? 0 },
 ])
 
-const permissionGroups = computed(() => {
+const permissionModuleCards = computed((): PermModuleCard[] => {
   const map: Record<string, PermissionItem[]> = {}
   for (const p of permissions.value) {
     const key = p.module || 'other'
     if (!map[key]) map[key] = []
     map[key].push(p)
   }
-  return map
+  const keys = Object.keys(map)
+  keys.sort((a, b) => {
+    const ia = MODULE_ORDER.indexOf(a)
+    const ib = MODULE_ORDER.indexOf(b)
+    const sa = ia === -1 ? 999 : ia
+    const sb = ib === -1 ? 999 : ib
+    if (sa !== sb) return sa - sb
+    return a.localeCompare(b)
+  })
+  return keys.map((module) => ({
+    module,
+    label: MODULE_LABEL[module] || module,
+    items: map[module],
+  }))
 })
 
+function moduleScopeValue(module: string) {
+  return roleForm.module_scopes[module] || '__default__'
+}
+
+function setModuleScope(module: string, value: string) {
+  if (value === '__default__') {
+    const next = { ...roleForm.module_scopes }
+    delete next[module]
+    roleForm.module_scopes = next
+    return
+  }
+  roleForm.module_scopes = { ...roleForm.module_scopes, [module]: value }
+}
+
+function isModuleFullyChecked(group: PermModuleCard) {
+  return group.items.every((p) => roleForm.permission_ids.includes(p.id))
+}
+
+function isModulePartial(group: PermModuleCard) {
+  const n = group.items.filter((p) => roleForm.permission_ids.includes(p.id)).length
+  return n > 0 && n < group.items.length
+}
+
+function toggleModule(group: PermModuleCard, checked: boolean) {
+  const ids = new Set(roleForm.permission_ids)
+  if (checked) {
+    for (const p of group.items) ids.add(p.id)
+  } else {
+    for (const p of group.items) ids.delete(p.id)
+  }
+  roleForm.permission_ids = [...ids]
+}
 function formatTime(v?: string | null) {
   if (!v) return '-'
   return v.replace('T', ' ').slice(0, 19)
@@ -454,6 +553,7 @@ function openRoleCreate() {
   roleForm.code = ''
   roleForm.description = ''
   roleForm.data_scope = 'personal'
+  roleForm.module_scopes = {}
   roleForm.permission_ids = []
   roleVisible.value = true
 }
@@ -464,6 +564,7 @@ function openRoleEdit(row: SystemRole) {
   roleForm.code = row.code
   roleForm.description = row.description || ''
   roleForm.data_scope = row.data_scope
+  roleForm.module_scopes = { ...(row.module_scopes || {}) }
   roleForm.permission_ids = [...(row.permission_ids || [])]
   roleVisible.value = true
 }
@@ -480,6 +581,7 @@ async function saveRole() {
         name: roleForm.code === 'admin' ? undefined : roleForm.name,
         description: roleForm.description || undefined,
         data_scope: roleForm.code === 'admin' ? undefined : roleForm.data_scope,
+        module_scopes: roleForm.code === 'admin' ? undefined : { ...roleForm.module_scopes },
         permission_ids: roleForm.code === 'admin' ? undefined : roleForm.permission_ids,
       })
     } else {
@@ -492,6 +594,7 @@ async function saveRole() {
         code: roleForm.code,
         description: roleForm.description || undefined,
         data_scope: roleForm.data_scope,
+        module_scopes: { ...roleForm.module_scopes },
         permission_ids: roleForm.permission_ids,
       })
     }
@@ -631,13 +734,92 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-.perm-group {
-  margin-bottom: 10px;
+.perm-modules {
   width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
 }
-.perm-module {
-  font-weight: 600;
-  margin-bottom: 4px;
+
+.perm-modules.is-disabled {
+  opacity: 0.72;
+}
+
+.perm-card {
+  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank, #fff);
+  padding: 10px 12px;
+}
+
+.perm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.perm-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.perm-card-title strong {
+  font-size: 14px;
+}
+
+.perm-card-code {
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+}
+
+.perm-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.perm-card-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.perm-item {
+  margin-right: 0 !important;
+  height: auto;
+  min-height: 28px;
+  align-items: flex-start;
+}
+
+.perm-name {
+  display: inline-block;
+  line-height: 1.3;
+}
+
+.perm-code {
+  display: block;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 11px;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+.field-hint {
+  margin-top: 4px;
+  color: var(--crm-ink-soft, #909399);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.role-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 </style>
 

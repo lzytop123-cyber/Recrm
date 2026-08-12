@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.contract import Contract
 from app.models.customer import Customer
 from app.models.payment import (
@@ -88,7 +88,7 @@ def assert_can_view(user: User, payment: Payment, contract: Optional[Contract] =
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes or user_can(user, "payment:manage"):
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "payment")
     if scope == "company":
         return
     if payment.owner_id == user.id or payment.creator_id == user.id:
@@ -209,7 +209,7 @@ def list_payments(
     q = db.query(Payment)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes or user_can(user, "payment:manage")
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "payment")
 
     if scope_filter == "mine":
         q = q.filter(or_(Payment.owner_id == user.id, Payment.creator_id == user.id))

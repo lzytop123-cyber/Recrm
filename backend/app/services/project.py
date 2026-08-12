@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.contract import (
     CONTRACT_STATUS_ACTIVE,
     CONTRACT_STATUS_COMPLETED,
@@ -268,7 +268,7 @@ def assert_can_view(user: User, project: Project) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes:
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "project")
     if scope == "company":
         return
     if project.manager_id == user.id or project.creator_id == user.id:
@@ -499,7 +499,7 @@ def list_projects(
     q = db.query(Project)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "project")
 
     if scope_filter == "mine":
         q = q.filter(or_(Project.manager_id == user.id, Project.creator_id == user.id))
@@ -1525,7 +1525,7 @@ def list_tasks(
     q = db.query(ProjectTask).join(Project, Project.id == ProjectTask.project_id)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "project")
 
     if scope_filter == "mine":
         q = q.filter(ProjectTask.assignee_id == user.id)

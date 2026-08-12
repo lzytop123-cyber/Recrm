@@ -91,6 +91,31 @@ def list_departments_flat(db: Session) -> list[Department]:
     return depts
 
 
+def _rollup_subtree_user_counts(dept: Department) -> int:
+    """将 user_count 汇总为「本部门 + 全部下级」人数，供组织树展示。"""
+    total = int(getattr(dept, "user_count", 0) or 0)
+    for child in getattr(dept, "children", None) or []:
+        total += _rollup_subtree_user_counts(child)
+    dept.user_count = total  # type: ignore[attr-defined]
+    return total
+
+
+def descendant_department_ids(db: Session, root_id: int) -> list[int]:
+    """包含 root 自身及其全部下级部门 id。"""
+    depts = db.query(Department.id, Department.parent_id).all()
+    children_map: dict[Optional[int], list[int]] = {}
+    for dept_id, parent_id in depts:
+        children_map.setdefault(parent_id, []).append(dept_id)
+
+    result: list[int] = []
+    stack = [root_id]
+    while stack:
+        current = stack.pop()
+        result.append(current)
+        stack.extend(children_map.get(current, []))
+    return result
+
+
 def build_department_tree(db: Session) -> list[Department]:
     depts = list_departments_flat(db)
     by_id = {d.id: d for d in depts}
@@ -103,6 +128,8 @@ def build_department_tree(db: Session) -> list[Department]:
             parent.children.append(d)  # type: ignore[attr-defined]
         else:
             roots.append(d)
+    for root in roots:
+        _rollup_subtree_user_counts(root)
     return roots
 
 
@@ -216,7 +243,8 @@ def list_employees(
         joinedload(User.manager),
     )
     if department_id:
-        q = q.filter(User.department_id == department_id)
+        dept_ids = descendant_department_ids(db, department_id)
+        q = q.filter(User.department_id.in_(dept_ids))
     if is_active is not None:
         q = q.filter(User.is_active.is_(is_active))
     if employment_status:

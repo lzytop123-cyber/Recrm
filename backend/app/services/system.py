@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.rbac import normalize_module_scopes
 from app.models.associations import user_roles
 from app.models.audit_log import AuditLog
 from app.models.permission import Permission
@@ -18,14 +19,20 @@ from app.schemas.system import RoleCreate, RoleUpdate
 PROTECTED_ROLE_CODES = {"admin"}
 
 
+def _known_modules(db: Session) -> set[str]:
+    rows = db.query(Permission.module).distinct().all()
+    return {m for (m,) in rows if m}
+
+
 def enrich_role(db: Session, role: Role) -> Role:
     role.permission_ids = [p.id for p in role.permissions]  # type: ignore[attr-defined]
     role.permission_codes = [p.code for p in role.permissions]  # type: ignore[attr-defined]
+    if not isinstance(getattr(role, "module_scopes", None), dict):
+        role.module_scopes = {}
     role.user_count = (
         db.query(user_roles).filter(user_roles.c.role_id == role.id).count()
     )  # type: ignore[attr-defined]
     return role
-
 
 def list_permissions(db: Session) -> list[Permission]:
     return db.query(Permission).order_by(Permission.module.asc(), Permission.id.asc()).all()
@@ -69,11 +76,15 @@ def create_role(db: Session, payload: RoleCreate) -> Role:
     if db.query(Role).filter(Role.name == payload.name.strip()).first():
         raise HTTPException(status_code=400, detail="角色名称已存在")
 
+    module_scopes = normalize_module_scopes(
+        payload.module_scopes, known_modules=_known_modules(db)
+    )
     role = Role(
         name=payload.name.strip(),
         code=code,
         description=payload.description,
         data_scope=payload.data_scope,
+        module_scopes=module_scopes,
     )
     role.permissions = _load_permissions(db, payload.permission_ids)
     db.add(role)
@@ -88,10 +99,14 @@ def update_role(db: Session, role_id: int, payload: RoleUpdate) -> Role:
 
     data = payload.model_dump(exclude_unset=True)
     permission_ids = data.pop("permission_ids", None)
+    if "module_scopes" in data:
+        data["module_scopes"] = normalize_module_scopes(
+            data["module_scopes"], known_modules=_known_modules(db)
+        )
 
     if role.code in PROTECTED_ROLE_CODES:
         # admin 角色只允许改描述；权限始终保持全部
-        if "name" in data or "data_scope" in data:
+        if "name" in data or "data_scope" in data or "module_scopes" in data:
             raise HTTPException(status_code=400, detail="系统管理员角色名称与数据范围不可修改")
         if permission_ids is not None:
             raise HTTPException(status_code=400, detail="系统管理员角色权限不可修改")
@@ -118,7 +133,6 @@ def update_role(db: Session, role_id: int, payload: RoleUpdate) -> Role:
 
     db.commit()
     return get_role(db, role_id)
-
 
 def delete_role(db: Session, role_id: int) -> None:
     role = db.query(Role).filter(Role.id == role_id).first()

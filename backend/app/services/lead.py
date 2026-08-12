@@ -17,9 +17,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
 from app.core.rbac import (
-    collect_data_scopes,
+    resolve_data_scope,
     user_can,
-    widest_data_scope,
 )
 from app.models.customer import Customer
 from app.models.lead import (
@@ -167,7 +166,7 @@ def assert_can_view(user: User, lead: Lead) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes:
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "lead")
     if lead.status in {LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED}:
         if can_manage_lead_pool(user):
             return
@@ -314,7 +313,7 @@ def list_leads(
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
     is_manager = can_manage_lead_pool(user)
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "lead")
 
     if pool == "mine":
         q = q.filter(Lead.owner_id == user.id).filter(

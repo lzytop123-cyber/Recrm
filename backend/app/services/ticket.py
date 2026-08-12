@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import extract, func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import collect_data_scopes, widest_data_scope
+from app.core.rbac import resolve_data_scope
 from app.models.department import Department
 from app.models.project import (
     PROJECT_STATUS_COMPLETED,
@@ -285,7 +285,7 @@ def assert_can_view(user: User, ticket: Ticket) -> None:
     session = object_session(ticket)
     if session is not None and user.id in _candidate_user_ids(session, ticket.id):
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "ticket")
     if scope == "company":
         return
     if scope == "department" and user.department_id and ticket.department_id == user.department_id:
@@ -579,7 +579,7 @@ def list_tickets(
     q = db.query(Ticket)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "ticket")
 
     if scope_filter == "mine_created":
         q = q.filter(Ticket.creator_id == user.id)

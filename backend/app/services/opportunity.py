@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.customer import Customer
 from app.models.opportunity import (
     OPP_OPEN_STAGES,
@@ -107,7 +107,7 @@ def assert_can_view(user: User, opp: Opportunity) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes or user_can(user, "opportunity:manage"):
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "opportunity")
     if scope == "company":
         return
     if opp.owner_id == user.id or opp.creator_id == user.id:
@@ -214,7 +214,7 @@ def list_opportunities(
     q = db.query(Opportunity)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "opportunity")
 
     if scope_filter == "mine":
         q = q.filter(Opportunity.owner_id == user.id)

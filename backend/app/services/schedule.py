@@ -18,7 +18,7 @@ try:
 except Exception:  # pragma: no cover
     _APP_TZ = timezone(timedelta(hours=8))
 
-from app.core.rbac import collect_data_scopes, widest_data_scope
+from app.core.rbac import resolve_data_scope
 from app.models.project import Project, ProjectTask
 from app.models.schedule import (
     FEISHU_SYNC_PENDING,
@@ -152,7 +152,7 @@ def assert_can_view(user: User, item: Schedule) -> None:
         return
     if item.employee_id == user.id or item.creator_id == user.id:
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "schedule")
     if scope == "company":
         return
     if scope == "department" and user.department_id and item.department_id == user.department_id:
@@ -300,7 +300,7 @@ def list_schedules(
     q = db.query(Schedule)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "schedule")
 
     if scope_filter == "mine":
         q = q.filter(or_(Schedule.employee_id == user.id, Schedule.creator_id == user.id))

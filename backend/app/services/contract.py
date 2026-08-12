@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import collect_data_scopes, user_can, widest_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.contract import (
     CONTRACT_STATUS_ACTIVE,
     CONTRACT_STATUS_APPROVED,
@@ -196,7 +196,7 @@ def assert_can_view(user: User, contract: Contract) -> None:
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes or user_can(user, "contract:manage"):
         return
-    scope = widest_data_scope(collect_data_scopes(user))
+    scope = resolve_data_scope(user, "contract")
     if scope == "company":
         return
     if contract.owner_id == user.id or contract.creator_id == user.id:
@@ -303,7 +303,7 @@ def list_contracts(
     q = db.query(Contract)
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
-    scope = widest_data_scope(collect_data_scopes(user)) if not is_admin else "company"
+    scope = resolve_data_scope(user, "contract")
 
     if scope_filter == "mine":
         q = q.filter(or_(Contract.owner_id == user.id, Contract.creator_id == user.id))
