@@ -371,9 +371,7 @@ def list_leads(
         )
     elif pool == "created":
         q = q.filter(Lead.creator_id == user.id)
-        if not is_manager:
-            # 录入人回看：不含仍在待分配池的线索（对齐 PRD 未分配不可见）
-            q = q.filter(Lead.status.notin_([LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED]))
+        # 录入人回看：自己的录入（含仍在待分配池的）都可见，便于确认录入结果
     elif pool == "public":
         if not is_manager:
             return 0, []

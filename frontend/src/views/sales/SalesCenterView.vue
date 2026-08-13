@@ -7,8 +7,8 @@
         <p>{{ headDesc }}</p>
       </div>
       <div class="sales-head-actions">
-        <el-button v-if="tab === 'pool' || tab === 'mine'" @click="importVisible = true">批量导入</el-button>
-        <el-button v-if="tab === 'pool' || tab === 'mine'" type="primary" @click="leadCreateTick++">
+        <el-button v-if="tab === 'pool' || tab === 'mine' || tab === 'created'" @click="importVisible = true">批量导入</el-button>
+        <el-button v-if="tab === 'pool' || tab === 'mine' || tab === 'created'" type="primary" @click="leadCreateTick++">
           录入线索
         </el-button>
         <el-button v-else-if="tab === 'customers' && canManageCustomers" type="primary" @click="customerCreateTick++">
@@ -37,9 +37,9 @@
 
     <div class="crm-fit-body">
       <LeadListView
-        v-if="tab === 'pool' || tab === 'mine'"
+        v-if="tab === 'pool' || tab === 'mine' || tab === 'created'"
         :key="`${tab}-${leadReloadTick}`"
-        :forced-pool="tab === 'pool' ? 'public' : 'mine'"
+        :forced-pool="tab === 'pool' ? 'public' : tab === 'created' ? 'created' : 'mine'"
         :embedded="true"
         :open-create-signal="leadCreateTick"
       />
@@ -72,7 +72,7 @@ import CustomerListView from '@/views/customers/CustomerListView.vue'
 import OpportunityListView from '@/views/opportunities/OpportunityListView.vue'
 import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
-type SalesTab = 'pool' | 'mine' | 'customers' | 'opportunities'
+type SalesTab = 'pool' | 'mine' | 'created' | 'customers' | 'opportunities'
 
 const route = useRoute()
 const router = useRouter()
@@ -99,6 +99,7 @@ const canSelfFollowOnCreate = computed(() =>
 const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [
   { key: 'pool', label: '线索总览', visible: () => canManagePool.value },
   { key: 'mine', label: '我的线索', visible: () => true },
+  { key: 'created', label: '我录入', visible: () => true },
   { key: 'customers', label: '客户档案', visible: () => canViewCustomers.value },
   { key: 'opportunities', label: '商机', visible: () => canViewOpportunities.value },
 ]
@@ -108,6 +109,7 @@ const visibleTabs = computed(() => allTabs.filter((t) => t.visible()))
 function normalizeTab(raw?: string | null): SalesTab {
   if (raw === 'pool' && canManagePool.value) return 'pool'
   if (raw === 'mine') return 'mine'
+  if (raw === 'created') return 'created'
   if (raw === 'customers' && canViewCustomers.value) return 'customers'
   // 兼容旧「客户与商机」深链：无客户档案权限时落到商机
   if (raw === 'customers' && canViewOpportunities.value) return 'opportunities'
@@ -126,6 +128,7 @@ const tab = ref<SalesTab>(normalizeTab(route.query.tab as string))
 const headDesc = computed(() => {
   if (tab.value === 'pool') return '查看全公司线索状态，并对待分配线索执行批量或逐条分配。'
   if (tab.value === 'mine') return '查看分配给当前登录人的线索并持续跟进、转化或释放。'
+  if (tab.value === 'created') return '查看自己录入的线索及其当前状态（待分配/已分配等）。'
   if (tab.value === 'customers') return '维护客户主体档案，作为商机、合同与项目的统一挂载点。'
   return '推进商机阶段与赢单，商机必须关联已建档的客户主体。'
 })
