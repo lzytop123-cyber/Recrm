@@ -373,6 +373,7 @@ def list_leads(
         )
     elif pool == "created":
         q = q.filter(Lead.creator_id == user.id)
+        # 录入人回看：自己的录入（含仍在待分配池的）都可见，便于确认录入结果
     elif pool == "public":
         if not is_manager:
             return 0, []

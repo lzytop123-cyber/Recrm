@@ -109,7 +109,7 @@
             <el-radio-button v-if="canManagePool" value="public">线索总览</el-radio-button>
             <el-radio-button value="mine">我的</el-radio-button>
             <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button v-if="canManagePool" value="created">我录入</el-radio-button>
+            <el-radio-button value="created">我录入</el-radio-button>
           </el-radio-group>
           <el-input
             v-model="keyword"
