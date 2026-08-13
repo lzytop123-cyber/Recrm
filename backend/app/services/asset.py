@@ -43,6 +43,7 @@ from app.models.department import Department
 from app.models.user import User
 from app.schemas.asset import (
     AssetCreate,
+    AssetUpdate,
     BorrowCreate,
     BorrowRejectRequest,
     DepreciationRuleCreate,
@@ -249,25 +250,33 @@ def create_asset(db: Session, user: User, payload: AssetCreate) -> FixedAsset:
         raise HTTPException(status_code=403, detail="仅资产管理员可入库")
     if payload.category not in ASSET_CATEGORIES:
         raise HTTPException(status_code=400, detail="不支持的资产分类")
-    row = FixedAsset(
-        asset_no=_gen_asset_no(db, payload.category),
-        name=payload.name.strip(),
-        category=payload.category,
-        model=(payload.model or "").strip() or None,
-        serial_no=(payload.serial_no or "").strip() or None,
-        status=ASSET_STATUS_AVAILABLE,
-        department_id=payload.department_id or user.department_id,
-        location=(payload.location or "").strip() or None,
-        original_value=payload.original_value,
-        purchase_date=payload.purchase_date or date.today(),
-        next_maintenance=payload.next_maintenance,
-        qr_code=_gen_qr(),
-        remark=payload.remark,
-    )
-    db.add(row)
+    qty = payload.quantity
+    serial = (payload.serial_no or "").strip() or None
+    first: Optional[FixedAsset] = None
+    for _ in range(qty):
+        row = FixedAsset(
+            asset_no=_gen_asset_no(db, payload.category),
+            name=payload.name.strip(),
+            category=payload.category,
+            model=(payload.model or "").strip() or None,
+            serial_no=serial if qty == 1 else None,
+            status=ASSET_STATUS_AVAILABLE,
+            department_id=payload.department_id or user.department_id,
+            location=(payload.location or "").strip() or None,
+            original_value=payload.original_value,
+            purchase_date=payload.purchase_date or date.today(),
+            next_maintenance=payload.next_maintenance,
+            qr_code=_gen_qr(),
+            remark=payload.remark,
+        )
+        db.add(row)
+        db.flush()
+        if first is None:
+            first = row
     db.commit()
-    db.refresh(row)
-    return enrich_asset(db, row)
+    assert first is not None
+    db.refresh(first)
+    return enrich_asset(db, first)
 
 
 def list_assets(
@@ -300,6 +309,130 @@ def get_asset(db: Session, asset_id: int) -> FixedAsset:
     if not row:
         raise HTTPException(status_code=404, detail="资产不存在")
     return enrich_asset(db, row)
+
+
+def _blank_to_none(value: Optional[str]) -> Optional[str]:
+    text = (value or "").strip()
+    return text or None
+
+
+def _sku_siblings(db: Session, row: FixedAsset) -> list[FixedAsset]:
+    model = (row.model or "").strip()
+    rows = (
+        db.query(FixedAsset)
+        .filter(FixedAsset.name == row.name, FixedAsset.category == row.category)
+        .all()
+    )
+    return [x for x in rows if (x.model or "").strip() == model]
+
+
+def update_asset(db: Session, user: User, asset_id: int, payload: AssetUpdate) -> FixedAsset:
+    if not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="仅资产管理员可编辑")
+    row = db.query(FixedAsset).filter(FixedAsset.id == asset_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    if payload.category is not None and payload.category not in ASSET_CATEGORIES:
+        raise HTTPException(status_code=400, detail="不支持的资产分类")
+
+    targets = _sku_siblings(db, row) if payload.apply_to_same_model else [row]
+    data = payload.model_dump(exclude_unset=True, exclude={"apply_to_same_model", "quantity"})
+    for item in targets:
+        if "name" in data and payload.name is not None:
+            item.name = payload.name.strip()
+        if "category" in data and payload.category is not None:
+            item.category = payload.category
+        if "model" in data:
+            item.model = _blank_to_none(payload.model)
+        if "location" in data:
+            item.location = _blank_to_none(payload.location)
+        if "original_value" in data and payload.original_value is not None:
+            item.original_value = payload.original_value
+        if "purchase_date" in data:
+            item.purchase_date = payload.purchase_date
+        if "next_maintenance" in data:
+            item.next_maintenance = payload.next_maintenance
+        if "department_id" in data:
+            item.department_id = payload.department_id
+        if "remark" in data:
+            item.remark = _blank_to_none(payload.remark)
+        if "serial_no" in data and item.id == row.id:
+            item.serial_no = _blank_to_none(payload.serial_no)
+    db.flush()
+    if payload.quantity is not None:
+        row = _adjust_sku_quantity(db, row, payload.quantity)
+    db.commit()
+    db.refresh(row)
+    return enrich_asset(db, row)
+
+
+def _unit_is_removable(db: Session, asset: FixedAsset) -> bool:
+    if asset.status != ASSET_STATUS_AVAILABLE:
+        return False
+    if db.query(AssetBorrowItem).filter(AssetBorrowItem.asset_id == asset.id).first():
+        return False
+    if db.query(AssetMaintenance).filter(AssetMaintenance.asset_id == asset.id).first():
+        return False
+    if db.query(AssetDisposal).filter(AssetDisposal.asset_id == asset.id).first():
+        return False
+    if db.query(AssetInventoryLine).filter(AssetInventoryLine.asset_id == asset.id).first():
+        return False
+    if db.query(AssetDepreciationSnapshot).filter(AssetDepreciationSnapshot.asset_id == asset.id).first():
+        return False
+    if db.query(ShootingScheduleAsset).filter(ShootingScheduleAsset.asset_id == asset.id).first():
+        return False
+    return True
+
+
+def _clone_unit(db: Session, template: FixedAsset) -> FixedAsset:
+    row = FixedAsset(
+        asset_no=_gen_asset_no(db, template.category),
+        name=template.name,
+        category=template.category,
+        model=template.model,
+        serial_no=None,
+        status=ASSET_STATUS_AVAILABLE,
+        department_id=template.department_id,
+        location=template.location,
+        original_value=template.original_value,
+        purchase_date=template.purchase_date or date.today(),
+        next_maintenance=template.next_maintenance,
+        qr_code=_gen_qr(),
+        remark=template.remark,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _adjust_sku_quantity(db: Session, row: FixedAsset, quantity: int) -> FixedAsset:
+    siblings = _sku_siblings(db, row)
+    current = len(siblings)
+    if quantity == current:
+        return row
+    if quantity > current:
+        for _ in range(quantity - current):
+            _clone_unit(db, row)
+        return row
+    removable = [x for x in siblings if x.id != row.id and _unit_is_removable(db, x)]
+    if _unit_is_removable(db, row):
+        removable.append(row)
+    locked = current - len(removable)
+    if quantity < locked:
+        raise HTTPException(
+            status_code=400,
+            detail=f"该型号有 {locked} 件无法删除（借出或已有记录），数量不能少于 {locked}",
+        )
+    need_drop = current - quantity
+    drop_ids = {x.id for x in removable[:need_drop]}
+    for item in siblings:
+        if item.id in drop_ids:
+            db.delete(item)
+    db.flush()
+    if row.id in drop_ids:
+        kept = next(x for x in siblings if x.id not in drop_ids)
+        return kept
+    return row
 
 
 def create_borrow(db: Session, user: User, payload: BorrowCreate) -> AssetBorrowRequest:

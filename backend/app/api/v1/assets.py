@@ -11,6 +11,7 @@ from app.schemas.asset import (
     AlertOut,
     AssetCreate,
     AssetOut,
+    AssetUpdate,
     AssetReportOut,
     AssetWorkbenchOut,
     BorrowCreate,
@@ -394,6 +395,16 @@ def alerts(
     current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
 ) -> List[AlertOut]:
     return [AlertOut(**x) for x in asset_service.asset_alerts(db, current_user)]
+
+
+@router.patch("/{asset_id}", response_model=AssetOut, summary="编辑资产")
+def update_asset(
+    asset_id: int,
+    payload: AssetUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["asset:view"]))],
+) -> AssetOut:
+    return AssetOut.model_validate(asset_service.update_asset(db, current_user, asset_id, payload))
 
 
 @router.post("/{asset_id}/dispose", response_model=DisposalOut, summary="申请处置")

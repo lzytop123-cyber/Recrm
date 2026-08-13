@@ -155,8 +155,29 @@ export function createAsset(data: {
   next_maintenance?: string
   department_id?: number
   remark?: string
+  quantity?: number
 }) {
   return request.post<FixedAsset>('/assets', data)
+}
+
+export function updateAsset(
+  id: number,
+  data: {
+    name?: string
+    category?: string
+    model?: string | null
+    serial_no?: string | null
+    location?: string | null
+    original_value?: number
+    purchase_date?: string | null
+    next_maintenance?: string | null
+    department_id?: number | null
+    remark?: string | null
+    apply_to_same_model?: boolean
+    quantity?: number
+  },
+) {
+  return request.patch<FixedAsset>(`/assets/${id}`, data)
 }
 
 export function createBorrow(data: {
@@ -193,4 +214,79 @@ export function scanAsset(data: { qr_code?: string; asset_id?: number; mode?: st
     asset?: FixedAsset
     inventory?: InventorySession
   }>('/assets/scan', data)
+}
+
+/** 同型号合并：分类 + 名称 + 型号 */
+export function assetSkuKey(a: { name: string; category: string; model?: string | null }) {
+  return `${a.category.trim()}\u0001${a.name.trim()}\u0001${(a.model || '').trim()}`
+}
+
+const OCCUPIED_STATUS = new Set(['borrowed', 'reserved', 'pending_return'])
+
+export interface AssetSkuGroup {
+  key: string
+  name: string
+  category: string
+  model: string
+  location: string
+  original_value: number
+  original_value_sum: number
+  qty: number
+  available: number
+  occupied: number
+  maintenance: number
+  other: number
+  units: FixedAsset[]
+}
+
+export function groupAssetsBySku(list: FixedAsset[]): AssetSkuGroup[] {
+  const map = new Map<string, AssetSkuGroup>()
+  for (const a of list) {
+    const key = assetSkuKey(a)
+    let g = map.get(key)
+    if (!g) {
+      g = {
+        key,
+        name: a.name,
+        category: a.category,
+        model: (a.model || '').trim(),
+        location: a.location || '',
+        original_value: Number(a.original_value || 0),
+        original_value_sum: 0,
+        qty: 0,
+        available: 0,
+        occupied: 0,
+        maintenance: 0,
+        other: 0,
+        units: [],
+      }
+      map.set(key, g)
+    }
+    g.units.push(a)
+    g.qty += 1
+    g.original_value_sum += Number(a.original_value || 0)
+    if (a.status === 'available') g.available += 1
+    else if (a.status === 'maintenance') g.maintenance += 1
+    else if (OCCUPIED_STATUS.has(String(a.status))) g.occupied += 1
+    else g.other += 1
+  }
+  for (const g of map.values()) {
+    const locs = new Set(g.units.map((u) => (u.location || '').trim()))
+    g.location = locs.size === 1 ? g.units[0].location || '' : '多位置'
+  }
+  return [...map.values()]
+}
+
+export function groupBorrowItems(items: BorrowItem[]) {
+  const map = new Map<string, { name: string; category: string; items: BorrowItem[] }>()
+  for (const a of items) {
+    const key = `${a.category}\u0001${a.name}`
+    let g = map.get(key)
+    if (!g) {
+      g = { name: a.name, category: a.category, items: [] }
+      map.set(key, g)
+    }
+    g.items.push(a)
+  }
+  return [...map.values()]
 }

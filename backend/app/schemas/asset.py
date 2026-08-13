@@ -17,6 +17,22 @@ class AssetCreate(BaseModel):
     next_maintenance: Optional[date] = None
     department_id: Optional[int] = None
     remark: Optional[str] = None
+    quantity: int = Field(default=1, ge=1, le=99, description="同型号入库件数，每件仍生成独立编号")
+
+
+class AssetUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    category: Optional[str] = Field(None, min_length=1, max_length=40)
+    model: Optional[str] = None
+    serial_no: Optional[str] = None
+    location: Optional[str] = None
+    original_value: Optional[Decimal] = Field(None, ge=0)
+    purchase_date: Optional[date] = None
+    next_maintenance: Optional[date] = None
+    department_id: Optional[int] = None
+    remark: Optional[str] = None
+    apply_to_same_model: bool = False
+    quantity: Optional[int] = Field(None, ge=1, le=99, description="该型号目标件数，多则补入库、少则删在库件")
 
 
 class AssetOut(BaseModel):

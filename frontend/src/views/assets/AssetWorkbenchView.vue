@@ -69,16 +69,16 @@
           <h2>可借器材</h2>
           <span class="muted">点选查看详情，或直接申请借用</span>
         </div>
-        <div v-if="availableAssets.length" class="asset-chips">
+        <div v-if="availableSkuGroups.length" class="asset-chips">
           <button
-            v-for="a in availableAssets"
-            :key="a.id"
+            v-for="g in availableSkuGroups"
+            :key="g.key"
             type="button"
             class="asset-chip"
-            @click="openAssetDrawer(a)"
+            @click="openSkuRow(g)"
           >
-            <b>{{ a.name }}</b>
-            <small>{{ a.category }} · {{ a.location || '未标注位置' }}</small>
+            <b>{{ g.name }}<em v-if="g.qty > 1" class="qty-badge">×{{ g.qty }}</em></b>
+            <small>{{ g.category }}{{ g.model ? ` · ${g.model}` : '' }}</small>
           </button>
         </div>
         <div v-else class="empty-hint">暂无可借器材</div>
@@ -221,39 +221,74 @@
               />
             </el-select>
           </div>
-          <span class="muted">共 {{ filteredAssets.length }} 件</span>
+          <span class="muted">{{ ledgerCountText }}</span>
         </div>
         <section class="asset-panel crm-fit-panel">
           <div class="crm-table-wrap is-fit">
             <el-table
-              :data="filteredAssets"
+              :data="filteredSkuGroups"
               stripe
               empty-text="没有匹配的资产"
               height="100%"
-              @row-click="openAssetDrawer"
+              row-key="key"
+              @row-click="onLedgerRowClick"
             >
-              <el-table-column label="资产" min-width="200">
+              <el-table-column type="expand" width="40">
+                <template #default="{ row }">
+                  <div class="sku-units">
+                    <button
+                      v-for="u in row.units"
+                      :key="u.id"
+                      type="button"
+                      class="sku-unit"
+                      @click.stop="openAssetDrawer(u)"
+                    >
+                      <span>
+                        <b>{{ u.asset_no }}</b>
+                        <small>{{ u.serial_no || u.qr_code }}</small>
+                      </span>
+                      <el-tag size="small" :type="assetTag(u.status)">
+                        {{ ASSET_STATUS_LABEL[u.status] || u.status }}
+                      </el-tag>
+                      <em>{{ u.holder_name || '—' }}</em>
+                    </button>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="资产" min-width="180">
                 <template #default="{ row }">
                   <b>{{ row.name }}</b>
-                  <div class="muted">{{ row.asset_no }}</div>
+                  <div class="muted">{{ row.model || '未填型号' }}</div>
                 </template>
               </el-table-column>
-              <el-table-column label="分类" width="100">
+              <el-table-column label="分类" width="90">
                 <template #default="{ row }">{{ row.category }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column label="数量" width="72" align="right">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="assetTag(row.status)">
-                    {{ ASSET_STATUS_LABEL[row.status] || row.status }}
-                  </el-tag>
+                  <b class="qty-num">{{ row.qty }}</b>
                 </template>
               </el-table-column>
-              <el-table-column label="使用人" width="100">
-                <template #default="{ row }">{{ row.holder_name || '—' }}</template>
+              <el-table-column label="库存" min-width="160">
+                <template #default="{ row }">
+                  <span class="stock-pills">
+                    <em class="ok">在库 {{ row.available }}</em>
+                    <em v-if="row.occupied" class="out">占用 {{ row.occupied }}</em>
+                    <em v-if="row.maintenance" class="bad">维保 {{ row.maintenance }}</em>
+                    <em v-if="row.other" class="mute">其他 {{ row.other }}</em>
+                  </span>
+                </template>
               </el-table-column>
-              <el-table-column prop="location" label="位置" min-width="120" show-overflow-tooltip />
-              <el-table-column label="原值" width="110">
-                <template #default="{ row }">¥{{ money(row.original_value) }}</template>
+              <el-table-column label="原值" width="120" align="right">
+                <template #default="{ row }">
+                  <span v-if="row.qty > 1">¥{{ money(row.original_value_sum) }}</span>
+                  <span v-else>¥{{ money(row.original_value) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="canManage" label="操作" width="72" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click.stop="openEditSku(row)">编辑</el-button>
+                </template>
               </el-table-column>
             </el-table>
           </div>
@@ -325,20 +360,68 @@
           <div class="drawer-grid">
             <div><small>分类 / 型号</small><b>{{ assetDrawer.category }} · {{ assetDrawer.model || '—' }}</b></div>
             <div><small>使用人</small><b>{{ assetDrawer.holder_name || '—' }}</b></div>
-            <div><small>位置</small><b>{{ assetDrawer.location || '—' }}</b></div>
             <div><small>原值 / 净值</small><b>¥{{ money(assetDrawer.original_value) }} / ¥{{ money(assetDrawer.net_value) }}</b></div>
             <div><small>下次维保</small><b>{{ assetDrawer.next_maintenance || '—' }}</b></div>
             <div><small>关联档期</small><b>{{ assetDrawer.schedule_ref || '—' }}</b></div>
           </div>
         </div>
-        <el-button
-          v-if="assetDrawer.status === 'available'"
-          type="primary"
-          style="width: 100%"
-          @click="borrowThisAsset(assetDrawer)"
-        >
-          申请借用此器材
-        </el-button>
+        <div class="drawer-actions">
+          <el-button v-if="canManage" @click="openEditUnit(assetDrawer)">编辑资料</el-button>
+          <el-button
+            v-if="assetDrawer.status === 'available'"
+            type="primary"
+            @click="borrowThisAsset(assetDrawer)"
+          >
+            申请借用此器材
+          </el-button>
+        </div>
+      </template>
+    </el-drawer>
+
+    <!-- 同型号库存 -->
+    <el-drawer v-model="skuDrawerVisible" :title="skuDrawer?.name || '资产'" size="440px" destroy-on-close>
+      <template v-if="skuDrawer">
+        <div class="drawer-section">
+          <el-tag size="small">{{ skuDrawer.category }}</el-tag>
+          <span class="muted" style="margin-left: 8px">{{ skuDrawer.model || '未填型号' }} · {{ skuDrawer.qty }} 件</span>
+        </div>
+        <div class="drawer-section">
+          <div class="drawer-grid">
+            <div><small>在库 / 占用 / 维保</small><b>{{ skuDrawer.available }} / {{ skuDrawer.occupied }} / {{ skuDrawer.maintenance }}</b></div>
+            <div><small>原值合计</small><b>¥{{ money(skuDrawer.original_value_sum) }}</b></div>
+          </div>
+        </div>
+        <div class="drawer-section">
+          <h4>实物编号</h4>
+          <div class="sku-units is-drawer">
+            <button
+              v-for="u in skuDrawer.units"
+              :key="u.id"
+              type="button"
+              class="sku-unit"
+              @click="openAssetDrawer(u)"
+            >
+              <span>
+                <b>{{ u.asset_no }}</b>
+                <small>{{ u.serial_no || u.qr_code }}</small>
+              </span>
+              <el-tag size="small" :type="assetTag(u.status)">
+                {{ ASSET_STATUS_LABEL[u.status] || u.status }}
+              </el-tag>
+              <em>{{ u.holder_name || '—' }}</em>
+            </button>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <el-button v-if="canManage" @click="openEditSku(skuDrawer)">编辑本型号</el-button>
+          <el-button
+            v-if="skuDrawer.available > 0"
+            type="primary"
+            @click="borrowThisSku(skuDrawer)"
+          >
+            申请借用（可借 {{ skuDrawer.available }} 件）
+          </el-button>
+        </div>
       </template>
     </el-drawer>
 
@@ -367,9 +450,11 @@
         <div class="drawer-section">
           <h4>器材清单</h4>
           <div class="linked-assets">
-            <div v-for="a in borrowDrawer.assets" :key="a.asset_id" class="linked-row">
-              <b>{{ a.name }}</b>
-              <small>{{ a.asset_no }} · {{ ASSET_STATUS_LABEL[a.status] || a.status }}</small>
+            <div v-for="g in groupedBorrowDrawerItems" :key="g.name + g.category" class="linked-row">
+              <b>{{ g.name }}<em v-if="g.items.length > 1" class="qty-badge">×{{ g.items.length }}</em></b>
+              <small v-for="a in g.items" :key="a.asset_id">
+                {{ a.asset_no }} · {{ ASSET_STATUS_LABEL[a.status] || a.status }}
+              </small>
             </div>
           </div>
         </div>
@@ -388,8 +473,24 @@
       </template>
     </el-drawer>
 
-    <!-- 入库 -->
-    <el-dialog v-model="createAssetVisible" title="设备入库" width="520px" destroy-on-close>
+    <!-- 入库 / 编辑 -->
+    <el-dialog
+      v-model="createAssetVisible"
+      :title="assetForm.mode === 'edit' ? '编辑资产' : '设备入库'"
+      width="520px"
+      destroy-on-close
+    >
+      <p class="borrow-hint">
+        <template v-if="assetForm.mode === 'edit' && assetForm.applyToSku">
+          将同步该型号资料；改数量会增加或减少在库件数。
+        </template>
+        <template v-else-if="assetForm.mode === 'edit'">
+          可改资料和数量。数量调大会按此型号补入库，调小会删除多余在库件。
+        </template>
+        <template v-else>
+          同型号多件填数量即可，台账合并为一行；每件仍有独立编号，可单独借还。
+        </template>
+      </p>
       <el-form label-width="90px">
         <el-form-item label="资产名称" required>
           <el-input v-model="assetForm.name" placeholder="例如：Sony FX3" />
@@ -400,21 +501,23 @@
           </el-select>
         </el-form-item>
         <el-form-item label="品牌型号">
-          <el-input v-model="assetForm.model" />
+          <el-input v-model="assetForm.model" placeholder="用于合并同型号库存" />
         </el-form-item>
-        <el-form-item label="序列号">
+        <el-form-item label="数量" required>
+          <el-input-number v-model="assetForm.quantity" :min="1" :max="99" :step="1" style="width: 100%" />
+        </el-form-item>
+        <el-form-item v-if="showSerialField" label="序列号">
           <el-input v-model="assetForm.serial_no" />
         </el-form-item>
-        <el-form-item label="存放位置">
-          <el-input v-model="assetForm.location" />
-        </el-form-item>
-        <el-form-item label="原值">
+        <el-form-item :label="assetForm.quantity > 1 ? '单价原值' : '原值'">
           <el-input-number v-model="assetForm.original_value" :min="0" :step="100" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createAssetVisible = false">取消</el-button>
-        <el-button type="primary" :loading="acting" @click="submitCreateAsset">保存</el-button>
+        <el-button type="primary" :loading="acting" @click="submitAssetForm">
+          {{ assetSubmitLabel }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -508,7 +611,7 @@
             <el-input
               v-model="borrowAssetKeyword"
               clearable
-              placeholder="搜索器材名称"
+              placeholder="搜索器材名称 / 型号"
               style="flex: 1"
             />
             <el-select
@@ -521,38 +624,40 @@
             </el-select>
           </div>
           <div class="asset-choice-list">
-            <button
-              v-for="a in filteredBorrowAssets"
-              :key="a.id"
-              type="button"
-              class="asset-pick"
-              :class="{ selected: borrowForm.asset_ids.includes(a.id) }"
-              @click="toggleAsset(a.id, !borrowForm.asset_ids.includes(a.id))"
+            <div
+              v-for="g in filteredBorrowSkus"
+              :key="g.key"
+              class="asset-pick sku-pick"
+              :class="{ selected: skuPickedQty(g) > 0 }"
+              role="button"
+              tabindex="0"
+              @click="toggleSkuPick(g)"
+              @keydown.enter.prevent="toggleSkuPick(g)"
             >
-              <el-checkbox
-                :model-value="borrowForm.asset_ids.includes(a.id)"
-                @click.stop
-                @change="(v: boolean | string | number) => toggleAsset(a.id, !!v)"
-              />
               <span class="asset-pick-body">
-                <b>{{ a.name }}</b>
-                <small>{{ a.category }}{{ a.location ? ` · ${a.location}` : '' }}</small>
+                <b>{{ g.name }}</b>
+                <small>{{ g.category }}{{ g.model ? ` · ${g.model}` : '' }}</small>
               </span>
-              <el-tag size="small" type="success">可借</el-tag>
-            </button>
-            <div v-if="!filteredBorrowAssets.length" class="empty-hint">没有匹配的在库器材</div>
+              <span class="sku-stock">可借 {{ g.available }}</span>
+              <span class="qty-stepper" @click.stop>
+                <button type="button" :disabled="skuPickedQty(g) <= 0" @click="setSkuQty(g, skuPickedQty(g) - 1)">−</button>
+                <em>{{ skuPickedQty(g) }}</em>
+                <button type="button" :disabled="skuPickedQty(g) >= g.available" @click="setSkuQty(g, skuPickedQty(g) + 1)">+</button>
+              </span>
+            </div>
+            <div v-if="!filteredBorrowSkus.length" class="empty-hint">没有匹配的在库器材</div>
           </div>
-          <div v-if="selectedBorrowAssets.length" class="selected-summary">
+          <div v-if="selectedBorrowSkus.length" class="selected-summary">
             已选：
             <el-tag
-              v-for="a in selectedBorrowAssets"
-              :key="a.id"
+              v-for="g in selectedBorrowSkus"
+              :key="g.key"
               size="small"
               closable
               style="margin: 2px 4px 2px 0"
-              @close="toggleAsset(a.id, false)"
+              @close="setSkuQty(g, 0)"
             >
-              {{ a.name }}
+              {{ g.name }}{{ g.picked > 1 ? ` ×${g.picked}` : '' }}
             </el-tag>
           </div>
         </section>
@@ -580,8 +685,12 @@ import {
   createAsset,
   createBorrow,
   fetchAssetWorkbench,
+  groupAssetsBySku,
+  groupBorrowItems,
   rejectBorrow,
   returnBorrow,
+  updateAsset,
+  type AssetSkuGroup,
   type AssetStats,
   type BorrowRequest,
   type FixedAsset,
@@ -632,6 +741,8 @@ const borrowFilter = ref('all')
 
 const assetDrawerVisible = ref(false)
 const assetDrawer = ref<FixedAsset | null>(null)
+const skuDrawerVisible = ref(false)
+const skuDrawer = ref<AssetSkuGroup | null>(null)
 const borrowDrawerVisible = ref(false)
 const borrowDrawer = ref<BorrowRequest | null>(null)
 const createAssetVisible = ref(false)
@@ -642,12 +753,16 @@ const borrowAssetKeyword = ref('')
 const borrowAssetCategory = ref<string | undefined>()
 
 const assetForm = reactive({
+  mode: 'create' as 'create' | 'edit',
+  applyToSku: false,
+  assetId: null as number | null,
+  skuQty: 1,
   name: '',
   category: '相机',
   model: '',
   serial_no: '',
-  location: '新媒体器材柜 A1',
   original_value: 10000,
+  quantity: 1,
 })
 
 const borrowForm = reactive({
@@ -659,6 +774,13 @@ const borrowForm = reactive({
 })
 
 const isEmployee = computed(() => viewMode.value === 'employee' || !canManage.value)
+const showSerialField = computed(() => assetForm.quantity === 1)
+const assetSubmitLabel = computed(() => {
+  if (assetForm.mode === 'edit') {
+    return assetForm.applyToSku && assetForm.skuQty > 1 ? `保存 ${assetForm.skuQty} 件` : '保存'
+  }
+  return assetForm.quantity > 1 ? `入库 ${assetForm.quantity} 件` : '保存'
+})
 
 const filteredAssets = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -669,6 +791,14 @@ const filteredAssets = computed(() => {
     return `${a.asset_no}${a.name}${a.model || ''}${a.holder_name || ''}`.toLowerCase().includes(q)
   })
 })
+const filteredSkuGroups = computed(() => groupAssetsBySku(filteredAssets.value))
+const ledgerCountText = computed(() => {
+  const kinds = filteredSkuGroups.value.length
+  const pieces = filteredAssets.value.length
+  if (!pieces) return '共 0 件'
+  return kinds === pieces ? `共 ${pieces} 件` : `共 ${kinds} 种 · ${pieces} 件`
+})
+const groupedBorrowDrawerItems = computed(() => groupBorrowItems(borrowDrawer.value?.assets || []))
 
 const filteredBorrows = computed(() => {
   if (borrowFilter.value === 'all') return borrows.value
@@ -679,16 +809,20 @@ const filteredBorrows = computed(() => {
 })
 
 const availableAssets = computed(() => assets.value.filter((x) => x.status === 'available'))
-const filteredBorrowAssets = computed(() => {
+const availableSkuGroups = computed(() => groupAssetsBySku(availableAssets.value))
+const filteredBorrowSkus = computed(() => {
   const q = borrowAssetKeyword.value.trim().toLowerCase()
-  return availableAssets.value.filter((a) => {
-    if (borrowAssetCategory.value && a.category !== borrowAssetCategory.value) return false
+  return availableSkuGroups.value.filter((g) => {
+    if (borrowAssetCategory.value && g.category !== borrowAssetCategory.value) return false
     if (!q) return true
-    return `${a.name}${a.model || ''}${a.asset_no}`.toLowerCase().includes(q)
+    const nos = g.units.map((u) => u.asset_no).join('')
+    return `${g.name}${g.model}${g.category}${nos}`.toLowerCase().includes(q)
   })
 })
-const selectedBorrowAssets = computed(() =>
-  availableAssets.value.filter((a) => borrowForm.asset_ids.includes(a.id)),
+const selectedBorrowSkus = computed(() =>
+  availableSkuGroups.value
+    .map((g) => ({ ...g, picked: skuPickedQty(g) }))
+    .filter((g) => g.picked > 0),
 )
 const myBorrows = computed(() =>
   borrows.value.filter((x) => x.applicant_id === userStore.user?.id),
@@ -797,6 +931,19 @@ function openAssetDrawer(row: FixedAsset) {
   assetDrawer.value = row
   assetDrawerVisible.value = true
 }
+function openSkuDrawer(row: AssetSkuGroup) {
+  skuDrawer.value = row
+  skuDrawerVisible.value = true
+}
+function openSkuRow(row: AssetSkuGroup) {
+  if (row.qty === 1) openAssetDrawer(row.units[0])
+  else openSkuDrawer(row)
+}
+function onLedgerRowClick(row: AssetSkuGroup, _col?: unknown, ev?: Event) {
+  const t = ev?.target as HTMLElement | null
+  if (t?.closest('.el-table__expand-icon, .sku-units, .el-button')) return
+  openSkuRow(row)
+}
 function openBorrowDrawer(row: BorrowRequest) {
   borrowDrawer.value = row
   borrowDrawerVisible.value = true
@@ -812,29 +959,81 @@ function onAlertClick(a: { asset_id?: number | null; request_id?: number | null 
 }
 
 function openCreateAsset() {
+  assetForm.mode = 'create'
+  assetForm.applyToSku = false
+  assetForm.assetId = null
+  assetForm.skuQty = 1
   assetForm.name = ''
   assetForm.category = '相机'
   assetForm.model = ''
   assetForm.serial_no = ''
-  assetForm.location = '新媒体器材柜 A1'
   assetForm.original_value = 10000
+  assetForm.quantity = 1
   createAssetVisible.value = true
 }
 
-async function submitCreateAsset() {
+function fillAssetForm(row: FixedAsset, applyToSku: boolean, skuQty = 1) {
+  assetForm.mode = 'edit'
+  assetForm.applyToSku = applyToSku
+  assetForm.assetId = row.id
+  assetForm.skuQty = skuQty
+  assetForm.name = row.name
+  assetForm.category = row.category
+  assetForm.model = row.model || ''
+  assetForm.serial_no = row.serial_no || ''
+  assetForm.original_value = Number(row.original_value || 0)
+  assetForm.quantity = skuQty
+  createAssetVisible.value = true
+}
+
+function openEditUnit(row: FixedAsset) {
+  fillAssetForm(row, false, 1)
+}
+
+function openEditSku(row: AssetSkuGroup) {
+  fillAssetForm(row.units[0], row.qty > 1, row.qty)
+}
+
+async function submitAssetForm() {
   if (!assetForm.name.trim()) {
     ElMessage.warning('请填写资产名称')
     return
   }
   acting.value = true
   try {
-    const { data } = await createAsset({ ...assetForm, name: assetForm.name.trim() })
+    if (assetForm.mode === 'edit') {
+      if (!assetForm.assetId) return
+      await updateAsset(assetForm.assetId, {
+        name: assetForm.name.trim(),
+        category: assetForm.category,
+        model: assetForm.model.trim() || null,
+        serial_no: assetForm.quantity === 1 ? (assetForm.serial_no.trim() || null) : undefined,
+        original_value: assetForm.original_value,
+        apply_to_same_model: assetForm.applyToSku,
+        quantity: assetForm.quantity || 1,
+      })
+      createAssetVisible.value = false
+      assetDrawerVisible.value = false
+      skuDrawerVisible.value = false
+      ElMessage.success(`已保存，当前 ${assetForm.quantity || 1} 件`)
+      await reload()
+      return
+    }
+    const qty = assetForm.quantity || 1
+    await createAsset({
+      name: assetForm.name.trim(),
+      category: assetForm.category,
+      model: assetForm.model,
+      serial_no: qty === 1 ? assetForm.serial_no : undefined,
+      original_value: assetForm.original_value,
+      quantity: qty,
+    })
     createAssetVisible.value = false
-    ElMessage.success(`已入库：${data.asset_no}`)
+    ElMessage.success(qty > 1 ? `已入库 ${qty} 件，台账按型号合并` : '已入库')
     await reload()
     tab.value = 'ledger'
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '入库失败')
+    ElMessage.error(e?.response?.data?.detail || (assetForm.mode === 'edit' ? '保存失败' : '入库失败'))
   } finally {
     acting.value = false
   }
@@ -854,16 +1053,35 @@ function openCreateBorrow() {
 
 function borrowThisAsset(row: FixedAsset) {
   assetDrawerVisible.value = false
+  skuDrawerVisible.value = false
   openCreateBorrow()
   borrowForm.asset_ids = [row.id]
 }
 
-function toggleAsset(id: number, checked: boolean) {
-  if (checked) {
-    if (!borrowForm.asset_ids.includes(id)) borrowForm.asset_ids.push(id)
-  } else {
-    borrowForm.asset_ids = borrowForm.asset_ids.filter((x) => x !== id)
-  }
+function borrowThisSku(row: AssetSkuGroup) {
+  skuDrawerVisible.value = false
+  openCreateBorrow()
+  const first = row.units.find((u) => u.status === 'available')
+  borrowForm.asset_ids = first ? [first.id] : []
+}
+
+function skuPickedQty(g: AssetSkuGroup) {
+  const ids = new Set(g.units.map((u) => u.id))
+  return borrowForm.asset_ids.filter((id) => ids.has(id)).length
+}
+
+function setSkuQty(g: AssetSkuGroup, n: number) {
+  const availableIds = g.units.filter((u) => u.status === 'available').map((u) => u.id)
+  const next = Math.max(0, Math.min(n, availableIds.length))
+  const picked = new Set(availableIds.slice(0, next))
+  borrowForm.asset_ids = [
+    ...borrowForm.asset_ids.filter((id) => !availableIds.includes(id)),
+    ...availableIds.filter((id) => picked.has(id)),
+  ]
+}
+
+function toggleSkuPick(g: AssetSkuGroup) {
+  setSkuQty(g, skuPickedQty(g) > 0 ? 0 : 1)
 }
 
 function toPickerTime(iso?: string | null) {
