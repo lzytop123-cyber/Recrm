@@ -75,10 +75,11 @@
           :key="item.key"
           type="button"
           class="crm-stat-tile"
+          :class="{ 'is-active': isStatActive(item) }"
           @click="onStatClick(item)"
         >
           <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
+          <strong>{{ item.value ?? 0 }}</strong>
         </button>
       </div>
 
@@ -105,7 +106,7 @@
     <section class="crm-panel" :class="{ 'allocation-panel': embedded && pool === 'public', 'crm-fit-panel': embedded }">
       <div class="toolbar" :class="{ 'allocation-toolbar': embedded && pool === 'public' }">
         <div class="filters">
-          <el-radio-group v-if="!embedded" v-model="pool" @change="reload">
+          <el-radio-group v-if="!embedded" v-model="pool" @change="onPoolChange">
             <el-radio-button v-if="canManagePool" value="public">线索总览</el-radio-button>
             <el-radio-button value="mine">我的</el-radio-button>
             <el-radio-button value="all">全部</el-radio-button>
@@ -934,8 +935,17 @@ const dupDesc = computed(() => {
 
 const statCards = computed(() => {
   const s = stats.value
+  if (pool.value === 'created') {
+    return [
+      { key: 'created', label: '我录入', value: s?.created ?? 0, pool: 'created', status: undefined as string | undefined },
+      { key: 'created_pending', label: '待分配', value: s?.created_pending_assign ?? 0, pool: 'created', status: 'pending_assign' },
+      { key: 'created_assigned', label: '已分配', value: s?.created_assigned ?? 0, pool: 'created', status: 'assigned' },
+      { key: 'created_following', label: '跟进中', value: s?.created_following ?? 0, pool: 'created', status: 'following' },
+      { key: 'created_converted', label: '已转化', value: s?.created_converted ?? 0, pool: 'created', status: 'converted' },
+    ]
+  }
   const cards = [
-    { key: 'mine', label: '我的', value: undefined as number | undefined, pool: 'mine', status: undefined },
+    { key: 'mine', label: '我的', value: s?.mine ?? 0, pool: 'mine', status: undefined as string | undefined },
     { key: 'assigned', label: '已分配', value: s?.assigned ?? 0, pool: 'all', status: 'assigned' },
     { key: 'following', label: '跟进中', value: s?.following ?? 0, pool: 'all', status: 'following' },
     { key: 'converted', label: '已转化', value: s?.converted ?? 0, pool: 'all', status: 'converted' },
@@ -1030,11 +1040,22 @@ function rowClassName({ row }: { row: Lead }) {
   return ''
 }
 
+function onPoolChange() {
+  status.value = undefined
+  page.value = 1
+  reload()
+}
+
 function onStatClick(item: { pool?: string; status?: string }) {
   if (!props.embedded && item.pool) pool.value = item.pool
   status.value = item.status
   page.value = 1
   reload()
+}
+
+function isStatActive(item: { pool?: string; status?: string }) {
+  const samePool = !item.pool || item.pool === pool.value
+  return samePool && (item.status || '') === (status.value || '')
 }
 
 function resolveListStatus(): string | undefined {

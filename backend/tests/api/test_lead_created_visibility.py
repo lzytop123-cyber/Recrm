@@ -63,6 +63,12 @@ def test_entry_role_lists_only_own_created_leads(
     assert mine.id in ids
     assert others.id not in ids
 
+    stats = client.get("/api/v1/leads/stats", headers=headers)
+    assert stats.status_code == 200, stats.text
+    body = stats.json()
+    assert body["created"] >= 1
+    assert body["created_pending_assign"] >= 1
+
     own = client.get(f"/api/v1/leads/{mine.id}", headers=headers)
     assert own.status_code == 200
     assert own.json()["company_name"] == "运营自己的客户"

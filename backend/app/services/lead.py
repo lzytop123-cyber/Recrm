@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -1018,6 +1018,14 @@ def lead_stats(db: Session, user: User) -> dict:
             )
         pending_pool = pq.count()
 
+    def _status_breakdown(query) -> dict[str, int]:
+        rows = query.with_entities(Lead.status, func.count(Lead.id)).group_by(Lead.status).all()
+        return {str(st): int(n) for st, n in rows}
+
+    created_map = _status_breakdown(db.query(Lead).filter(Lead.creator_id == user.id))
+    created_total = sum(created_map.values())
+    mine_total = _count(pool="mine")
+
     return {
         "total": _count(pool="all"),
         "pending_assign": _count(status=LEAD_STATUS_PENDING, pool="all"),
@@ -1032,6 +1040,12 @@ def lead_stats(db: Session, user: User) -> dict:
         "following_mine": following_mine,
         "protect_expiring": protect_expiring,
         "converted_month": converted_month,
+        "mine": mine_total,
+        "created": created_total,
+        "created_pending_assign": created_map.get(LEAD_STATUS_PENDING, 0),
+        "created_assigned": created_map.get(LEAD_STATUS_ASSIGNED, 0),
+        "created_following": created_map.get(LEAD_STATUS_FOLLOWING, 0),
+        "created_converted": created_map.get(LEAD_STATUS_CONVERTED, 0),
     }
 
 

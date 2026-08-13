@@ -242,6 +242,12 @@ class LeadStatsOut(BaseModel):
     following_mine: int = 0
     protect_expiring: int = 0
     converted_month: int = 0
+    mine: int = 0
+    created: int = 0
+    created_pending_assign: int = 0
+    created_assigned: int = 0
+    created_following: int = 0
+    created_converted: int = 0
 
 
 class LeadQuotaOut(BaseModel):

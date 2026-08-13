@@ -88,6 +88,12 @@ export interface LeadStats {
   following_mine?: number
   protect_expiring?: number
   converted_month?: number
+  mine?: number
+  created?: number
+  created_pending_assign?: number
+  created_assigned?: number
+  created_following?: number
+  created_converted?: number
 }
 
 export interface LeadQuota {
