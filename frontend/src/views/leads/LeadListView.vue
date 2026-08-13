@@ -211,6 +211,7 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column v-if="embedded" prop="phone" label="联系电话" width="130" />
         <template v-else>
           <el-table-column prop="id" label="ID" width="70" />
           <el-table-column prop="name" label="联系人" width="100" />
@@ -506,6 +507,10 @@
           <section class="drawer-section">
             <h3>{{ drawerIsUnassigned ? '客户与需求' : '基本信息' }}</h3>
             <div class="detail-grid">
+              <div class="detail-cell">
+                <small>联系电话</small>
+                <b>{{ drawerLead.phone || '—' }}</b>
+              </div>
               <div class="detail-cell">
                 <small>需求方向</small>
                 <b>{{ businessTypeLabel(drawerLead.business_type) }}</b>
