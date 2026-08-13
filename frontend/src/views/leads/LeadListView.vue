@@ -796,9 +796,11 @@ const isCompact = useMatchMedia('(max-width: 768px)')
 const canManagePool = computed(
   () => userStore.hasPermission('lead:manage') || userStore.hasPermission('*'),
 )
-/** 销售录入后直接自己跟进；管理层/其他岗仍进待分配池 */
+/** 销售录入后直接自己跟进；管理层/其他岗仍进待分配池（与后端 can_self_follow_on_create 一致） */
 const canSelfFollowOnCreate = computed(() =>
-  (userStore.user?.roles ?? []).some((r) => r.code === 'sales'),
+  (userStore.user?.roles ?? []).some(
+    (r) => r.code === 'sales' || (r.name ?? '').includes('销售'),
+  ),
 )
 
 const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()

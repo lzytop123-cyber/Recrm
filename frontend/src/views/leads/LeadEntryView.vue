@@ -120,6 +120,12 @@ import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
 const { businessTypeOptions } = useBusinessTypes()
 const userStore = useUserStore()
+/** 与后端 can_self_follow_on_create 一致：销售录入自跟进，其他岗进待分配池 */
+const canSelfFollowOnCreate = computed(() =>
+  (userStore.user?.roles ?? []).some(
+    (r) => r.code === 'sales' || (r.name ?? '').includes('销售'),
+  ),
+)
 
 const createVisible = ref(false)
 const importVisible = ref(false)
@@ -265,7 +271,7 @@ async function onCreate() {
       phone: form.phone.trim(),
       business_type: form.business_type,
       source: form.source,
-      self_follow: false,
+      self_follow: canSelfFollowOnCreate.value,
     }
     if (dupHard.value) {
       await ElMessageBox.confirm(
@@ -295,7 +301,7 @@ async function onCreate() {
             phone: form.phone.trim(),
             business_type: form.business_type,
             source: form.source,
-            self_follow: false,
+            self_follow: canSelfFollowOnCreate.value,
           },
           true,
         )
