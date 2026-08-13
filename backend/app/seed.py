@@ -218,11 +218,22 @@ def seed(db: Session) -> None:
     for name, code, data_scope, perm_codes in ROLES:
         role = db.query(Role).filter(Role.code == code).first()
         if not role:
-            role = Role(name=name, code=code, data_scope=data_scope, description=name)
-            db.add(role)
-            db.flush()
-            print(f"[seed] 创建角色: {name}")
-
+            role = db.query(Role).filter(Role.name == name).first()
+        if role:
+            if role.code == code:
+                # 预置角色存在:同步预设权限
+                if perm_codes == ["*"]:
+                    role.permissions = list(perm_map.values())
+                else:
+                    role.permissions = [perm_map[c] for c in perm_codes if c in perm_map]
+            else:
+                # 同名但不同 code:用户自定义角色,跳过,不覆盖其权限配置
+                print(f"[seed] 跳过同名自定义角色: {name} (code={role.code})")
+            continue
+        role = Role(name=name, code=code, data_scope=data_scope, description=name)
+        db.add(role)
+        db.flush()
+        print(f"[seed] 创建角色: {name}")
         if perm_codes == ["*"]:
             role.permissions = list(perm_map.values())
         else:

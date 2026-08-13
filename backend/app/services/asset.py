@@ -150,6 +150,10 @@ def _gen_request_no(db: Session) -> str:
 
 
 def ensure_seed_data(db: Session) -> None:
+    # 2026-08-12 禁用:演示数据自动填充逻辑。正式使用时清空资产表后,
+    # 任何资产接口(workbench/list 等)都会自动重新插入演示资产,
+    # 导致测试数据永远清不干净。保留函数签名,17 个调用点全部空操作。
+    return
     if db.query(FixedAsset).count() > 0:
         return
 

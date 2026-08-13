@@ -28,8 +28,10 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("contract_status", sa.String(length=30), nullable=True, comment="生效中/已到期/未签署"))
     op.add_column("users", sa.Column("archive_status", sa.String(length=20), nullable=True, comment="完整/待补"))
     op.create_index("ix_users_employee_no", "users", ["employee_no"])
-    op.create_unique_constraint("uq_users_feishu_user_id", "users", ["feishu_user_id"])
-    op.create_foreign_key("fk_users_manager_id_users", "users", "users", ["manager_id"], ["id"])
+    # SQLite 不支持 ALTER TABLE ADD CONSTRAINT，需 batch 模式重建表
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.create_unique_constraint("uq_users_feishu_user_id", ["feishu_user_id"])
+        batch_op.create_foreign_key("fk_users_manager_id_users", "users", ["manager_id"], ["id"])
 
     op.create_table(
         "employee_history_events",

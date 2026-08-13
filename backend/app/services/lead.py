@@ -158,7 +158,12 @@ def can_manage_lead_pool(user: User) -> bool:
 def can_self_follow_on_create(user: User) -> bool:
     """销售录入后可直接自己跟进；其他岗位仍进管理层待分配池。"""
     role_codes = {r.code for r in (user.roles or [])}
-    return "sales" in role_codes
+    if "sales" in role_codes:
+        return True
+    # 兼容自定义角色：角色名包含"销售"或持有 lead:manage 权限视为销售
+    if any("销售" in (r.name or "") for r in (user.roles or [])):
+        return True
+    return user_can(user, "lead:manage")
 
 
 def assert_can_view(user: User, lead: Lead) -> None:
@@ -340,6 +345,23 @@ def list_leads(
                 ]
             )
         )
+        # 按数据范围过滤：公司→全部；部门→本部门+自己的；个人→自己的+待分配池（供领取）
+        if not is_admin and scope == "department" and user.department_id:
+            q = q.filter(
+                or_(
+                    Lead.department_id == user.department_id,
+                    Lead.owner_id == user.id,
+                    Lead.creator_id == user.id,
+                )
+            )
+        elif not is_admin and scope == "personal":
+            q = q.filter(
+                or_(
+                    Lead.owner_id == user.id,
+                    Lead.creator_id == user.id,
+                    Lead.status.in_([LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED]),
+                )
+            )
     else:
         # all：按数据范围；非管理层排除未分配
         if not is_admin and scope == "personal":
@@ -936,11 +958,19 @@ def lead_stats(db: Session, user: User) -> dict:
 
     pending_pool = 0
     if can_manage_lead_pool(user):
-        pending_pool = (
-            db.query(Lead)
-            .filter(Lead.status.in_([LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED]))
-            .count()
-        )
+        _scope = resolve_data_scope(user, "lead")
+        _is_admin = "admin" in {r.code for r in user.roles}
+        pq = db.query(Lead).filter(Lead.status.in_([LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED]))
+        # 与列表口径一致：部门→本部门待分配；公司/个人(销售可领公海)→全部
+        if not _is_admin and _scope == "department" and user.department_id:
+            pq = pq.filter(
+                or_(
+                    Lead.department_id == user.department_id,
+                    Lead.owner_id == user.id,
+                    Lead.creator_id == user.id,
+                )
+            )
+        pending_pool = pq.count()
 
     return {
         "total": _count(pool="all"),
