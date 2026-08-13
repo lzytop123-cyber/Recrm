@@ -44,8 +44,14 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 def _gen_payment_no(db: Session, prefix: str) -> str:
     today = date.today().strftime("%Y%m%d")
     head = f"{prefix}{today}"
-    count = db.query(Payment).filter(Payment.payment_no.like(f"{head}%")).count()
-    return f"{head}{count + 1:04d}"
+    last = (
+        db.query(Payment.payment_no)
+        .filter(Payment.payment_no.like(f"{head}%"))
+        .order_by(Payment.payment_no.desc())
+        .first()
+    )
+    seq = int(last[0][-4:]) + 1 if last else 1
+    return f"{head}{seq:04d}"
 
 
 def compute_due_status(payment: Payment, today: Optional[date] = None) -> str:

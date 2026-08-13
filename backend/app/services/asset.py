@@ -135,8 +135,15 @@ def enrich_borrow(db: Session, row: AssetBorrowRequest) -> AssetBorrowRequest:
 def _gen_asset_no(db: Session, category: str) -> str:
     prefix_map = {"相机": "CAM", "镜头": "LEN", "灯具": "LGT", "收音": "AUD", "稳定器": "STB"}
     prefix = prefix_map.get(category, "AST")
-    n = db.query(FixedAsset).count() + 1
-    return f"ZC-{prefix}-{n:03d}"
+    head = f"ZC-{prefix}-"
+    last = (
+        db.query(FixedAsset.asset_no)
+        .filter(FixedAsset.asset_no.like(f"{head}%"))
+        .order_by(FixedAsset.asset_no.desc())
+        .first()
+    )
+    n = int(last[0][-3:]) + 1 if last else 1
+    return f"{head}{n:03d}"
 
 
 def _gen_qr() -> str:
@@ -144,9 +151,16 @@ def _gen_qr() -> str:
 
 
 def _gen_request_no(db: Session) -> str:
-    n = db.query(AssetBorrowRequest).count() + 1
     today = date.today().strftime("%m%d")
-    return f"JY-{today}{n:02d}"
+    head = f"JY-{today}"
+    last = (
+        db.query(AssetBorrowRequest.request_no)
+        .filter(AssetBorrowRequest.request_no.like(f"{head}%"))
+        .order_by(AssetBorrowRequest.request_no.desc())
+        .first()
+    )
+    n = int(last[0][-2:]) + 1 if last else 1
+    return f"{head}{n:02d}"
 
 
 def ensure_seed_data(db: Session) -> None:

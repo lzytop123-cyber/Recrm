@@ -77,8 +77,15 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 def _gen_contract_no(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     prefix = f"HT{today}"
-    count = db.query(Contract).filter(Contract.contract_no.like(f"{prefix}%")).count()
-    return f"{prefix}{count + 1:04d}"
+    # 取当天最大编号 +1，避免删除造成空号后 count+1 撞已有编号
+    last = (
+        db.query(Contract.contract_no)
+        .filter(Contract.contract_no.like(f"{prefix}%"))
+        .order_by(Contract.contract_no.desc())
+        .first()
+    )
+    seq = int(last[0][-4:]) + 1 if last else 1
+    return f"{prefix}{seq:04d}"
 
 
 def _contract_net_paid(db: Session, contract: Contract) -> Decimal:

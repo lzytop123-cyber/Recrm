@@ -46,8 +46,14 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 def _gen_opportunity_no(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     prefix = f"SJ{today}"
-    count = db.query(Opportunity).filter(Opportunity.opportunity_no.like(f"{prefix}%")).count()
-    return f"{prefix}{count + 1:04d}"
+    last = (
+        db.query(Opportunity.opportunity_no)
+        .filter(Opportunity.opportunity_no.like(f"{prefix}%"))
+        .order_by(Opportunity.opportunity_no.desc())
+        .first()
+    )
+    seq = int(last[0][-4:]) + 1 if last else 1
+    return f"{prefix}{seq:04d}"
 
 
 def enrich_opportunity(db: Session, opp: Opportunity) -> Opportunity:

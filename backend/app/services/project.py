@@ -103,15 +103,27 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 def _gen_project_no(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     prefix = f"XM{today}"
-    count = db.query(Project).filter(Project.project_no.like(f"{prefix}%")).count()
-    return f"{prefix}{count + 1:04d}"
+    last = (
+        db.query(Project.project_no)
+        .filter(Project.project_no.like(f"{prefix}%"))
+        .order_by(Project.project_no.desc())
+        .first()
+    )
+    seq = int(last[0][-4:]) + 1 if last else 1
+    return f"{prefix}{seq:04d}"
 
 
 def _gen_task_no(db: Session) -> str:
     today = date.today().strftime("%m%d")
     prefix = f"RW-{today}"
-    count = db.query(ProjectTask).filter(ProjectTask.task_no.like(f"{prefix}%")).count()
-    return f"{prefix}{count + 1:02d}"
+    last = (
+        db.query(ProjectTask.task_no)
+        .filter(ProjectTask.task_no.like(f"{prefix}%"))
+        .order_by(ProjectTask.task_no.desc())
+        .first()
+    )
+    seq = int(last[0][-2:]) + 1 if last else 1
+    return f"{prefix}{seq:02d}"
 
 
 def compute_health(project: Project) -> str:

@@ -67,8 +67,14 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 def _gen_ticket_no(db: Session) -> str:
     today = _now().strftime("%Y%m%d")
     prefix = f"GD{today}"
-    count = db.query(Ticket).filter(Ticket.ticket_no.like(f"{prefix}%")).count()
-    return f"{prefix}{count + 1:04d}"
+    last = (
+        db.query(Ticket.ticket_no)
+        .filter(Ticket.ticket_no.like(f"{prefix}%"))
+        .order_by(Ticket.ticket_no.desc())
+        .first()
+    )
+    seq = int(last[0][-4:]) + 1 if last else 1
+    return f"{prefix}{seq:04d}"
 
 
 def _aware(dt: Optional[datetime]) -> Optional[datetime]:
