@@ -285,6 +285,15 @@
   position: relative;
   min-height: 48px;
   overflow: visible;
+  cursor: pointer;
+}
+
+.week-grid .day-col:hover {
+  background: oklch(0.96 0.025 250);
+}
+
+.week-grid .day-col.weekend:hover {
+  background: oklch(0.95 0.02 250);
 }
 
 .cal-event {
@@ -302,8 +311,8 @@
   color: #fff;
   overflow: hidden;
   z-index: 2;
-  /* 统一底色：状态用左侧色条区分，不再整块换色 */
-  background: var(--crm-primary, #3b82f6);
+  /* 按人着色；状态仍用左侧色条区分 */
+  background: var(--person-color, var(--crm-primary, #3b82f6));
   box-shadow: 0 0 0 1px oklch(1 0 0 / 0.28);
 }
 
@@ -397,11 +406,20 @@
   border-right: 1px solid var(--crm-border);
   border-bottom: 1px solid var(--crm-border);
   padding: 6px;
+  cursor: pointer;
+}
+
+.month-cell:hover {
+  background: oklch(0.97 0.02 250);
 }
 
 .month-cell.muted {
   background: var(--crm-surface-soft);
   opacity: 0.7;
+}
+
+.month-cell.muted:hover {
+  background: oklch(0.96 0.015 250);
 }
 
 .month-cell .day-num {
@@ -415,27 +433,23 @@
   display: block;
   width: 100%;
   border: 0;
-  border-left: 3px solid var(--crm-primary, #3b82f6);
+  border-left: 3px solid var(--person-color, var(--crm-primary, #3b82f6));
   border-radius: 4px;
   padding: 2px 6px;
   margin-bottom: 3px;
   font-size: 11px;
   text-align: left;
   cursor: pointer;
-  background: oklch(0.95 0.03 250);
+  background: color-mix(in srgb, var(--person-color, #3b82f6) 16%, #fff);
   color: var(--crm-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.month-event.pending {
-  border-left-color: oklch(0.72 0.14 75);
-}
-
-.month-event.confirmed,
-.month-event.in_progress {
-  border-left-color: var(--crm-primary, #3b82f6);
+.month-more {
+  font-size: 11px;
+  color: var(--crm-ink-soft);
 }
 
 .month-event.conflict {
@@ -607,10 +621,20 @@
   overflow: hidden;
 }
 
+.person-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--person-color, var(--crm-primary, #3b82f6));
+  vertical-align: middle;
+}
+
 .load-meter i {
   display: block;
   height: 100%;
-  background: oklch(0.55 0.12 230);
+  background: var(--person-color, oklch(0.55 0.12 230));
 }
 
 .load-meter.high i {

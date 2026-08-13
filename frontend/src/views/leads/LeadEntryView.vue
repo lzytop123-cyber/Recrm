@@ -9,6 +9,7 @@
         <p>所有员工均可提交潜在客户信息；提交后按岗位权限进入对应流转。</p>
       </div>
       <div class="entry-actions">
+        <el-button @click="importVisible = true">批量导入</el-button>
         <el-button type="primary" @click="openCreate">＋ 录入线索</el-button>
       </div>
     </header>
@@ -19,9 +20,11 @@
         所有岗位录入后均进入管理层线索总览待分配池，由管理层统一分配。
       </p>
       <p>你不能查看未授权的线索、客户、商机、合同或回款数据。</p>
-      <el-button type="primary" size="large" @click="openCreate">录入一条线索</el-button>
+      <div class="entry-card-actions">
+        <el-button type="primary" size="large" @click="openCreate">录入一条线索</el-button>
+        <el-button size="large" @click="importVisible = true">批量导入</el-button>
+      </div>
     </section>
-
     <el-dialog
       v-model="createVisible"
       title="新增线索"
@@ -102,6 +105,8 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <LeadImportDialog v-model:visible="importVisible" :self-follow="false" />
   </div>
 </template>
 
@@ -111,13 +116,14 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { checkLeadDuplicates, createLead } from '@/api/leads'
 import { useBusinessTypes } from '@/api/dictionaries'
 import { useUserStore } from '@/stores/user'
+import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
 const { businessTypeOptions } = useBusinessTypes()
 const userStore = useUserStore()
 
 const createVisible = ref(false)
-const saving = ref(false)
-const formRef = ref<FormInstance>()
+const importVisible = ref(false)
+const saving = ref(false)const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
   company_name: '',
@@ -356,8 +362,16 @@ async function onCreate() {
   line-height: 1.65;
 }
 
+.entry-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
 .entry-card .el-button {
-  margin-top: 22px;
+  margin-top: 0;
 }
 
 .dialog-eyebrow {

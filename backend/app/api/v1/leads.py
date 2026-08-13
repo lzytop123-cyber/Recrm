@@ -1,7 +1,7 @@
 """线索池 API。"""
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker, get_current_active_user
@@ -18,6 +18,9 @@ from app.schemas.lead import (
     LeadDetailOut,
     LeadFollowUpCreate,
     LeadFollowUpOut,
+    LeadImportConfirmOut,
+    LeadImportConfirmRequest,
+    LeadImportPreviewOut,
     LeadListOut,
     LeadLostRequest,
     LeadOut,
@@ -116,6 +119,62 @@ def create_lead(
     # 全员有 lead:view 即可录入（普通员工种子会补上）
     lead = lead_service.create_lead(db, current_user, payload, force=force)
     return LeadOut.model_validate(lead)
+
+
+@router.get("/import/template", summary="下载批量导入模板（Excel）")
+def download_import_template(
+    current_user: Annotated[User, Depends(PermissionChecker(["lead:view"]))],
+    format: str = Query("xlsx", description="xlsx 或 csv"),
+):
+    from fastapi.responses import Response
+
+    fmt = (format or "xlsx").lower()
+    if fmt == "csv":
+        content = lead_service.build_import_template_csv()
+        return Response(
+            content=content,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": "attachment; filename=lead_import_template.csv"
+            },
+        )
+    content = lead_service.build_import_template_xlsx()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=lead_import_template.xlsx"
+        },
+    )
+
+
+@router.post("/import/preview", response_model=LeadImportPreviewOut, summary="批量导入预览查重")
+async def preview_lead_import(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["lead:view"]))],
+    file: UploadFile = File(..., description="Excel(.xlsx) 或 CSV 文件"),
+) -> LeadImportPreviewOut:
+    filename = file.filename or ""
+    lower = filename.lower()
+    if lower and not (
+        lower.endswith(".csv")
+        or lower.endswith(".txt")
+        or lower.endswith(".xlsx")
+        or lower.endswith(".xlsm")
+        or lower.endswith(".xls")
+    ):
+        raise HTTPException(status_code=400, detail="请上传 Excel（.xlsx）或 CSV 文件")
+    content = await file.read()
+    return lead_service.preview_lead_import(db, content, filename=filename)
+
+
+@router.post("/import/confirm", response_model=LeadImportConfirmOut, summary="确认批量导入")
+def confirm_lead_import(
+    payload: LeadImportConfirmRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["lead:view"]))],
+) -> LeadImportConfirmOut:
+    return lead_service.confirm_lead_import(db, current_user, payload)
 
 
 @router.get("/{lead_id}", response_model=LeadDetailOut, summary="线索详情")

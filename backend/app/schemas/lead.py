@@ -262,3 +262,66 @@ class DuplicateCheckOut(BaseModel):
     by_company: List[LeadOut] = []
     by_credit: List[LeadOut] = []
     by_domain: List[LeadOut] = []
+
+
+class LeadImportRowIn(BaseModel):
+    """批量导入确认时的一行（来自预览结果）。"""
+
+    row_no: int
+    company_name: str = Field(..., min_length=1, max_length=200)
+    phone: str = Field(..., min_length=1, max_length=30)
+    name: Optional[str] = Field(None, max_length=100)
+    credit_code: Optional[str] = Field(None, max_length=50)
+    company_domain: Optional[str] = Field(None, max_length=100)
+    business_type: str = Field(default="ai_product")
+    need_desc: Optional[str] = None
+    remark: Optional[str] = None
+    force: bool = Field(False, description="硬重复时是否强制录入")
+
+
+class LeadImportPreviewRow(BaseModel):
+    row_no: int
+    company_name: str = ""
+    phone: str = ""
+    name: Optional[str] = None
+    credit_code: Optional[str] = None
+    company_domain: Optional[str] = None
+    business_type: str = "ai_product"
+    business_type_label: str = ""
+    need_desc: Optional[str] = None
+    remark: Optional[str] = None
+    status: str = Field(description="ok / soft / hard / error")
+    message: str = ""
+    can_import: bool = True
+    force_required: bool = False
+
+
+class LeadImportPreviewOut(BaseModel):
+    total: int
+    ok_count: int
+    soft_count: int
+    hard_count: int
+    error_count: int
+    rows: List[LeadImportPreviewRow]
+
+
+class LeadImportConfirmRequest(BaseModel):
+    rows: List[LeadImportRowIn] = Field(..., min_length=1, max_length=200)
+    self_follow: Optional[bool] = Field(
+        None,
+        description="是否自跟进；非销售强制进待分配池",
+    )
+
+
+class LeadImportConfirmItem(BaseModel):
+    row_no: int
+    ok: bool
+    lead_id: Optional[int] = None
+    message: str = ""
+
+
+class LeadImportConfirmOut(BaseModel):
+    success_count: int
+    failed_count: int
+    skipped_count: int = 0
+    items: List[LeadImportConfirmItem]

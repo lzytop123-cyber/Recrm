@@ -4,7 +4,7 @@
       <div class="sales-head-copy">
         <p class="wb-eyebrow">经营台</p>
         <h1>排期会议</h1>
-        <p>一张表看档期：点色块处理；已取消不占格子；同人时间重叠才算冲突。</p>
+        <p>一张表看档期：点空白格新建，点色块处理；同人同色；已取消不占格子；同人时间重叠才算冲突。</p>
       </div>
       <div class="sales-head-actions">
         <el-button type="primary" @click="openCreate()">＋ 新建排期</el-button>
@@ -87,6 +87,8 @@
                 :key="`${d.key}-${hour}`"
                 class="day-col"
                 :class="{ weekend: d.weekend }"
+                :title="`${d.weekday} ${String(hour).padStart(2, '0')}:00 点击新建`"
+                @click="openCreateFromSlot(d.date, hour)"
               >
                 <button
                   v-for="lay in eventsAt(d.date, hour)"
@@ -103,7 +105,7 @@
                   ]"
                   :style="eventStyle(lay, hour)"
                   :title="eventTooltip(lay)"
-                  @click="openDrawer(lay.ev)"
+                  @click.stop="openDrawer(lay.ev)"
                 >
                   <b>{{ lay.ev.title }}</b>
                   <span class="cal-event-meta">
@@ -122,8 +124,8 @@
           <div v-if="!weekHasVisibleEvents" class="week-empty">
             {{
               roleFilter === 'all'
-                ? '本周暂无有效排期，可点右上角新建。'
-                : `本周暂无「${roleFilterLabel}」排期，可点右上角新建。`
+                ? '本周暂无有效排期，可点击空白格子或右上角新建。'
+                : `本周暂无「${roleFilterLabel}」排期，可点击空白格子或右上角新建。`
             }}
           </div>
         </div>
@@ -153,9 +155,17 @@
         </div>
         <div class="side-card">
           <h3>人员负载</h3>
-          <div v-for="r in sideLoads.slice(0, 6)" :key="r.employee_id" class="side-load">
+          <div
+            v-for="r in sideLoads.slice(0, 6)"
+            :key="r.employee_id"
+            class="side-load"
+            :style="{ '--person-color': personColor(r.employee_id) }"
+          >
             <div class="side-row">
-              <span>{{ r.employee_name }}</span>
+              <span>
+                <i class="person-swatch" aria-hidden="true"></i>
+                {{ r.employee_name }}
+              </span>
               <b>{{ r.load_percent }}%</b>
             </div>
             <div class="load-meter" :class="{ high: r.load_percent >= 85 }">
@@ -188,6 +198,8 @@
           :key="cell.key"
           class="month-cell"
           :class="{ muted: !cell.inMonth }"
+          :title="`${cell.key} 点击新建`"
+          @click="openCreateFromSlot(cell.date, 10)"
         >
           <div class="day-num">{{ cell.day }}</div>
           <button
@@ -196,11 +208,16 @@
             type="button"
             class="month-event"
             :class="[ev.status, { conflict: rowHasConflict(ev) }]"
-            @click="openDrawer(ev)"
+            :style="{ '--person-color': personColor(ev.employee_id) }"
+            @click.stop="openDrawer(ev)"
           >
             {{ ev.title }}
           </button>
-          <div v-if="cell.events.length > 3" style="font-size: 11px; color: var(--crm-ink-soft)">
+          <div
+            v-if="cell.events.length > 3"
+            class="month-more"
+            @click.stop
+          >
             +{{ cell.events.length - 3 }}
           </div>
         </div>
@@ -663,6 +680,7 @@ const monthCells = computed(() => {
     const { start: dayStart, end: dayEnd } = dayBounds(d)
     return {
       key,
+      date: d,
       day: d.getDate(),
       inMonth: d.getMonth() === month,
       events: visibleItems.value.filter((x) => {
@@ -963,6 +981,31 @@ function eventTooltip(lay: DayLayout) {
   return `${lay.ev.title}\n${status} · ${range}\n${who}${conflict}`.trim()
 }
 
+/** 同一人固定同色，便于周/月视图一眼区分 */
+const PERSON_PALETTE = [
+  '#2563eb',
+  '#7c3aed',
+  '#0d9488',
+  '#c2410c',
+  '#db2777',
+  '#059669',
+  '#d97706',
+  '#4f46e5',
+  '#0284c7',
+  '#be185d',
+  '#65a30d',
+  '#ea580c',
+]
+
+function personColor(employeeId?: number | null) {
+  const id = Number(employeeId) || 0
+  let h = id | 0
+  h = ((h >>> 16) ^ h) * 0x45d9f3b
+  h = ((h >>> 16) ^ h) * 0x45d9f3b
+  h = (h >>> 16) ^ h
+  return PERSON_PALETTE[Math.abs(h) % PERSON_PALETTE.length]
+}
+
 function eventStyle(lay: DayLayout, hour: number) {
   const top = lay.visStart.getHours() === hour ? (lay.visStart.getMinutes() / 60) * 48 : 0
   const remain = hourEnd - hour + 1
@@ -976,6 +1019,7 @@ function eventStyle(lay: DayLayout, hour: number) {
     width: `calc(${widthPct}% - 4px)`,
     right: 'auto',
     zIndex: String(3 + lay.col),
+    '--person-color': personColor(lay.ev.employee_id),
   }
 }
 
@@ -1140,7 +1184,11 @@ function onLinkModeChange(mode: LinkMode | string | number | boolean | undefined
   formRef.value?.clearValidate(['project_id', 'project_task_id'])
 }
 
-async function openCreate(presetProjectId?: number) {
+function openCreateFromSlot(date: Date, hour: number) {
+  void openCreate(undefined, { date, hour })
+}
+
+async function openCreate(presetProjectId?: number, slot?: { date: Date; hour: number }) {
   form.title = ''
   form.schedule_type = 'internal_training'
   form.link_mode = presetProjectId ? 'project' : 'none'
@@ -1150,12 +1198,27 @@ async function openCreate(presetProjectId?: number) {
   taskOptions.value = []
   form.location = ''
   form.content = ''
-  const start = new Date()
-  start.setMinutes(0, 0, 0)
-  start.setHours(10)
-  const end = new Date(start)
-  end.setHours(12)
-  form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
+  if (slot) {
+    const start = new Date(
+      slot.date.getFullYear(),
+      slot.date.getMonth(),
+      slot.date.getDate(),
+      slot.hour,
+      0,
+      0,
+      0,
+    )
+    const end = new Date(start)
+    end.setHours(slot.hour + 1)
+    form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
+  } else {
+    const start = new Date()
+    start.setMinutes(0, 0, 0)
+    start.setHours(10)
+    const end = new Date(start)
+    end.setHours(12)
+    form.range = [formatLocalDateTime(start), formatLocalDateTime(end)]
+  }
   await loadPersonTree()
   form.employee_id = firstPersonId(personTree.value)
   createVisible.value = true

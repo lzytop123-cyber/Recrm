@@ -250,3 +250,72 @@ export function createFollowUp(
 ) {
   return request.post<LeadFollowUp>(`/leads/${id}/follow-ups`, data)
 }
+
+export interface LeadImportPreviewRow {
+  row_no: number
+  company_name: string
+  phone: string
+  name?: string | null
+  credit_code?: string | null
+  company_domain?: string | null
+  business_type: string
+  business_type_label: string
+  need_desc?: string | null
+  remark?: string | null
+  status: 'ok' | 'soft' | 'hard' | 'error' | string
+  message: string
+  can_import: boolean
+  force_required: boolean
+}
+
+export interface LeadImportPreview {
+  total: number
+  ok_count: number
+  soft_count: number
+  hard_count: number
+  error_count: number
+  rows: LeadImportPreviewRow[]
+}
+
+export interface LeadImportConfirmItem {
+  row_no: number
+  ok: boolean
+  lead_id?: number | null
+  message: string
+}
+
+export function downloadLeadImportTemplate() {
+  return request.get<Blob>('/leads/import/template', { responseType: 'blob' })
+}
+
+export function previewLeadImport(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post<LeadImportPreview>('/leads/import/preview', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+}
+
+export function confirmLeadImport(data: {
+  rows: Array<{
+    row_no: number
+    company_name: string
+    phone: string
+    name?: string | null
+    credit_code?: string | null
+    company_domain?: string | null
+    business_type: string
+    need_desc?: string | null
+    remark?: string | null
+    force?: boolean
+  }>
+  self_follow?: boolean | null
+}) {
+  return request.post<{
+    success_count: number
+    failed_count: number
+    skipped_count: number
+    items: LeadImportConfirmItem[]
+  }>('/leads/import/confirm', data, { timeout: 120000 })
+}

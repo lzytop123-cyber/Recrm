@@ -7,7 +7,7 @@
         <p>{{ headDesc }}</p>
       </div>
       <div class="sales-head-actions">
-        <el-button v-if="tab === 'pool' && canManagePool" @click="onImport">批量录入</el-button>
+        <el-button v-if="tab === 'pool' || tab === 'mine'" @click="importVisible = true">批量导入</el-button>
         <el-button v-if="tab === 'pool' || tab === 'mine'" type="primary" @click="leadCreateTick++">
           录入线索
         </el-button>
@@ -38,7 +38,7 @@
     <div class="crm-fit-body">
       <LeadListView
         v-if="tab === 'pool' || tab === 'mine'"
-        :key="tab"
+        :key="`${tab}-${leadReloadTick}`"
         :forced-pool="tab === 'pool' ? 'public' : 'mine'"
         :embedded="true"
         :open-create-signal="leadCreateTick"
@@ -54,17 +54,23 @@
         :open-create-signal="oppCreateTick"
       />
     </div>
+
+    <LeadImportDialog
+      v-model:visible="importVisible"
+      :self-follow="canSelfFollowOnCreate"
+      @done="onImportDone"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import LeadListView from '@/views/leads/LeadListView.vue'
 import CustomerListView from '@/views/customers/CustomerListView.vue'
 import OpportunityListView from '@/views/opportunities/OpportunityListView.vue'
+import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
 type SalesTab = 'pool' | 'mine' | 'customers' | 'opportunities'
 
@@ -85,6 +91,9 @@ const canViewOpportunities = computed(
 )
 const canManageOpportunities = computed(
   () => userStore.hasPermission('opportunity:manage') || userStore.hasPermission('*'),
+)
+const canSelfFollowOnCreate = computed(() =>
+  (userStore.user?.roles ?? []).some((r) => r.code === 'sales'),
 )
 
 const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [
@@ -107,8 +116,10 @@ function normalizeTab(raw?: string | null): SalesTab {
 }
 
 const leadCreateTick = ref(0)
+const leadReloadTick = ref(0)
 const customerCreateTick = ref(0)
 const oppCreateTick = ref(0)
+const importVisible = ref(false)
 
 const tab = ref<SalesTab>(normalizeTab(route.query.tab as string))
 
@@ -151,8 +162,8 @@ function setTab(next: SalesTab) {
   router.replace({ path: '/sales', query })
 }
 
-function onImport() {
-  ElMessage.info('批量录入将在下一迭代接入正式模板与校验流程')
+function onImportDone() {
+  leadReloadTick.value += 1
 }
 </script>
 

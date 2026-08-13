@@ -38,6 +38,12 @@ from app.schemas.lead import (
     LeadConvertRequest,
     LeadCreate,
     LeadFollowUpCreate,
+    LeadImportConfirmItem,
+    LeadImportConfirmOut,
+    LeadImportConfirmRequest,
+    LeadImportPreviewOut,
+    LeadImportPreviewRow,
+    LeadImportRowIn,
     LeadLostRequest,
     LeadTransferRequest,
     LeadUpdate,
@@ -987,3 +993,352 @@ def lead_stats(db: Session, user: User) -> dict:
         "protect_expiring": protect_expiring,
         "converted_month": converted_month,
     }
+
+
+# ---- 批量导入（Excel .xlsx / CSV） ----
+
+IMPORT_MAX_ROWS = 200
+IMPORT_HEADERS = [
+    "客户主体",
+    "联系电话",
+    "联系人",
+    "统一社会信用代码",
+    "企业域名",
+    "需求方向",
+    "需求说明",
+    "备注",
+]
+_IMPORT_SAMPLE_ROW = [
+    "示例科技有限公司",
+    "13800138000",
+    "张三",
+    "",
+    "example.com",
+    "AI产品销售",
+    "需要智能客服方案",
+    "",
+]
+_HEADER_ALIASES = {
+    "客户主体": "company_name",
+    "公司名称": "company_name",
+    "公司名": "company_name",
+    "联系电话": "phone",
+    "手机号": "phone",
+    "电话": "phone",
+    "联系人": "name",
+    "姓名": "name",
+    "统一社会信用代码": "credit_code",
+    "信用代码": "credit_code",
+    "企业域名": "company_domain",
+    "域名": "company_domain",
+    "需求方向": "business_type",
+    "业务类型": "business_type",
+    "需求说明": "need_desc",
+    "备注": "remark",
+}
+
+
+def build_import_template_csv() -> bytes:
+    """UTF-8 BOM CSV，Excel 打开中文不乱码。"""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(IMPORT_HEADERS)
+    writer.writerow(_IMPORT_SAMPLE_ROW)
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+
+def build_import_template_xlsx() -> bytes:
+    """标准 Excel 模板（.xlsx）。"""
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "线索导入"
+    ws.append(IMPORT_HEADERS)
+    ws.append(_IMPORT_SAMPLE_ROW)
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width = 18
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _normalize_header(cell: str) -> str:
+    return (cell or "").strip().lstrip("\ufeff")
+
+
+def _cell_str(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _resolve_business_type(db: Session, raw: str) -> tuple[Optional[str], str]:
+    from app.services import platform as platform_service
+
+    text = (raw or "").strip() or "ai_product"
+    items = platform_service.list_business_type_items(db, enabled_only=False)
+    by_value = {x["value"]: x["label"] for x in items}
+    by_label = {x["label"]: x["value"] for x in items}
+    if text in by_value:
+        return text, by_value[text]
+    if text in by_label:
+        code = by_label[text]
+        return code, text
+    enabled = platform_service.business_type_values(db, enabled_only=True)
+    if text in enabled:
+        return text, by_value.get(text, text)
+    return None, text
+
+
+def _rows_from_matrix(matrix: list[list[str]]) -> list[dict]:
+    if not matrix:
+        raise HTTPException(status_code=400, detail="文件无内容")
+    headers = [_normalize_header(h) for h in matrix[0]]
+    field_map: dict[int, str] = {}
+    for idx, h in enumerate(headers):
+        key = _HEADER_ALIASES.get(h)
+        if key:
+            field_map[idx] = key
+    if "company_name" not in field_map.values() or "phone" not in field_map.values():
+        raise HTTPException(
+            status_code=400,
+            detail="模板缺少必填列：客户主体、联系电话。请下载标准模板后填写",
+        )
+    parsed: list[dict] = []
+    for i, raw in enumerate(matrix[1:], start=2):
+        if not any((c or "").strip() for c in raw):
+            continue
+        item: dict = {"row_no": i}
+        for idx, key in field_map.items():
+            val = raw[idx].strip() if idx < len(raw) else ""
+            item[key] = val or None
+        parsed.append(item)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="没有可导入的数据行")
+    if len(parsed) > IMPORT_MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次最多导入 {IMPORT_MAX_ROWS} 条，当前 {len(parsed)} 条",
+        )
+    return parsed
+
+
+def parse_import_csv(content: bytes) -> list[dict]:
+    import csv
+    import io
+
+    if not content:
+        raise HTTPException(status_code=400, detail="文件为空")
+    text = content.decode("utf-8-sig", errors="replace")
+    reader = csv.reader(io.StringIO(text))
+    matrix = [[_cell_str(c) for c in row] for row in reader]
+    return _rows_from_matrix(matrix)
+
+
+def parse_import_xlsx(content: bytes) -> list[dict]:
+    import io
+
+    from openpyxl import load_workbook
+
+    if not content:
+        raise HTTPException(status_code=400, detail="文件为空")
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"无法读取 Excel 文件：{exc}") from exc
+    ws = wb.active
+    matrix: list[list[str]] = []
+    for row in ws.iter_rows(values_only=True):
+        matrix.append([_cell_str(c) for c in row])
+    wb.close()
+    return _rows_from_matrix(matrix)
+
+
+def parse_import_file(content: bytes, filename: str = "") -> list[dict]:
+    name = (filename or "").lower()
+    if name.endswith(".xlsx") or name.endswith(".xlsm"):
+        return parse_import_xlsx(content)
+    if name.endswith(".xls"):
+        raise HTTPException(
+            status_code=400,
+            detail="暂不支持旧版 .xls，请另存为 .xlsx 或 CSV UTF-8 后再上传",
+        )
+    if name.endswith(".csv") or name.endswith(".txt") or not name:
+        # 无后缀时先按 CSV，失败再尝试 xlsx（部分浏览器丢扩展名）
+        try:
+            return parse_import_csv(content)
+        except HTTPException:
+            if content[:2] == b"PK":
+                return parse_import_xlsx(content)
+            raise
+    if content[:2] == b"PK":
+        return parse_import_xlsx(content)
+    raise HTTPException(status_code=400, detail="请上传 Excel（.xlsx）或 CSV 文件")
+
+
+def preview_lead_import(
+    db: Session, content: bytes, *, filename: str = ""
+) -> LeadImportPreviewOut:
+    raw_rows = parse_import_file(content, filename)
+    phone_seen: dict[str, int] = {}
+    credit_seen: dict[str, int] = {}
+    out_rows: list[LeadImportPreviewRow] = []
+    ok = soft = hard = err = 0
+
+    for item in raw_rows:
+        row_no = int(item["row_no"])
+        company = (item.get("company_name") or "").strip()
+        phone = (item.get("phone") or "").strip()
+        credit = (item.get("credit_code") or "").strip() or None
+        domain = (item.get("company_domain") or "").strip() or None
+        name = (item.get("name") or "").strip() or None
+        need_desc = (item.get("need_desc") or "").strip() or None
+        remark = (item.get("remark") or "").strip() or None
+        bt_raw = item.get("business_type") or "ai_product"
+        bt_code, bt_label = _resolve_business_type(db, str(bt_raw))
+
+        status_code = "ok"
+        message = "可导入"
+        can_import = True
+        force_required = False
+
+        if not company or not phone:
+            status_code = "error"
+            message = "客户主体与联系电话为必填"
+            can_import = False
+            err += 1
+        elif bt_code is None:
+            status_code = "error"
+            message = f"需求方向无效：{bt_label}"
+            can_import = False
+            err += 1
+        else:
+            if phone in phone_seen:
+                status_code = "error"
+                message = f"与文件内第 {phone_seen[phone]} 行手机号重复"
+                can_import = False
+                err += 1
+            elif credit and credit in credit_seen:
+                status_code = "error"
+                message = f"与文件内第 {credit_seen[credit]} 行信用代码重复"
+                can_import = False
+                err += 1
+            else:
+                phone_seen[phone] = row_no
+                if credit:
+                    credit_seen[credit] = row_no
+                dups = find_duplicates(
+                    db,
+                    phone=phone,
+                    company_name=company,
+                    credit_code=credit,
+                    company_domain=domain,
+                )
+                if dups["by_phone"] or dups["by_credit"]:
+                    status_code = "hard"
+                    ids = ",".join(
+                        str(x.id) for x in (dups["by_phone"] or dups["by_credit"])
+                    )
+                    message = f"确定重复（已有线索 ID: {ids}），勾选强制后可导入"
+                    force_required = True
+                    hard += 1
+                elif dups["by_company"] or dups["by_domain"]:
+                    status_code = "soft"
+                    message = "疑似重复（公司名或域名相近），可导入并留痕"
+                    soft += 1
+                else:
+                    ok += 1
+
+        out_rows.append(
+            LeadImportPreviewRow(
+                row_no=row_no,
+                company_name=company,
+                phone=phone,
+                name=name,
+                credit_code=credit,
+                company_domain=domain,
+                business_type=bt_code or "ai_product",
+                business_type_label=bt_label,
+                need_desc=need_desc,
+                remark=remark,
+                status=status_code,
+                message=message,
+                can_import=can_import,
+                force_required=force_required,
+            )
+        )
+
+    return LeadImportPreviewOut(
+        total=len(out_rows),
+        ok_count=ok,
+        soft_count=soft,
+        hard_count=hard,
+        error_count=err,
+        rows=out_rows,
+    )
+
+
+def confirm_lead_import(
+    db: Session,
+    user: User,
+    payload: LeadImportConfirmRequest,
+) -> LeadImportConfirmOut:
+    if len(payload.rows) > IMPORT_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"单次最多导入 {IMPORT_MAX_ROWS} 条")
+
+    items: list[LeadImportConfirmItem] = []
+    success = failed = skipped = 0
+    for row in payload.rows:
+        try:
+            bt_code, _ = _resolve_business_type(db, row.business_type)
+            if not bt_code:
+                raise HTTPException(status_code=400, detail="需求方向无效")
+            create_payload = LeadCreate(
+                name=row.name,
+                company_name=row.company_name,
+                credit_code=row.credit_code,
+                company_domain=row.company_domain,
+                phone=row.phone,
+                business_type=bt_code,
+                need_desc=row.need_desc,
+                remark=row.remark,
+                source="batch_import",
+                source_detail=f"批量导入第{row.row_no}行",
+                self_follow=payload.self_follow,
+            )
+            lead = create_lead(db, user, create_payload, force=row.force)
+            success += 1
+            items.append(
+                LeadImportConfirmItem(
+                    row_no=row.row_no,
+                    ok=True,
+                    lead_id=lead.id,
+                    message="已导入",
+                )
+            )
+        except HTTPException as exc:
+            failed += 1
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+            items.append(
+                LeadImportConfirmItem(row_no=row.row_no, ok=False, message=detail)
+            )
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            items.append(
+                LeadImportConfirmItem(row_no=row.row_no, ok=False, message=str(exc))
+            )
+
+    return LeadImportConfirmOut(
+        success_count=success,
+        failed_count=failed,
+        skipped_count=skipped,
+        items=items,
+    )

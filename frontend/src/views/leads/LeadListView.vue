@@ -179,6 +179,7 @@
           >
             分配已选线索{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
           </el-button>
+          <el-button v-if="!embedded" @click="importVisible = true">批量导入</el-button>
           <el-button v-if="!embedded" type="primary" @click="openCreate">录入线索</el-button>
         </div>
       </div>
@@ -305,7 +306,7 @@
 
       <div v-if="embedded && pool === 'public'" class="table-footer">
         <span>共 {{ total }} 条线索 · 待分配 {{ pageUnassignedCount }} 条</span>
-        <span>批量录入仅管理层可用；所有操作保留录入人和负责人轨迹</span>
+        <span>支持批量导入；所有操作保留录入人和负责人轨迹</span>
       </div>
 
       <div class="pager">
@@ -737,6 +738,13 @@
         <el-button type="primary" :loading="saving" @click="submitDrawerTransfer">确认变更</el-button>
       </template>
     </el-dialog>
+
+    <LeadImportDialog
+      v-if="!embedded"
+      v-model:visible="importVisible"
+      :self-follow="canSelfFollowOnCreate"
+      @done="onImportDone"
+    />
   </div>
 </template>
 
@@ -749,6 +757,7 @@ import { useMatchMedia } from '@/composables/useMatchMedia'
 import { useUserStore } from '@/stores/user'
 import { fetchDirectoryPeople, type DirectoryPerson } from '@/api/directory'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
+import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 import type { SalesJourney } from '@/api/salesJourney'
 import { useBusinessTypes } from '@/api/dictionaries'
 import {
@@ -797,6 +806,7 @@ const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const loading = ref(false)
 const saving = ref(false)
 const empLoading = ref(false)
+const importVisible = ref(false)
 const items = ref<Lead[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -1090,7 +1100,11 @@ async function loadList() {
     loading.value = false
   }
 }
-function reload() {
+
+function onImportDone() {
+  void loadList()
+  void loadStats()
+}function reload() {
   page.value = 1
   loadList()
   loadStats()
