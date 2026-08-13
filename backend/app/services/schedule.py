@@ -170,6 +170,10 @@ def can_manage(user: User) -> bool:
     )
 
 
+def is_admin(user: User) -> bool:
+    return "admin" in {r.code for r in user.roles}
+
+
 def _validate_time_range(start_time: datetime, end_time: datetime) -> None:
     start = _as_utc(start_time)
     end = _as_utc(end_time)
@@ -497,6 +501,17 @@ def cancel_schedule(
     db.commit()
     db.refresh(item)
     return enrich_schedule(db, item)
+
+
+def delete_schedule(db: Session, user: User, schedule_id: int) -> None:
+    """仅系统管理员可删除；已完成/已取消也可删。"""
+    item = db.query(Schedule).filter(Schedule.id == schedule_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="排期不存在")
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="仅系统管理员可删除排期")
+    db.delete(item)
+    db.commit()
 
 
 # 排期「资源角色」→ 组织架构角色 code（仅用于排序靠前，不卡死可选人）

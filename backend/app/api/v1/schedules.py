@@ -218,3 +218,13 @@ def cancel_schedule(
     return ScheduleOut.model_validate(
         schedule_service.cancel_schedule(db, current_user, schedule_id, payload)
     )
+
+
+@router.delete("/{schedule_id}", summary="删除排期（仅管理员，已完成也可删）")
+def delete_schedule(
+    schedule_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
+) -> dict:
+    schedule_service.delete_schedule(db, current_user, schedule_id)
+    return {"ok": True, "message": "已删除"}

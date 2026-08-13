@@ -360,6 +360,7 @@
               >
                 取消排期
               </el-button>
+              <el-button v-if="isAdmin" type="danger" link @click="onDelete">删除</el-button>
               <el-button link type="primary" @click="$router.push(`/schedules/${drawer.id}`)">
                 完整详情
               </el-button>
@@ -534,6 +535,7 @@ import { useRoute } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
+import { useUserStore } from '@/stores/user'
 import {
   FEISHU_SYNC_LABEL,
   SCHEDULE_RESOURCE_OPTIONS,
@@ -544,6 +546,7 @@ import {
   confirmSchedule,
   coordinateSchedule,
   createSchedule,
+  deleteSchedule,
   fetchPersonTree,
   fetchResourceLoad,
   fetchScheduleDetail,
@@ -577,6 +580,8 @@ const roleFilters: { key: RoleFilter; label: string }[] = [
 ]
 
 const route = useRoute()
+const userStore = useUserStore()
+const isAdmin = computed(() => (userStore.user?.roles ?? []).some((r) => r.code === 'admin'))
 const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
@@ -1400,6 +1405,24 @@ async function onCancel() {
     const { data } = await cancelSchedule(drawer.value.id, value || undefined)
     drawer.value = data
     ElMessage.success('已取消')
+    await reload()
+  } catch {
+    /* cancel */
+  }
+}
+
+async function onDelete() {
+  if (!drawer.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除排期「${drawer.value.title}」？已完成也会从日历移除，且不可恢复。`,
+      '删除排期',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
+    )
+    await deleteSchedule(drawer.value.id)
+    ElMessage.success('已删除')
+    drawerVisible.value = false
+    drawer.value = null
     await reload()
   } catch {
     /* cancel */

@@ -208,3 +208,7 @@ export function completeSchedule(
 export function cancelSchedule(id: number, reason?: string) {
   return request.post<Schedule>(`/schedules/${id}/cancel`, { reason })
 }
+
+export function deleteSchedule(id: number) {
+  return request.delete(`/schedules/${id}`)
+}

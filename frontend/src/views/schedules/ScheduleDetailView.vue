@@ -20,6 +20,7 @@
         >
           取消
         </el-button>
+        <el-button v-if="isAdmin" type="danger" @click="onDelete">删除</el-button>
       </div>
     </div>
 
@@ -92,21 +93,26 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
+import { useUserStore } from '@/stores/user'
 import {
   SCHEDULE_RESOURCE_OPTIONS,
   SCHEDULE_STATUS_LABEL,
   cancelSchedule,
   completeSchedule,
   confirmSchedule,
+  deleteSchedule,
   fetchScheduleDetail,
   startSchedule,
   type Schedule,
 } from '@/api/schedules'
 
 const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+const isAdmin = computed(() => (userStore.user?.roles ?? []).some((r) => r.code === 'admin'))
 const isCompact = useMatchMedia('(max-width: 768px)')
 const descCols = computed(() => (isCompact.value ? 1 : 3))
 const loading = ref(false)
@@ -211,6 +217,21 @@ async function onCancel() {
     await cancelSchedule(scheduleId.value, value || undefined)
     ElMessage.success('已取消')
     await loadDetail()
+  } catch {
+    /* cancel */
+  }
+}
+
+async function onDelete() {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除排期「${item.value?.title || ''}」？已完成也会从日历移除，且不可恢复。`,
+      '删除排期',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
+    )
+    await deleteSchedule(scheduleId.value)
+    ElMessage.success('已删除')
+    router.push('/schedules')
   } catch {
     /* cancel */
   }
