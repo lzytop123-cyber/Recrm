@@ -22,6 +22,7 @@ from app.core.rbac import (
     user_can,
 )
 from app.models.customer import Customer
+from app.models.department import Department
 from app.models.lead import (
     LEAD_STATUS_ASSIGNED,
     LEAD_STATUS_CONVERTED,
@@ -192,6 +193,22 @@ def can_self_follow_on_create(user: User) -> bool:
     if any("销售" in (r.name or "") for r in (user.roles or [])):
         return True
     return user_can(user, "lead:manage")
+
+
+def dept_scope_ids(db: Session, user: User) -> set[int]:
+    """本部门 + 所有下级部门 id（部门负责人可见整个部门树的数据）。"""
+    if not user.department_id:
+        return set()
+    ids: set[int] = {user.department_id}
+    frontier = [user.department_id]
+    while frontier:
+        cur = frontier.pop()
+        children = db.query(Department.id).filter(Department.parent_id == cur).all()
+        for (cid,) in children:
+            if cid not in ids:
+                ids.add(cid)
+                frontier.append(cid)
+    return ids
 
 
 def assert_can_view(user: User, lead: Lead) -> None:
@@ -377,7 +394,7 @@ def list_leads(
         if not is_admin and scope == "department" and user.department_id:
             q = q.filter(
                 or_(
-                    Lead.department_id == user.department_id,
+                    Lead.department_id.in_(dept_scope_ids(db, user)),
                     Lead.owner_id == user.id,
                     Lead.creator_id == user.id,
                 )
@@ -397,7 +414,7 @@ def list_leads(
         elif not is_admin and scope == "department" and user.department_id:
             q = q.filter(
                 or_(
-                    Lead.department_id == user.department_id,
+                    Lead.department_id.in_(dept_scope_ids(db, user)),
                     Lead.owner_id == user.id,
                     Lead.creator_id == user.id,
                 )
@@ -994,7 +1011,7 @@ def lead_stats(db: Session, user: User) -> dict:
         if not _is_admin and _scope == "department" and user.department_id:
             pq = pq.filter(
                 or_(
-                    Lead.department_id == user.department_id,
+                    Lead.department_id.in_(dept_scope_ids(db, user)),
                     Lead.owner_id == user.id,
                     Lead.creator_id == user.id,
                 )
