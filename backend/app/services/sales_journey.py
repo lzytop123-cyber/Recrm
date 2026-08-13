@@ -227,7 +227,11 @@ def build_sales_journey(
                     label="录入",
                     status=phases["lead_created"],
                     at=create_log.created_at if create_log else lead.created_at,
-                    actor=create_log.username if create_log else _user_name(db, lead.creator_id),
+                    actor=(
+                        (_user_name(db, create_log.user_id) or create_log.username)
+                        if create_log
+                        else _user_name(db, lead.creator_id)
+                    ),
                     entity="lead",
                     entity_id=lead.id,
                 ),
@@ -236,7 +240,11 @@ def build_sales_journey(
                     label="分配",
                     status=phases["lead_assigned"],
                     at=assign_log.created_at if assign_log else lead.assigned_at,
-                    actor=assign_log.username if assign_log else _user_name(db, lead.owner_id),
+                    actor=(
+                        (_user_name(db, assign_log.user_id) or assign_log.username)
+                        if assign_log
+                        else _user_name(db, lead.owner_id)
+                    ),
                     entity="lead",
                     entity_id=lead.id,
                 ),
@@ -245,7 +253,11 @@ def build_sales_journey(
                     label="跟进中",
                     status=phases["lead_following"],
                     at=follow_log.created_at if follow_log else lead.last_followed_at,
-                    actor=follow_log.username if follow_log else _user_name(db, lead.owner_id),
+                    actor=(
+                        (_user_name(db, follow_log.user_id) or follow_log.username)
+                        if follow_log
+                        else _user_name(db, lead.owner_id)
+                    ),
                     entity="lead",
                     entity_id=lead.id,
                 ),
@@ -254,7 +266,11 @@ def build_sales_journey(
                     label=convert_label,
                     status=convert_status,
                     at=convert_log.created_at if convert_log else lead.converted_at or lead.lost_at,
-                    actor=convert_log.username if convert_log else None,
+                    actor=(
+                        (_user_name(db, convert_log.user_id) or convert_log.username)
+                        if convert_log
+                        else None
+                    ),
                     entity=lead_entity,
                     entity_id=lead_entity_id,
                 ),

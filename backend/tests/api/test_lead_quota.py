@@ -100,3 +100,27 @@ def test_return_writes_reason_type(db_session: Session) -> None:
     )
     assert log is not None
     assert "unreachable" in (log.detail or "")
+
+
+def test_lead_log_shows_real_name(db_session: Session) -> None:
+    user = _seed_sales_user(db_session)
+    lead = lead_service.create_lead(
+        db_session,
+        user,
+        LeadCreate(name="客户四", company_name="D公司", phone="13800000004", self_follow=False),
+    )
+    claimed = lead_service.claim_lead(db_session, user, lead.id)
+    create_log = (
+        db_session.query(LeadLog)
+        .filter(LeadLog.lead_id == claimed.id, LeadLog.action == "create")
+        .first()
+    )
+    assert create_log is not None
+    assert create_log.username == "销售甲"
+
+    create_log.username = user.username
+    db_session.commit()
+
+    detail = lead_service.get_lead_detail(db_session, user, claimed.id)
+    shown = next(x for x in detail.logs if x.action == "create")
+    assert shown.username == "销售甲"

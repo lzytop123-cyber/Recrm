@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import get_settings
 from app.core.rbac import (
@@ -69,13 +70,34 @@ def _protect_until(from_time: Optional[datetime] = None) -> datetime:
     return base + timedelta(days=days)
 
 
+def _display_name(user: Optional[User]) -> Optional[str]:
+    if not user:
+        return None
+    return user.real_name or user.username
+
+
 def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
     if not user_id:
         return None
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         return None
-    return u.real_name or u.username
+    return _display_name(u)
+
+
+def _enrich_lead_logs(db: Session, logs: list[LeadLog]) -> None:
+    """详情展示用真实姓名；已有日志仍可能只存了登录用户名。"""
+    ids = {log.user_id for log in logs if log.user_id}
+    if not ids:
+        return
+    names = {
+        u.id: _display_name(u)
+        for u in db.query(User).filter(User.id.in_(ids)).all()
+    }
+    for log in logs:
+        name = names.get(log.user_id) if log.user_id else None
+        if name and name != log.username:
+            set_committed_value(log, "username", name)
 
 
 def enrich_lead(db: Session, lead: Lead) -> Lead:
@@ -113,7 +135,7 @@ def write_lead_log(
         LeadLog(
             lead_id=lead.id,
             user_id=user.id if user else None,
-            username=(user.username if user else None),
+            username=_display_name(user),
             action=action,
             detail=detail,
         )
@@ -433,6 +455,7 @@ def get_lead_detail(db: Session, user: User, lead_id: int) -> Lead:
     # 时间倒序展示
     lead.follow_ups = sorted(lead.follow_ups or [], key=lambda x: x.id, reverse=True)
     lead.logs = sorted(lead.logs or [], key=lambda x: x.id, reverse=True)
+    _enrich_lead_logs(db, lead.logs)
     return enrich_lead(db, lead)
 
 
