@@ -1,7 +1,7 @@
 <template>
   <div class="detail-page" v-loading="loading">
     <div class="top-bar">
-      <el-button @click="$router.push('/leads')">返回列表</el-button>
+      <el-button @click="$router.push(userStore.leadEntryOnly ? '/lead-entry' : '/leads')">返回列表</el-button>
       <div class="actions" v-if="lead">
         <el-button
           v-if="isPublic && canAssign"

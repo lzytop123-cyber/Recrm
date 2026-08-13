@@ -142,7 +142,7 @@ ROLES = [
     ]),
     ("运营", "operations", "department", [
         "dashboard:view", "approval:center",
-        "customer:view", "project:view", "ticket:view", "timesheet:view", "schedule:view",
+        "lead:view", "customer:view", "project:view", "ticket:view", "timesheet:view", "schedule:view",
         "asset:view", "asset:manage",
         "knowledge:view",
     ]),

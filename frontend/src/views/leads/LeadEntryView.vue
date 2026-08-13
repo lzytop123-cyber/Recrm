@@ -6,7 +6,7 @@
     <header class="entry-head">
       <div>
         <h1>线索录入</h1>
-        <p>所有员工均可提交潜在客户信息；提交后按岗位权限进入对应流转。</p>
+        <p>提交后进入管理层待分配池。本页只显示你自己录入的线索，其他人的记录不可见。</p>
       </div>
       <div class="entry-actions">
         <el-button @click="importVisible = true">批量导入</el-button>
@@ -14,15 +14,57 @@
       </div>
     </header>
 
-    <section class="entry-card">
-      <h2>你当前只有线索录入权限</h2>
-      <p>
-        所有岗位录入后均进入管理层线索总览待分配池，由管理层统一分配。
-      </p>
-      <p>你不能查看未授权的线索、客户、商机、合同或回款数据。</p>
-      <div class="entry-card-actions">
-        <el-button type="primary" size="large" @click="openCreate">录入一条线索</el-button>
-        <el-button size="large" @click="importVisible = true">批量导入</el-button>
+    <section class="crm-panel my-leads-panel">
+      <div class="toolbar">
+        <strong>我录入的线索</strong>
+        <span class="muted">共 {{ total }} 条</span>
+      </div>
+      <div class="crm-table-wrap">
+        <el-table
+          :data="items"
+          v-loading="loading"
+          stripe
+          empty-text="还没有录入记录，点击右上角开始提交"
+          @row-click="goDetail"
+        >
+          <el-table-column label="客户主体" min-width="180">
+            <template #default="{ row }">
+              <div class="entity">
+                <b>{{ row.company_name || row.name }}</b>
+                <small>XS-{{ String(row.id).padStart(6, '0') }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="phone" label="联系电话" width="130" />
+          <el-table-column label="需求方向" width="130">
+            <template #default="{ row }">{{ businessTypeLabel(row.business_type) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="statusTag(row.status)" size="small">
+                {{ LEAD_STATUS_LABEL[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="当前负责人" width="120">
+            <template #default="{ row }">
+              {{ isUnassigned(row) ? '尚未分配' : row.owner_name || '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="录入时间" width="150">
+            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          layout="total, prev, pager, next"
+          @current-change="loadMyLeads"
+          @size-change="loadMyLeads"
+        />
       </div>
     </section>
     <el-dialog
@@ -106,20 +148,28 @@
       </template>
     </el-dialog>
 
-    <LeadImportDialog v-model:visible="importVisible" :self-follow="false" />
+    <LeadImportDialog v-model:visible="importVisible" :self-follow="false" @done="loadMyLeads" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { checkLeadDuplicates, createLead } from '@/api/leads'
+import {
+  LEAD_STATUS_LABEL,
+  checkLeadDuplicates,
+  createLead,
+  fetchLeads,
+  type Lead,
+} from '@/api/leads'
 import { useBusinessTypes } from '@/api/dictionaries'
 import { useUserStore } from '@/stores/user'
 import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
-const { businessTypeOptions } = useBusinessTypes()
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const userStore = useUserStore()
+const router = useRouter()
 /** 与后端 can_self_follow_on_create 一致：销售录入自跟进，其他岗进待分配池 */
 const canSelfFollowOnCreate = computed(() =>
   (userStore.user?.roles ?? []).some(
@@ -130,6 +180,11 @@ const canSelfFollowOnCreate = computed(() =>
 const createVisible = ref(false)
 const importVisible = ref(false)
 const saving = ref(false)
+const loading = ref(false)
+const items = ref<Lead[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
@@ -202,6 +257,51 @@ const dupDesc = computed(() => {
   if (dupReview.value) return '公司名或域名相近，提交后进入人工复核留痕。'
   return '可以继续提交。'
 })
+
+function isUnassigned(row: Lead) {
+  return row.status === 'pending_assign' || row.status === 'returned'
+}
+
+function statusTag(s: string) {
+  const map: Record<string, string> = {
+    pending_assign: 'warning',
+    assigned: 'success',
+    following: 'success',
+    converted: 'success',
+    returned: 'warning',
+    lost: 'danger',
+  }
+  return map[s] || 'info'
+}
+
+function formatTime(v?: string | null) {
+  if (!v) return '—'
+  return new Date(v).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+async function loadMyLeads() {
+  loading.value = true
+  try {
+    const { data } = await fetchLeads({
+      pool: 'created',
+      page: page.value,
+      page_size: pageSize.value,
+    })
+    items.value = data.items
+    total.value = data.total
+  } finally {
+    loading.value = false
+  }
+}
+
+function goDetail(row: Lead) {
+  router.push(`/leads/${row.id}`)
+}
 
 function openCreate() {
   form.name = ''
@@ -285,6 +385,7 @@ async function onCreate() {
     }
     ElMessage.success('录入成功，已进入管理层待分配池')
     createVisible.value = false
+    await loadMyLeads()
   } catch (e: unknown) {
     const err = e as { response?: { status?: number; data?: { detail?: string } } }
     if (err.response?.status === 409) {
@@ -307,6 +408,7 @@ async function onCreate() {
         )
         ElMessage.success('已强制录入')
         createVisible.value = false
+        await loadMyLeads()
       } catch {
         /* cancel */
       }
@@ -317,11 +419,13 @@ async function onCreate() {
     saving.value = false
   }
 }
+
+onMounted(loadMyLeads)
 </script>
 
 <style scoped>
 .lead-entry-page {
-  max-width: 960px;
+  max-width: 1100px;
 }
 
 .entry-head {
@@ -329,7 +433,7 @@ async function onCreate() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .entry-head h1 {
@@ -346,39 +450,41 @@ async function onCreate() {
   line-height: 1.5;
 }
 
-.entry-card {
-  background: #fff;
-  border: 1px solid var(--crm-border);
-  border-radius: 16px;
-  padding: 48px 36px;
-  text-align: center;
-  box-shadow: 0 8px 28px rgb(15 23 42 / 4%);
-}
-
-.entry-card h2 {
-  margin: 0 0 14px;
-  font-size: 22px;
-  color: var(--crm-ink);
-}
-
-.entry-card p {
-  margin: 0 auto 10px;
-  max-width: 520px;
-  color: var(--crm-ink-soft);
-  font-size: 14px;
-  line-height: 1.65;
-}
-
-.entry-card-actions {
+.my-leads-panel .toolbar {
   display: flex;
-  flex-wrap: wrap;
+  align-items: baseline;
   gap: 10px;
-  justify-content: center;
-  margin-top: 18px;
+  margin-bottom: 12px;
 }
 
-.entry-card .el-button {
-  margin-top: 0;
+.my-leads-panel .toolbar strong {
+  font-size: 15px;
+}
+
+.muted {
+  color: var(--crm-ink-soft);
+  font-size: 13px;
+}
+
+.entity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entity small {
+  color: var(--crm-ink-soft);
+  font-size: 12px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.my-leads-panel :deep(.el-table__row) {
+  cursor: pointer;
 }
 
 .dialog-eyebrow {

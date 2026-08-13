@@ -13,6 +13,7 @@ LEAD_ENTRY_ONLY_ROLE_CODES: Set[str] = {
     "hr_supervisor",  # 综合管理主管
     "asset_admin",  # 资产管理员
     "employee",  # 普通员工：也可录入，但不进销售全链路
+    "operations",  # 运营：可录入并回看自己提交的线索
 }
 
 # 菜单定义：permission 为空表示登录即可见；有值则需具备对应权限（admin 角色放行）

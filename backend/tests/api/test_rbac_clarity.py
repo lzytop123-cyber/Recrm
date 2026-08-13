@@ -100,4 +100,19 @@ def test_seed_has_asset_and_system_manage() -> None:
     by_code = {r[1]: r for r in ROLES}
     assert "asset:manage" in by_code["asset_admin"][3]
     assert "asset:manage" in by_code["operations"][3]
+    assert "lead:view" in by_code["operations"][3]
     assert "ticket:view" in by_code["sales"][3]
+
+
+def test_operations_sees_lead_entry_not_sales(db_session: Session) -> None:
+    ops = _user_with_perms(
+        db_session,
+        "ops_menu",
+        "lead:view",
+        "customer:view",
+        "dashboard:view",
+        role_code="operations",
+    )
+    paths = {m.path for m in build_menus_for_user(ops)}
+    assert "/lead-entry" in paths
+    assert "/sales" not in paths

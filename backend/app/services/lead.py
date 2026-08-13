@@ -212,11 +212,13 @@ def dept_scope_ids(db: Session, user: User) -> set[int]:
 
 
 def assert_can_view(user: User, lead: Lead) -> None:
-    """查看权限：待分配/已退回仅管理层；已分配按负责人/数据范围。"""
+    """查看权限：录入人可回看自己提交的线索；待分配池其他人仅管理层可见。"""
     role_codes = {r.code for r in user.roles}
     if "admin" in role_codes:
         return
     scope = resolve_data_scope(user, "lead")
+    if lead.creator_id == user.id:
+        return
     if lead.status in {LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED}:
         if can_manage_lead_pool(user):
             return
@@ -226,7 +228,7 @@ def assert_can_view(user: User, lead: Lead) -> None:
         )
     if scope == "company":
         return
-    if lead.owner_id == user.id or lead.creator_id == user.id:
+    if lead.owner_id == user.id:
         return
     if scope == "department" and user.department_id and lead.department_id == user.department_id:
         return
@@ -355,7 +357,7 @@ def list_leads(
     """
     pool:
       - mine: 我负责的
-      - created: 我录入的（已分配后仍可回看；未分配仅管理层可见）
+      - created: 我录入的（含待分配，仅本人提交的记录）
       - public: 管理层线索总览（全状态：待分配/已分配/跟进/退回/转化/流失）
       - all: 按数据范围（非管理层不含未分配）
     """
@@ -371,9 +373,6 @@ def list_leads(
         )
     elif pool == "created":
         q = q.filter(Lead.creator_id == user.id)
-        if not is_manager:
-            # 录入人回看：不含仍在待分配池的线索（对齐 PRD 未分配不可见）
-            q = q.filter(Lead.status.notin_([LEAD_STATUS_PENDING, LEAD_STATUS_RETURNED]))
     elif pool == "public":
         if not is_manager:
             return 0, []
