@@ -123,10 +123,13 @@ def create_lead(
 
 @router.get("/import/template", summary="下载批量导入模板（Excel）")
 def download_import_template(
+    db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["lead:view"]))],
     format: str = Query("xlsx", description="xlsx 或 csv"),
 ):
     from fastapi.responses import Response
+
+    from app.services import platform as platform_service
 
     fmt = (format or "xlsx").lower()
     if fmt == "csv":
@@ -138,7 +141,11 @@ def download_import_template(
                 "Content-Disposition": "attachment; filename=lead_import_template.csv"
             },
         )
-    content = lead_service.build_import_template_xlsx()
+    labels = [
+        x["label"]
+        for x in platform_service.list_business_type_items(db, enabled_only=True)
+    ]
+    content = lead_service.build_import_template_xlsx(labels)
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

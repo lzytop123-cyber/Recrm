@@ -103,6 +103,34 @@ def test_preview_xlsx_ok(db_session: Session) -> None:
     assert out.error_count == 0
 
 
+def test_template_xlsx_has_business_type_dropdown() -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    content = build_import_template_xlsx(["AI产品销售", "AI定制开发"])
+    wb = load_workbook(io.BytesIO(content))
+    ws = wb["线索导入"]
+    dvs = list(ws.data_validations.dataValidation)
+    assert dvs
+    assert dvs[0].type == "list"
+    assert "_选项" in (dvs[0].formula1 or "")
+    assert wb["_选项"]["A1"].value == "AI产品销售"
+    assert wb["_选项"].sheet_state == "hidden"
+
+
+def test_preview_rejects_invalid_business_type(db_session: Session) -> None:
+    csv_body = (
+        "客户主体,联系电话,联系人,统一社会信用代码,企业域名,需求方向,需求说明,备注\n"
+        "某公司,13900000003,王,,,随便写的方向,,\n"
+    ).encode("utf-8-sig")
+    out = preview_lead_import(db_session, csv_body, filename="bad.csv")
+    assert out.total == 1
+    assert out.error_count == 1
+    assert out.rows[0].can_import is False
+    assert "需求方向无效" in out.rows[0].message
+
+
 def test_preview_flags_hard_duplicate(db_session: Session) -> None:
     user = _user(db_session, username="lead_importer_dup")
     lead_service.create_lead(

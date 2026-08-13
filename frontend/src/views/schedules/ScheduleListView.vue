@@ -68,6 +68,12 @@
             <el-button @click="shiftWeek(1)">下一周</el-button>
           </div>
         </div>
+        <div v-if="visiblePeople.length" class="person-legend" aria-label="人员颜色">
+          <span v-for="p in visiblePeople" :key="p.id" class="person-legend-item">
+            <i :style="{ background: personColor(p.id) }" aria-hidden="true"></i>
+            {{ p.name }}
+          </span>
+        </div>
         <div class="week-grid-wrap">
           <div class="week-grid">
             <div class="corner"></div>
@@ -183,15 +189,21 @@
 
     <!-- 月视图 -->
     <div v-else class="calendar-main">
-      <div class="calendar-nav">
-        <el-button @click="shiftMonth(-1)">上一月</el-button>
-        <h2>{{ monthLabel }}</h2>
-        <div>
-          <el-button @click="goThisMonth">本月</el-button>
-          <el-button @click="shiftMonth(1)">下一月</el-button>
+        <div class="calendar-nav">
+          <el-button @click="shiftMonth(-1)">上一月</el-button>
+          <h2>{{ monthLabel }}</h2>
+          <div>
+            <el-button @click="goThisMonth">本月</el-button>
+            <el-button @click="shiftMonth(1)">下一月</el-button>
+          </div>
         </div>
-      </div>
-      <div class="month-grid">
+        <div v-if="visiblePeople.length" class="person-legend" aria-label="人员颜色">
+          <span v-for="p in visiblePeople" :key="p.id" class="person-legend-item">
+            <i :style="{ background: personColor(p.id) }" aria-hidden="true"></i>
+            {{ p.name }}
+          </span>
+        </div>
+        <div class="month-grid">
         <div v-for="w in ['一', '二', '三', '四', '五', '六', '日']" :key="w" class="day-head">周{{ w }}</div>
         <div
           v-for="cell in monthCells"
@@ -208,7 +220,7 @@
             type="button"
             class="month-event"
             :class="[ev.status, { conflict: rowHasConflict(ev) }]"
-            :style="{ '--person-color': personColor(ev.employee_id) }"
+            :style="personChipStyle(ev.employee_id)"
             @click.stop="openDrawer(ev)"
           >
             {{ ev.title }}
@@ -981,30 +993,47 @@ function eventTooltip(lay: DayLayout) {
   return `${lay.ev.title}\n${status} · ${range}\n${who}${conflict}`.trim()
 }
 
-/** 同一人固定同色，便于周/月视图一眼区分 */
-const PERSON_PALETTE = [
-  '#2563eb',
-  '#7c3aed',
-  '#0d9488',
-  '#c2410c',
-  '#db2777',
-  '#059669',
-  '#d97706',
-  '#4f46e5',
-  '#0284c7',
-  '#be185d',
-  '#65a30d',
-  '#ea580c',
-]
+/** 每人一色：工号 × 黄金分割角，同一人跨周月不变，相邻工号色相也拉开 */
+function personHue(employeeId: number) {
+  return (Math.abs(employeeId) * 137.508) % 360
+}
 
 function personColor(employeeId?: number | null) {
-  const id = Number(employeeId) || 0
-  let h = id | 0
-  h = ((h >>> 16) ^ h) * 0x45d9f3b
-  h = ((h >>> 16) ^ h) * 0x45d9f3b
-  h = (h >>> 16) ^ h
-  return PERSON_PALETTE[Math.abs(h) % PERSON_PALETTE.length]
+  const id = Number(employeeId)
+  if (!Number.isFinite(id) || id <= 0) return 'oklch(0.55 0.02 250)'
+  const hue = personHue(id)
+  const chroma = 0.14 + (id % 3) * 0.025
+  const light = 0.5 + (id % 2) * 0.04
+  return `oklch(${light.toFixed(2)} ${chroma.toFixed(2)} ${hue.toFixed(1)})`
 }
+
+function personColorSoft(employeeId?: number | null) {
+  const id = Number(employeeId)
+  if (!Number.isFinite(id) || id <= 0) return 'oklch(0.72 0.03 250 / 0.18)'
+  const hue = personHue(id)
+  const chroma = 0.12 + (id % 3) * 0.02
+  return `oklch(0.86 ${chroma.toFixed(2)} ${hue.toFixed(1)} / 0.55)`
+}
+
+function personChipStyle(employeeId?: number | null) {
+  const color = personColor(employeeId)
+  return {
+    '--person-color': color,
+    borderLeftColor: color,
+    background: personColorSoft(employeeId),
+  }
+}
+
+const visiblePeople = computed(() => {
+  const map = new Map<number, string>()
+  for (const x of visibleItems.value) {
+    if (!x.employee_id || map.has(x.employee_id)) continue
+    map.set(x.employee_id, x.employee_name || `#${x.employee_id}`)
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, name]) => ({ id, name }))
+})
 
 function eventStyle(lay: DayLayout, hour: number) {
   const top = lay.visStart.getHours() === hour ? (lay.visStart.getMinutes() / 60) * 48 : 0
@@ -1012,6 +1041,7 @@ function eventStyle(lay: DayLayout, hour: number) {
   const heightHours = Math.min(lay.visHours, remain)
   const widthPct = 100 / lay.cols
   const leftPct = lay.col * widthPct
+  const color = personColor(lay.ev.employee_id)
   return {
     top: `${top}px`,
     height: `${Math.max(28, heightHours * 48 - 4)}px`,
@@ -1019,7 +1049,8 @@ function eventStyle(lay: DayLayout, hour: number) {
     width: `calc(${widthPct}% - 4px)`,
     right: 'auto',
     zIndex: String(3 + lay.col),
-    '--person-color': personColor(lay.ev.employee_id),
+    '--person-color': color,
+    background: lay.ev.status === 'cancelled' ? '#94a3b8' : color,
   }
 }
 

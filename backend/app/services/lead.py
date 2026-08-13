@@ -1073,19 +1073,52 @@ def build_import_template_csv() -> bytes:
     return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
-def build_import_template_xlsx() -> bytes:
-    """标准 Excel 模板（.xlsx）。"""
+def build_import_template_xlsx(business_type_labels: list[str] | None = None) -> bytes:
+    """标准 Excel 模板（.xlsx），需求方向列为下拉，须与系统字典一致。"""
     import io
 
     from openpyxl import Workbook
+    from openpyxl.utils import quote_sheetname
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    from app.services.platform import DEFAULT_BUSINESS_TYPE_ITEMS
+
+    labels = [x.strip() for x in (business_type_labels or []) if (x or "").strip()]
+    if not labels:
+        labels = [x["label"] for x in DEFAULT_BUSINESS_TYPE_ITEMS if x.get("enabled")]
+
+    sample = list(_IMPORT_SAMPLE_ROW)
+    sample[IMPORT_HEADERS.index("需求方向")] = labels[0]
 
     wb = Workbook()
     ws = wb.active
     ws.title = "线索导入"
     ws.append(IMPORT_HEADERS)
-    ws.append(_IMPORT_SAMPLE_ROW)
+    ws.append(sample)
     for col in ws.columns:
         ws.column_dimensions[col[0].column_letter].width = 18
+
+    opt = wb.create_sheet("_选项")
+    for i, label in enumerate(labels, start=1):
+        opt.cell(row=i, column=1, value=label)
+    opt.sheet_state = "hidden"
+
+    last = len(labels)
+    dv = DataValidation(
+        type="list",
+        formula1=f"{quote_sheetname('_选项')}!$A$1:$A${last}",
+        allow_blank=True,
+        showErrorMessage=True,
+        errorTitle="需求方向无效",
+        error="请从下拉列表中选择需求方向，不可随意填写",
+        errorStyle="stop",
+        promptTitle="需求方向",
+        prompt="请从下拉列表选择",
+        showInputMessage=True,
+    )
+    dv.add(f"F2:F{IMPORT_MAX_ROWS + 1}")
+    ws.add_data_validation(dv)
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

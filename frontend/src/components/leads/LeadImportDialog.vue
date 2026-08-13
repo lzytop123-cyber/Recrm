@@ -170,8 +170,8 @@ function onClosed() {
   >
     <div class="import-steps">
       <p>
-        1. 下载 Excel 模板并填写 → 2. 直接上传 <b>.xlsx</b> 预览查重 → 3. 勾选后确认入库。单次最多
-        200 条。也支持 CSV。
+        1. 下载 Excel 模板并填写（需求方向请用下拉，勿随意填写） → 2. 直接上传
+        <b>.xlsx</b> 预览查重 → 3. 勾选后确认入库。单次最多 200 条。也支持 CSV。
       </p>
       <div class="import-actions">
         <el-button @click="onDownloadTemplate">下载 Excel 模板</el-button>

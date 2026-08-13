@@ -194,6 +194,32 @@
   font-size: 15px;
 }
 
+.person-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--crm-border);
+  background: var(--crm-surface-soft, #f7f8fa);
+  font-size: 12px;
+  color: var(--crm-ink-soft);
+  flex-shrink: 0;
+}
+
+.person-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.person-legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .resource-filter-bar {
   display: flex;
   flex-wrap: wrap;
