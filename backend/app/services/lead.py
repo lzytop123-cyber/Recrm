@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import get_settings
@@ -438,16 +438,27 @@ def list_leads(
     if business_type:
         q = q.filter(Lead.business_type == business_type)
     if keyword:
-        like = f"%{keyword}%"
-        q = q.filter(
-            or_(
-                Lead.name.ilike(like),
-                Lead.company_name.ilike(like),
-                Lead.phone.ilike(like),
-                Lead.need_desc.ilike(like),
-                Lead.region.ilike(like),
+        kw = keyword.strip()
+        if kw:
+            like = f"%{kw}%"
+            owner_u = aliased(User)
+            creator_u = aliased(User)
+            q = q.outerjoin(owner_u, owner_u.id == Lead.owner_id).outerjoin(
+                creator_u, creator_u.id == Lead.creator_id
             )
-        )
+            q = q.filter(
+                or_(
+                    Lead.name.ilike(like),
+                    Lead.company_name.ilike(like),
+                    Lead.phone.ilike(like),
+                    Lead.need_desc.ilike(like),
+                    Lead.region.ilike(like),
+                    owner_u.real_name.ilike(like),
+                    owner_u.username.ilike(like),
+                    creator_u.real_name.ilike(like),
+                    creator_u.username.ilike(like),
+                )
+            )
 
     total = q.count()
     items = (
