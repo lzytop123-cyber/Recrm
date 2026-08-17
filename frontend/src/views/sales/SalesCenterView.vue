@@ -93,7 +93,9 @@ const canManageOpportunities = computed(
   () => userStore.hasPermission('opportunity:manage') || userStore.hasPermission('*'),
 )
 const canSelfFollowOnCreate = computed(() =>
-  (userStore.user?.roles ?? []).some((r) => r.code === 'sales'),
+  (userStore.user?.roles ?? []).some(
+    (r) => r.code === 'sales' || (r.name ?? '').includes('销售'),
+  ),
 )
 
 const allTabs: { key: SalesTab; label: string; visible: () => boolean }[] = [
