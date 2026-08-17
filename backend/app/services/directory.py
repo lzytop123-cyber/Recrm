@@ -151,6 +151,8 @@ def list_customers_for_picker(
 def list_contracts_for_picker(
     db: Session,
     *,
+    user: Optional[User] = None,
+    mine_only: bool = False,
     keyword: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
@@ -159,6 +161,8 @@ def list_contracts_for_picker(
     q = db.query(Contract, Customer.name).outerjoin(
         Customer, Customer.id == Contract.customer_id
     )
+    if mine_only and user is not None:
+        q = q.filter(or_(Contract.owner_id == user.id, Contract.creator_id == user.id))
     if keyword:
         like = f"%{keyword.strip()}%"
         q = q.filter(

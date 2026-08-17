@@ -12,6 +12,12 @@ export type ContractStatus =
   | 'completed'
   | 'terminated'
 
+export interface ContractProofFile {
+  filename: string
+  path: string
+  url?: string | null
+}
+
 export interface Contract {
   id: number
   contract_no: string
@@ -35,6 +41,8 @@ export interface Contract {
   proof_filename?: string | null
   proof_path?: string | null
   proof_url?: string | null
+  /** 合同证明多文件（优先） */
+  proofs?: ContractProofFile[]
   created_at: string
   updated_at: string
   customer_name?: string | null
@@ -45,6 +53,9 @@ export interface Contract {
   next_due_date?: string | null
   collection_status?: string | null
 }
+
+/** 合同证明最多张数 */
+export const CONTRACT_PROOF_MAX = 9
 
 export interface ContractStats {
   total: number

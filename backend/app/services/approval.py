@@ -465,14 +465,15 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
         )
         for p in rows:
             _, amount, paid, _complete = _project_contract_settlement(db, p)
+            defer_source = "无合同立项" if not p.contract_id else "无到款立项"
             items.append(
                 _item(
                     id=f"project_payment_defer:{p.id}",
                     type="project_payment_defer",
                     category="项目交付",
-                    source="无到款立项",
+                    source=defer_source,
                     source_id=p.project_no or str(p.id),
-                    title=f"无到款立项 {p.name}",
+                    title=f"{defer_source} {p.name}",
                     applicant_name=_user_name(
                         db, p.payment_defer_submitted_by or p.creator_id or p.manager_id
                     ),
@@ -481,17 +482,24 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
                     status=p.payment_defer_status,
                     status_label="待审批",
                     node="部门负责人 / 管理员审批",
-                    summary=(p.payment_deferred_reason or "申请先干活后付款")[:80],
+                    summary=(
+                        p.payment_deferred_reason
+                        or ("申请无合同先立项" if not p.contract_id else "申请先干活后付款")
+                    )[:80],
                     facts=[
                         ApprovalFact(label="项目编号", value=p.project_no or "—"),
-                        ApprovalFact(label="合同金额", value=str(amount)),
-                        ApprovalFact(label="已确认到账", value=str(paid)),
+                        ApprovalFact(
+                            label="关联合同",
+                            value="无（无合同立项）" if not p.contract_id else "有",
+                        ),
+                        ApprovalFact(label="合同金额", value=str(amount) if p.contract_id else "—"),
+                        ApprovalFact(label="已确认到账", value=str(paid) if p.contract_id else "—"),
                         ApprovalFact(label="申请原因", value=p.payment_deferred_reason or "—"),
                     ],
                     deep_link="/projects/delivery?tab=initiation",
                     can_act=True,
                     actions=["approve", "reject", "open"],
-                    meta={"entity_id": p.id},
+                    meta={"entity_id": p.id, "no_contract": not bool(p.contract_id)},
                 )
             )
 
@@ -750,14 +758,15 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        defer_source = "无合同立项" if not p.contract_id else "无到款立项"
         items.append(
             _item(
                 id=f"project_payment_defer:{p.id}",
                 type="project_payment_defer",
                 category="项目交付",
-                source="无到款立项",
+                source=defer_source,
                 source_id=p.project_no or str(p.id),
-                title=f"无到款立项 {p.name}",
+                title=f"{defer_source} {p.name}",
                 applicant_name=_user_name(db, user.id),
                 department_name=_dept_name(db, p.department_id),
                 submitted_at=p.payment_defer_submitted_at or p.created_at,
@@ -771,7 +780,7 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
                 deep_link="/projects/delivery?tab=initiation",
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": p.id},
+                meta={"entity_id": p.id, "no_contract": not bool(p.contract_id)},
             )
         )
 
@@ -1060,14 +1069,15 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         label = (
             "已通过" if p.payment_defer_status == PAYMENT_DEFER_APPROVED else "已驳回"
         )
+        defer_source = "无合同立项" if not p.contract_id else "无到款立项"
         items.append(
             _item(
                 id=f"project_payment_defer:{p.id}:done",
                 type="project_payment_defer",
                 category="项目交付",
-                source="无到款立项",
+                source=defer_source,
                 source_id=p.project_no or str(p.id),
-                title=f"无到款立项 {p.name}",
+                title=f"{defer_source} {p.name}",
                 applicant_name=_user_name(
                     db, p.payment_defer_submitted_by or p.creator_id or p.manager_id
                 ),
@@ -1075,7 +1085,7 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
                 submitted_at=p.payment_defer_approved_at or p.updated_at,
                 status=p.payment_defer_status,
                 status_label=label,
-                node="无到款立项审批完成",
+                node=f"{defer_source}审批完成",
                 summary=(p.payment_deferred_reason or p.payment_defer_reject_reason or "")[:80],
                 facts=[
                     ApprovalFact(label="申请原因", value=p.payment_deferred_reason or "—"),
@@ -1084,7 +1094,7 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
                 deep_link="/projects/delivery?tab=initiation",
                 can_act=False,
                 actions=["open"],
-                meta={"entity_id": p.id},
+                meta={"entity_id": p.id, "no_contract": not bool(p.contract_id)},
             )
         )
 
@@ -1335,7 +1345,11 @@ def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
     elif item.type == "allocation" and item.can_act:
         current_comment = "核对核销金额与合同应收"
     elif item.type == "project_payment_defer" and item.can_act:
-        current_comment = "确认可无到款先立项；结项仍须回款收齐"
+        current_comment = (
+            "确认可无合同先立项"
+            if (item.meta or {}).get("no_contract")
+            else "确认可无到款先立项；结项仍须回款收齐"
+        )
     elif item.type == "project_acceptance" and item.can_act:
         current_comment = "核对验收结论与附件后审批"
     elif item.type == "project_finance" and item.can_act:
@@ -1363,21 +1377,27 @@ def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
             )
         )
     elif item.type == "project_payment_defer":
+        no_contract = bool((item.meta or {}).get("no_contract"))
         if current_status != "done":
             nodes.append(
                 ApprovalTimelineNode(
                     name="进入计划阶段",
                     status="waiting",
-                    comment="通过后可无到款推进计划与交付",
+                    comment=(
+                        "通过后可推进计划与交付"
+                        if no_contract
+                        else "通过后可无到款推进计划与交付"
+                    ),
                 )
             )
-            nodes.append(
-                ApprovalTimelineNode(
-                    name="结项财务核对",
-                    status="waiting",
-                    comment="结项前仍须回款收齐",
+            if not no_contract:
+                nodes.append(
+                    ApprovalTimelineNode(
+                        name="结项财务核对",
+                        status="waiting",
+                        comment="结项前仍须回款收齐",
+                    )
                 )
-            )
         else:
             nodes.append(
                 ApprovalTimelineNode(
@@ -1386,7 +1406,11 @@ def _build_timeline(item: ApprovalItemOut) -> list[ApprovalTimelineNode]:
                     comment=(
                         "立项结果已生效"
                         if item.status_label.startswith("已通过")
-                        else "未通过，不可无到款立项"
+                        else (
+                            "未通过，不可无合同立项"
+                            if no_contract
+                            else "未通过，不可无到款立项"
+                        )
                     ),
                 )
             )

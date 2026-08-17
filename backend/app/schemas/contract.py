@@ -6,6 +6,12 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ContractProofFile(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    path: str = Field(..., min_length=1, max_length=500)
+    url: Optional[str] = None
+
+
 class ContractCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     customer_id: int
@@ -20,6 +26,9 @@ class ContractCreate(BaseModel):
     # 起草页必传；商机一键发起可后补，提交审批时校验
     proof_filename: Optional[str] = Field(None, min_length=1, max_length=255)
     proof_path: Optional[str] = Field(None, min_length=1, max_length=500)
+    proofs: Optional[List[ContractProofFile]] = Field(
+        None, description="合同证明多文件；优先于单文件字段"
+    )
 
 
 class ContractUpdate(BaseModel):
@@ -35,6 +44,9 @@ class ContractUpdate(BaseModel):
     remark: Optional[str] = None
     proof_filename: Optional[str] = Field(None, min_length=1, max_length=255)
     proof_path: Optional[str] = Field(None, min_length=1, max_length=500)
+    proofs: Optional[List[ContractProofFile]] = Field(
+        None, description="合同证明多文件；传入则整体覆盖"
+    )
 
 
 class ContractTerminateRequest(BaseModel):
@@ -82,6 +94,7 @@ class ContractOut(BaseModel):
     next_due_date: Optional[date] = None
     collection_status: Optional[str] = None  # collecting / collected
     proof_url: Optional[str] = None
+    proofs: List[ContractProofFile] = Field(default_factory=list)
 
 
 class ContractListOut(BaseModel):

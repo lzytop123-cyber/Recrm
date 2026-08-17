@@ -1,9 +1,13 @@
 """公共通讯录：登录可读，不要求 org:view；员工管理仍需 org:view。"""
 
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
+from app.models.contract import Contract
+from app.models.customer import Customer
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
@@ -15,11 +19,15 @@ def _create_user_with_permission(
     username: str,
     permission_code: str,
 ) -> User:
-    permission = Permission(
-        name=permission_code,
-        code=permission_code,
-        module=permission_code.split(":")[0],
-    )
+    permission = db.query(Permission).filter(Permission.code == permission_code).first()
+    if not permission:
+        permission = Permission(
+            name=permission_code,
+            code=permission_code,
+            module=permission_code.split(":")[0],
+        )
+        db.add(permission)
+        db.flush()
     role = Role(
         name=f"{username}-role",
         code=f"{username}_role",
@@ -110,3 +118,59 @@ def test_directory_people_returns_brief_fields_only(
         assert "phone" not in row
         assert "email" not in row
         assert "roles" not in row
+
+
+def test_directory_contracts_mine_hides_others(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    mine_user = _create_user_with_permission(
+        db_session,
+        username="contract_mine",
+        permission_code="project:view",
+    )
+    other_user = _create_user_with_permission(
+        db_session,
+        username="contract_other",
+        permission_code="project:view",
+    )
+    customer = Customer(name="目录合同客户", owner_id=mine_user.id, creator_id=mine_user.id)
+    db_session.add(customer)
+    db_session.flush()
+    mine_contract = Contract(
+        contract_no="HT-MINE-001",
+        title="我的合同",
+        customer_id=customer.id,
+        contract_type="ai_product",
+        amount=Decimal("100.00"),
+        currency="CNY",
+        status="signed",
+        owner_id=mine_user.id,
+        creator_id=mine_user.id,
+    )
+    other_contract = Contract(
+        contract_no="HT-OTHER-001",
+        title="别人的合同",
+        customer_id=customer.id,
+        contract_type="ai_product",
+        amount=Decimal("200.00"),
+        currency="CNY",
+        status="signed",
+        owner_id=other_user.id,
+        creator_id=other_user.id,
+    )
+    db_session.add_all([mine_contract, other_contract])
+    db_session.commit()
+
+    headers = _auth_headers(client, "contract_mine")
+    all_rows = client.get("/api/v1/directory/contracts", headers=headers)
+    assert all_rows.status_code == 200
+    all_ids = {x["id"] for x in all_rows.json()["items"]}
+    assert mine_contract.id in all_ids
+    assert other_contract.id in all_ids
+
+    mine_rows = client.get("/api/v1/directory/contracts?mine=true", headers=headers)
+    assert mine_rows.status_code == 200
+    mine_ids = {x["id"] for x in mine_rows.json()["items"]}
+    assert mine_contract.id in mine_ids
+    assert other_contract.id not in mine_ids

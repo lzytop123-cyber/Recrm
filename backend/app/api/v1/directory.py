@@ -164,12 +164,14 @@ def list_contracts(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     keyword: Optional[str] = None,
+    mine: bool = Query(False, description="仅本人负责或创建的合同（立项选合同）"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> DirectoryContractListOut:
-    _ = current_user
     total, items = directory_service.list_contracts_for_picker(
         db,
+        user=current_user,
+        mine_only=mine,
         keyword=keyword,
         page=page,
         page_size=page_size,

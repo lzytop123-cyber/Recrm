@@ -137,9 +137,8 @@
             <small>合同证明</small>
             <div class="proof-cell">
               <AttachmentPreview
-                v-if="contract.proof_url"
-                :url="contract.proof_url"
-                :filename="contract.proof_filename"
+                v-if="proofPreviewItems.length"
+                :items="proofPreviewItems"
                 size="md"
               />
               <span v-else class="muted-inline">未上传（提交审批前须补传）</span>
@@ -150,11 +149,12 @@
                   :loading="uploadingProof"
                   @click="pickDetailProof"
                 >
-                  {{ contract.proof_url ? '重新上传' : '上传证明' }}
+                  {{ proofPreviewItems.length ? '继续添加' : '上传证明' }}
                 </el-button>
                 <input
                   ref="detailProofInputRef"
                   type="file"
+                  multiple
                   accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
                   hidden
                   @change="onDetailProofSelected"
@@ -269,21 +269,37 @@
         <el-form-item label="合同证明" required>
           <div
             class="upload-box"
-            :class="{ uploaded: !!editForm.proof_filename }"
+            :class="{ uploaded: editForm.proofs.length > 0 }"
             @click="pickEditProof"
           >
-            <template v-if="editForm.proof_filename">
-              <b>{{ editForm.proof_filename }}</b>
-              <small>{{ uploadingProof ? '上传中…' : '已上传 · 可重新选择' }}</small>
+            <template v-if="editForm.proofs.length">
+              <div class="proof-list" @click.stop>
+                <div
+                  v-for="(p, idx) in editForm.proofs"
+                  :key="`${p.path}-${idx}`"
+                  class="proof-chip"
+                >
+                  <AttachmentPreview :filename="p.filename" :path="p.path" size="sm" />
+                  <el-button link type="danger" @click="removeEditProof(idx)">移除</el-button>
+                </div>
+              </div>
+              <small>
+                {{
+                  uploadingProof
+                    ? '上传中…'
+                    : `已上传 ${editForm.proofs.length} 张 · 最多 ${CONTRACT_PROOF_MAX} 张，可继续添加`
+                }}
+              </small>
             </template>
             <template v-else>
               <b>上传合同照片或扫描件</b>
-              <small>PDF、PNG或JPG · 单文件不超过10MB</small>
+              <small>支持多选 · PDF、PNG或JPG · 单文件不超过10MB · 最多{{ CONTRACT_PROOF_MAX }}张</small>
             </template>
           </div>
           <input
             ref="editProofInputRef"
             type="file"
+            multiple
             accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
             hidden
             @change="onEditProofSelected"
@@ -372,6 +388,7 @@ import { useMatchMedia } from '@/composables/useMatchMedia'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 import {
+  CONTRACT_PROOF_MAX,
   CONTRACT_STATUS_LABEL,
   useBusinessTypes,
   PAYMENT_METHOD_OPTIONS,
@@ -386,8 +403,10 @@ import {
   updateContract,
   withdrawContract,
   type Contract,
+  type ContractProofFile,
 } from '@/api/contracts'
 import { uploadFile } from '@/api/uploads'
+import { uploadsUrl, isImageName, type AttachmentItem } from '@/utils/attachments'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -413,8 +432,7 @@ const editForm = reactive({
   effective_date: '' as string | undefined,
   expire_date: '' as string | undefined,
   remark: '',
-  proof_filename: '',
-  proof_path: '',
+  proofs: [] as ContractProofFile[],
 })
 
 const signForm = reactive({
@@ -424,6 +442,35 @@ const signForm = reactive({
 })
 
 const contractId = computed(() => Number(route.params.id))
+
+function contractProofs(c: Contract | null | undefined): ContractProofFile[] {
+  if (!c) return []
+  if (c.proofs?.length) {
+    return c.proofs.map((p) => ({
+      filename: p.filename,
+      path: p.path,
+      url: p.url || uploadsUrl(p.path),
+    }))
+  }
+  if (c.proof_path) {
+    return [
+      {
+        filename: c.proof_filename || c.proof_path.split('/').pop() || '合同证明',
+        path: c.proof_path,
+        url: c.proof_url || uploadsUrl(c.proof_path),
+      },
+    ]
+  }
+  return []
+}
+
+const proofPreviewItems = computed<AttachmentItem[]>(() =>
+  contractProofs(contract.value).map((p) => ({
+    name: p.filename,
+    url: p.url || uploadsUrl(p.path),
+    isImage: isImageName(p.filename),
+  })),
+)
 
 const canTerminate = computed(() => {
   const s = contract.value?.status
@@ -538,37 +585,70 @@ function fillEdit() {
   editForm.effective_date = c.effective_date || undefined
   editForm.expire_date = c.expire_date || undefined
   editForm.remark = c.remark || ''
-  editForm.proof_filename = c.proof_filename || ''
-  editForm.proof_path = c.proof_path || ''
+  editForm.proofs = contractProofs(c).map((p) => ({
+    filename: p.filename,
+    path: p.path,
+  }))
 }
 
 function pickEditProof() {
   if (uploadingProof.value) return
+  if (editForm.proofs.length >= CONTRACT_PROOF_MAX) {
+    ElMessage.warning(`最多上传 ${CONTRACT_PROOF_MAX} 张`)
+    return
+  }
   editProofInputRef.value?.click()
+}
+
+function removeEditProof(idx: number) {
+  editForm.proofs.splice(idx, 1)
 }
 
 function pickDetailProof() {
   if (uploadingProof.value) return
+  if (contractProofs(contract.value).length >= CONTRACT_PROOF_MAX) {
+    ElMessage.warning(`最多上传 ${CONTRACT_PROOF_MAX} 张`)
+    return
+  }
   detailProofInputRef.value?.click()
+}
+
+async function uploadProofFiles(
+  files: File[],
+  current: ContractProofFile[],
+): Promise<ContractProofFile[]> {
+  const remain = CONTRACT_PROOF_MAX - current.length
+  if (remain <= 0) {
+    ElMessage.warning(`最多上传 ${CONTRACT_PROOF_MAX} 张`)
+    return current
+  }
+  const picked = files.slice(0, remain)
+  if (files.length > remain) {
+    ElMessage.warning(`最多再上传 ${remain} 张，已自动截取`)
+  }
+  const next = [...current]
+  for (const file of picked) {
+    if (file.size > 10 * 1024 * 1024) {
+      ElMessage.warning(`${file.name} 超过 10MB，已跳过`)
+      continue
+    }
+    const { data } = await uploadFile(file, 'contract_proof')
+    next.push({ filename: data.filename, path: data.path })
+  }
+  return next
 }
 
 async function onDetailProofSelected(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !contract.value) return
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('单文件不超过 10MB')
-    input.value = ''
-    return
-  }
+  const files = Array.from(input.files || [])
+  if (!files.length || !contract.value) return
   uploadingProof.value = true
   try {
-    const { data } = await uploadFile(file, 'contract_proof')
+    const next = await uploadProofFiles(files, contractProofs(contract.value))
     await updateContract(contractId.value, {
-      proof_filename: data.filename,
-      proof_path: data.path,
+      proofs: next.map((p) => ({ filename: p.filename, path: p.path })),
     })
-    ElMessage.success('合同证明已上传')
+    ElMessage.success('合同证明已更新')
     await loadDetail()
   } finally {
     uploadingProof.value = false
@@ -578,18 +658,11 @@ async function onDetailProofSelected(e: Event) {
 
 async function onEditProofSelected(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('单文件不超过 10MB')
-    input.value = ''
-    return
-  }
+  const files = Array.from(input.files || [])
+  if (!files.length) return
   uploadingProof.value = true
   try {
-    const { data } = await uploadFile(file, 'contract_proof')
-    editForm.proof_filename = data.filename
-    editForm.proof_path = data.path
+    editForm.proofs = await uploadProofFiles(files, editForm.proofs)
   } finally {
     uploadingProof.value = false
     input.value = ''
@@ -616,7 +689,7 @@ async function onSaveEdit() {
     ElMessage.warning('合同名称不能为空')
     return
   }
-  if (!editForm.proof_filename || !editForm.proof_path) {
+  if (!editForm.proofs.length) {
     ElMessage.warning('请上传合同照片或证明')
     return
   }
@@ -630,8 +703,7 @@ async function onSaveEdit() {
       effective_date: editForm.effective_date || undefined,
       expire_date: editForm.expire_date || undefined,
       remark: editForm.remark || undefined,
-      proof_filename: editForm.proof_filename,
-      proof_path: editForm.proof_path,
+      proofs: editForm.proofs.map((p) => ({ filename: p.filename, path: p.path })),
     })
     ElMessage.success('已保存')
     editVisible.value = false
@@ -642,7 +714,7 @@ async function onSaveEdit() {
 }
 
 async function onSubmit() {
-  if (!contract.value?.proof_path) {
+  if (!contractProofs(contract.value).length) {
     ElMessage.warning('请先上传合同照片或证明')
     pickDetailProof()
     return
@@ -930,6 +1002,22 @@ onMounted(loadDetail)
 .upload-box small {
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.proof-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.proof-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
 }
 @media (max-width: 768px) {
   .detail-summary {

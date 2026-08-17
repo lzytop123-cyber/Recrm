@@ -95,10 +95,13 @@ class Contract(Base):
     terminate_reason: Mapped[Optional[str]] = mapped_column(String(500), comment="终止原因")
     remark: Mapped[Optional[str]] = mapped_column(Text, comment="备注")
     proof_filename: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True, comment="合同证明原文件名"
+        String(255), nullable=True, comment="合同证明原文件名（首张，兼容旧字段）"
     )
     proof_path: Mapped[Optional[str]] = mapped_column(
-        String(500), nullable=True, comment="合同证明相对路径 uploads 下"
+        String(500), nullable=True, comment="合同证明相对路径（首张，兼容旧字段）"
+    )
+    proof_files_json: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment='合同证明多文件 JSON [{"filename","path"}]'
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

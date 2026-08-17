@@ -164,6 +164,16 @@ def _contract_confirmed_paid(db: Session, contract_id: int) -> Decimal:
     return Decimal(str(total or 0))
 
 
+def _assert_can_associate_contract(user: User, contract: Contract) -> None:
+    """立项只能关联本人负责或创建的合同；管理员可代操作。"""
+    role_codes = {r.code for r in user.roles}
+    if "admin" in role_codes:
+        return
+    if contract.owner_id == user.id or contract.creator_id == user.id:
+        return
+    raise HTTPException(status_code=403, detail="只能关联自己负责或创建的合同立项")
+
+
 def assert_contract_ready_for_initiation(
     db: Session,
     contract: Contract,
@@ -230,7 +240,8 @@ def enrich_project(db: Session, project: Project) -> Project:
     )
 
     project.contract_active_ok = bool(  # type: ignore[attr-defined]
-        contract and contract.status in _INITIATION_CONTRACT_STATUSES
+        (not project.contract_id)
+        or (contract and contract.status in _INITIATION_CONTRACT_STATUSES)
     )
     paid = (
         _contract_confirmed_paid(db, contract.id) if contract else Decimal("0")
@@ -250,14 +261,18 @@ def enrich_project(db: Session, project: Project) -> Project:
         and project.payment_defer_status == PAYMENT_DEFER_PENDING
         and not payment_ok
     ):
-        project.next_node = "等待无到款立项审批"  # type: ignore[attr-defined]
+        kind = "无合同立项" if not project.contract_id else "无到款立项"
+        project.next_node = f"等待{kind}审批"  # type: ignore[attr-defined]
     elif (
         project.status == PROJECT_STATUS_INITIATING
         and project.payment_deferred
         and project.payment_defer_status == PAYMENT_DEFER_REJECTED
         and not payment_ok
     ):
-        project.next_node = "无到款立项已驳回，请先到款"  # type: ignore[attr-defined]
+        if not project.contract_id:
+            project.next_node = "无合同立项已驳回"  # type: ignore[attr-defined]
+        else:
+            project.next_node = "无到款立项已驳回，请先到款"  # type: ignore[attr-defined]
     elif (
         project.status == PROJECT_STATUS_ACCEPTING
         and project.acceptance_approval_status == ACCEPTANCE_APPROVAL_PENDING
@@ -360,45 +375,57 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
     project_type = payload.project_type
     manager_id = payload.manager_id or user.id
 
-    if not contract_id:
-        raise HTTPException(status_code=400, detail="请关联合同后再立项")
+    payment_deferred = False
+    deferred_reason: Optional[str] = None
+    contract: Optional[Contract] = None
 
-    contract = db.query(Contract).filter(Contract.id == contract_id).first()
-    if not contract:
-        raise HTTPException(status_code=400, detail="合同不存在")
+    if contract_id:
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            raise HTTPException(status_code=400, detail="合同不存在")
+        _assert_can_associate_contract(user, contract)
 
-    payment_deferred = bool(payload.payment_deferred)
-    deferred_reason = (payload.payment_deferred_reason or "").strip() or None
-    if payment_deferred:
+        payment_deferred = bool(payload.payment_deferred)
+        deferred_reason = (payload.payment_deferred_reason or "").strip() or None
+        if payment_deferred:
+            if not deferred_reason:
+                raise HTTPException(
+                    status_code=400,
+                    detail="无到款立项须填写原因（如客户约定先干活后付款）",
+                )
+            if _contract_confirmed_paid(db, contract.id) > 0:
+                # 已有到款则不必走例外
+                payment_deferred = False
+                deferred_reason = None
+        assert_contract_ready_for_initiation(
+            db, contract, allow_unpaid=payment_deferred
+        )
+        existing = (
+            db.query(Project)
+            .filter(
+                Project.contract_id == contract_id,
+                Project.status != PROJECT_STATUS_TERMINATED,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"该合同已有交付项目 {existing.project_no}，不可重复立项（终止后才可再立）",
+            )
+        customer_id = customer_id or contract.customer_id
+        type_values = platform_service.business_type_values(db, enabled_only=False)
+        if project_type == "other" and contract.contract_type in type_values:
+            project_type = contract.contract_type
+    else:
+        # 无合同立项：必须走审批（复用 payment_defer 状态机）
+        payment_deferred = True
+        deferred_reason = (payload.payment_deferred_reason or "").strip() or None
         if not deferred_reason:
             raise HTTPException(
                 status_code=400,
-                detail="无到款立项须填写原因（如客户约定先干活后付款）",
+                detail="无合同立项须填写原因（说明业务背景，提交后进入审批）",
             )
-        if _contract_confirmed_paid(db, contract.id) > 0:
-            # 已有到款则不必走例外
-            payment_deferred = False
-            deferred_reason = None
-    assert_contract_ready_for_initiation(
-        db, contract, allow_unpaid=payment_deferred
-    )
-    existing = (
-        db.query(Project)
-        .filter(
-            Project.contract_id == contract_id,
-            Project.status != PROJECT_STATUS_TERMINATED,
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=f"该合同已有交付项目 {existing.project_no}，不可重复立项（终止后才可再立）",
-        )
-    customer_id = customer_id or contract.customer_id
-    type_values = platform_service.business_type_values(db, enabled_only=False)
-    if project_type == "other" and contract.contract_type in type_values:
-        project_type = contract.contract_type
 
     if customer_id:
         customer = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -411,7 +438,8 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
 
     remark = payload.remark
     if payment_deferred and deferred_reason:
-        tag = f"[无到款立项待审] {deferred_reason}"
+        defer_kind = "无合同立项" if not contract_id else "无到款立项"
+        tag = f"[{defer_kind}待审] {deferred_reason}"
         remark = f"{tag}\n{remark}" if remark else tag
 
     now = datetime.now(timezone.utc)
@@ -582,6 +610,10 @@ def _transition(
     return enrich_project(db, project)
 
 
+def _defer_kind_label(project: Project) -> str:
+    return "无合同立项" if not project.contract_id else "无到款立项"
+
+
 def is_payment_defer_approved(project: Project) -> bool:
     return bool(project.payment_deferred) and project.payment_defer_status == PAYMENT_DEFER_APPROVED
 
@@ -604,12 +636,13 @@ def review_payment_defer(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     assert_can_view(user, project)
+    kind = _defer_kind_label(project)
     if not can_review_payment_defer(user):
-        raise HTTPException(status_code=403, detail="无权审批无到款立项")
+        raise HTTPException(status_code=403, detail=f"无权审批{kind}")
     if not project.payment_deferred:
-        raise HTTPException(status_code=400, detail="该项目未申请无到款立项")
+        raise HTTPException(status_code=400, detail=f"该项目未申请{kind}")
     if project.payment_defer_status != PAYMENT_DEFER_PENDING:
-        raise HTTPException(status_code=409, detail="仅待审批的无到款立项可以处理")
+        raise HTTPException(status_code=409, detail=f"仅待审批的{kind}可以处理")
 
     project.payment_defer_approved_by = user.id
     project.payment_defer_approved_at = datetime.now(timezone.utc)
@@ -617,7 +650,7 @@ def review_payment_defer(
         project.payment_defer_status = PAYMENT_DEFER_APPROVED
         project.payment_defer_reject_reason = None
         if payload.remark:
-            note = f"[无到款立项通过] {payload.remark.strip()}"
+            note = f"[{kind}通过] {payload.remark.strip()}"
             project.remark = f"{(project.remark or '').strip()}\n{note}".strip()
     else:
         reason = (payload.remark or "").strip()
@@ -625,11 +658,28 @@ def review_payment_defer(
             raise HTTPException(status_code=400, detail="驳回请填写原因")
         project.payment_defer_status = PAYMENT_DEFER_REJECTED
         project.payment_defer_reject_reason = reason
-        note = f"[无到款立项驳回] {reason}"
+        note = f"[{kind}驳回] {reason}"
         project.remark = f"{(project.remark or '').strip()}\n{note}".strip()
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
+
+
+def _assert_defer_ready_for_planning(project: Project) -> None:
+    """无合同 / 无到款例外：进计划前须 defer 审批通过。"""
+    kind = _defer_kind_label(project)
+    if project.payment_defer_status == PAYMENT_DEFER_PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{kind}审批中，通过后方可进入计划",
+        )
+    if project.payment_defer_status == PAYMENT_DEFER_REJECTED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{kind}已驳回，不可进入计划",
+        )
+    if project.payment_defer_status != PAYMENT_DEFER_APPROVED:
+        raise HTTPException(status_code=400, detail=f"{kind}尚未审批通过")
 
 
 def start_planning(db: Session, user: User, project_id: int) -> Project:
@@ -638,29 +688,25 @@ def start_planning(db: Session, user: User, project_id: int) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    if not project.contract_id:
-        raise HTTPException(status_code=400, detail="请关联合同后再进入计划")
-    contract = db.query(Contract).filter(Contract.id == project.contract_id).first()
-    if not contract:
-        raise HTTPException(status_code=400, detail="关联合同不存在")
-    paid = _contract_confirmed_paid(db, contract.id) > 0
-    if not paid and project.payment_deferred:
-        if project.payment_defer_status == PAYMENT_DEFER_PENDING:
-            raise HTTPException(
-                status_code=400,
-                detail="无到款立项审批中，通过后方可进入计划（或先完成到款认领）",
-            )
-        if project.payment_defer_status == PAYMENT_DEFER_REJECTED:
-            raise HTTPException(
-                status_code=400,
-                detail="无到款立项已驳回，请先完成到款认领后再进入计划",
-            )
-        if project.payment_defer_status != PAYMENT_DEFER_APPROVED:
-            raise HTTPException(status_code=400, detail="无到款立项尚未审批通过")
-    allow_unpaid = (not paid) and is_payment_defer_approved(project)
-    assert_contract_ready_for_initiation(db, contract, allow_unpaid=allow_unpaid)
-    # 无到款例外：进计划时仍标记已核验「可开工条件」，真实到账看 payment_received_ok
-    project.payment_verified = True
+
+    if project.contract_id:
+        contract = db.query(Contract).filter(Contract.id == project.contract_id).first()
+        if not contract:
+            raise HTTPException(status_code=400, detail="关联合同不存在")
+        paid = _contract_confirmed_paid(db, contract.id) > 0
+        if not paid and project.payment_deferred:
+            _assert_defer_ready_for_planning(project)
+        allow_unpaid = (not paid) and is_payment_defer_approved(project)
+        assert_contract_ready_for_initiation(db, contract, allow_unpaid=allow_unpaid)
+        # 无到款例外：进计划时仍标记已核验「可开工条件」，真实到账看 payment_received_ok
+        project.payment_verified = True
+    else:
+        # 无合同立项：须审批通过后才可进计划
+        if not project.payment_deferred:
+            raise HTTPException(status_code=400, detail="无合同立项状态异常，请重新发起")
+        _assert_defer_ready_for_planning(project)
+        project.payment_verified = True
+
     resource_service.seed_resource_needs(db, project)
     resource_service.assert_resources_ready(db, project_id)
     return _transition(db, user, project_id, {PROJECT_STATUS_INITIATING}, PROJECT_STATUS_PLANNING)

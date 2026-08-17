@@ -10,7 +10,8 @@ from app.schemas.project_resource import ResourceRoleAssignment
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
-    contract_id: int
+    # 选填：无合同也可立项；有合同则校验签署/到款（或无到款例外）
+    contract_id: Optional[int] = None
     customer_id: Optional[int] = None
     project_type: str = Field(default="other")
     manager_id: Optional[int] = None

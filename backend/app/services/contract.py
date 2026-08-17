@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -43,10 +44,82 @@ from app.models.payment import (
 from app.models.user import User
 from app.schemas.contract import (
     ContractCreate,
+    ContractProofFile,
     ContractSignRequest,
     ContractTerminateRequest,
     ContractUpdate,
 )
+
+CONTRACT_PROOF_MAX = 9
+
+
+def _normalize_proof_items(
+    proofs: Optional[list],
+    *,
+    fallback_filename: Optional[str] = None,
+    fallback_path: Optional[str] = None,
+) -> list[dict]:
+    items: list[dict] = []
+    seen: set[str] = set()
+    for raw in proofs or []:
+        if isinstance(raw, ContractProofFile):
+            filename = (raw.filename or "").strip()
+            path = (raw.path or "").strip()
+        elif isinstance(raw, dict):
+            filename = str(raw.get("filename") or "").strip()
+            path = str(raw.get("path") or "").strip()
+        else:
+            continue
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        items.append(
+            {
+                "filename": (filename or path.split("/")[-1])[:255],
+                "path": path[:500],
+            }
+        )
+        if len(items) >= CONTRACT_PROOF_MAX:
+            break
+    if not items and fallback_path:
+        path = fallback_path.strip()
+        if path:
+            items.append(
+                {
+                    "filename": ((fallback_filename or "").strip() or path.split("/")[-1])[:255],
+                    "path": path[:500],
+                }
+            )
+    return items
+
+
+def _apply_proofs(contract: Contract, items: list[dict]) -> None:
+    if items:
+        contract.proof_files_json = json.dumps(items, ensure_ascii=False)
+        contract.proof_filename = items[0]["filename"]
+        contract.proof_path = items[0]["path"]
+    else:
+        contract.proof_files_json = None
+        contract.proof_filename = None
+        contract.proof_path = None
+
+
+def _proof_items_from_contract(contract: Contract) -> list[dict]:
+    raw = getattr(contract, "proof_files_json", None)
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = []
+        if isinstance(data, list):
+            return _normalize_proof_items(data)
+    if contract.proof_path:
+        return _normalize_proof_items(
+            None,
+            fallback_filename=contract.proof_filename,
+            fallback_path=contract.proof_path,
+        )
+    return []
 
 
 def _log_opp_contract_milestone(db: Session, user: User, contract: Contract, content: str) -> None:
@@ -196,6 +269,15 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
     contract.proof_url = (  # type: ignore[attr-defined]
         f"/uploads/{contract.proof_path}" if contract.proof_path else None
     )
+    proofs = _proof_items_from_contract(contract)
+    contract.proofs = [  # type: ignore[attr-defined]
+        ContractProofFile(
+            filename=x["filename"],
+            path=x["path"],
+            url=f"/uploads/{x['path']}",
+        )
+        for x in proofs
+    ]
     return contract
 
 
@@ -256,8 +338,14 @@ def create_contract(db: Session, user: User, payload: ContractCreate) -> Contrac
         creator_id=user.id,
         department_id=user.department_id or customer.department_id,
         remark=payload.remark,
-        proof_filename=payload.proof_filename,
-        proof_path=payload.proof_path,
+    )
+    _apply_proofs(
+        contract,
+        _normalize_proof_items(
+            payload.proofs,
+            fallback_filename=payload.proof_filename,
+            fallback_path=payload.proof_path,
+        ),
     )
     db.add(contract)
     db.flush()
@@ -287,8 +375,25 @@ def update_contract(db: Session, user: User, contract_id: int, payload: Contract
         if not customer:
             raise HTTPException(status_code=400, detail="客户不存在")
 
+    proofs_set = "proofs" in data
+    proofs_payload = data.pop("proofs", None)
+    legacy_proof = "proof_filename" in data or "proof_path" in data
+    proof_filename = data.pop("proof_filename", None)
+    proof_path = data.pop("proof_path", None)
     for k, v in data.items():
         setattr(contract, k, v)
+
+    if proofs_set:
+        _apply_proofs(contract, _normalize_proof_items(proofs_payload))
+    elif legacy_proof:
+        _apply_proofs(
+            contract,
+            _normalize_proof_items(
+                None,
+                fallback_filename=proof_filename,
+                fallback_path=proof_path,
+            ),
+        )
 
     db.commit()
     db.refresh(contract)
@@ -362,7 +467,7 @@ def submit_approval(db: Session, user: User, contract_id: int) -> Contract:
     assert_can_edit_draft(user, contract)
     if contract.amount is None or contract.amount < 0:
         raise HTTPException(status_code=400, detail="合同金额无效")
-    if not contract.proof_path or not contract.proof_filename:
+    if not _proof_items_from_contract(contract):
         raise HTTPException(status_code=400, detail="请先上传合同照片或证明后再提交审批")
     contract.status = CONTRACT_STATUS_PENDING_APPROVAL
     _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已提交审批")

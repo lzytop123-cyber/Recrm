@@ -369,31 +369,32 @@
         <el-form-item label="到期日期">
           <el-date-picker v-model="form.expire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="合同证明" prop="proof_filename">
+        <el-form-item label="合同证明" prop="proofs">
           <div
             class="upload-box"
-            :class="{ uploaded: !!form.proof_filename }"
+            :class="{ uploaded: form.proofs.length > 0 }"
             @click="pickContractProof"
           >
-            <template v-if="form.proof_filename">
-              <AttachmentPreview
-                v-if="form.proof_path"
-                :filename="form.proof_filename"
-                :path="form.proof_path"
-                size="sm"
-                @click.stop
-              />
-              <b v-else>{{ form.proof_filename }}</b>
-              <small>{{ uploadingProof ? '上传中…' : '已上传 · 可重新选择' }}</small>
+            <template v-if="form.proofs.length">
+              <div class="proof-list" @click.stop>
+                <div v-for="(p, idx) in form.proofs" :key="`${p.path}-${idx}`" class="proof-chip">
+                  <AttachmentPreview :filename="p.filename" :path="p.path" size="sm" />
+                  <el-button link type="danger" @click="removeContractProof(idx)">移除</el-button>
+                </div>
+              </div>
+              <small>
+                {{ uploadingProof ? '上传中…' : `已上传 ${form.proofs.length} 张 · 最多 ${CONTRACT_PROOF_MAX} 张，可继续添加` }}
+              </small>
             </template>
             <template v-else>
               <b>上传合同照片或扫描件</b>
-              <small>PDF、PNG或JPG · 单文件不超过10MB · 审批可追溯</small>
+              <small>支持多选 · PDF、PNG或JPG · 单文件不超过10MB · 最多{{ CONTRACT_PROOF_MAX }}张</small>
             </template>
           </div>
           <input
             ref="contractProofInputRef"
             type="file"
+            multiple
             accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
             hidden
             @change="onContractProofSelected"
@@ -766,6 +767,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
+  CONTRACT_PROOF_MAX,
   CONTRACT_STATUS_LABEL,
   useBusinessTypes,
   PAYMENT_METHOD_OPTIONS,
@@ -773,6 +775,7 @@ import {
   fetchContractStats,
   fetchContracts,
   type Contract,
+  type ContractProofFile,
   type ContractStats,
 } from '@/api/contracts'
 import { fetchDirectoryCustomers, type DirectoryCustomer } from '@/api/directory'
@@ -880,13 +883,20 @@ const form = reactive({
   effective_date: '',
   expire_date: '',
   remark: '',
-  proof_filename: '',
-  proof_path: '',
+  proofs: [] as ContractProofFile[],
 })
 const rules: FormRules = {
   title: [{ required: true, message: '请输入合同名称', trigger: 'blur' }],
   customer_id: [{ required: true, message: '请选择客户', trigger: 'change' }],
-  proof_filename: [{ required: true, message: '请上传合同照片或证明', trigger: 'change' }],
+  proofs: [
+    {
+      validator: (_r, v, cb) => {
+        if (!Array.isArray(v) || v.length === 0) cb(new Error('请上传合同照片或证明'))
+        else cb()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 const claimForm = reactive({
@@ -1217,32 +1227,57 @@ async function openCreate() {
   form.effective_date = ''
   form.expire_date = ''
   form.remark = ''
-  form.proof_filename = ''
-  form.proof_path = ''
+  form.proofs = []
   await searchCustomers('')
   createVisible.value = true
 }
 
 function pickContractProof() {
   if (uploadingProof.value) return
+  if (form.proofs.length >= CONTRACT_PROOF_MAX) {
+    ElMessage.warning(`最多上传 ${CONTRACT_PROOF_MAX} 张`)
+    return
+  }
   contractProofInputRef.value?.click()
+}
+
+function removeContractProof(idx: number) {
+  form.proofs.splice(idx, 1)
+  formRef.value?.validateField('proofs')
 }
 
 async function onContractProofSelected(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('单文件不超过 10MB')
+  const files = Array.from(input.files || [])
+  if (!files.length) return
+  const remain = CONTRACT_PROOF_MAX - form.proofs.length
+  if (remain <= 0) {
+    ElMessage.warning(`最多上传 ${CONTRACT_PROOF_MAX} 张`)
+    input.value = ''
+    return
+  }
+  const picked = files.slice(0, remain)
+  if (files.length > remain) {
+    ElMessage.warning(`最多再上传 ${remain} 张，已自动截取`)
+  }
+  for (const file of picked) {
+    if (file.size > 10 * 1024 * 1024) {
+      ElMessage.warning(`${file.name} 超过 10MB，已跳过`)
+      continue
+    }
+  }
+  const valid = picked.filter((f) => f.size <= 10 * 1024 * 1024)
+  if (!valid.length) {
     input.value = ''
     return
   }
   uploadingProof.value = true
   try {
-    const { data } = await uploadFile(file, 'contract_proof')
-    form.proof_filename = data.filename
-    form.proof_path = data.path
-    formRef.value?.validateField('proof_filename')
+    for (const file of valid) {
+      const { data } = await uploadFile(file, 'contract_proof')
+      form.proofs.push({ filename: data.filename, path: data.path })
+    }
+    formRef.value?.validateField('proofs')
   } finally {
     uploadingProof.value = false
     input.value = ''
@@ -1252,7 +1287,7 @@ async function onContractProofSelected(e: Event) {
 async function onCreate() {
   const ok = await formRef.value?.validate().catch(() => false)
   if (!ok || !form.customer_id) return
-  if (!form.proof_filename || !form.proof_path) {
+  if (!form.proofs.length) {
     ElMessage.warning('请上传合同照片或证明')
     return
   }
@@ -1267,8 +1302,9 @@ async function onCreate() {
       effective_date: form.effective_date || undefined,
       expire_date: form.expire_date || undefined,
       remark: form.remark || undefined,
-      proof_filename: form.proof_filename,
-      proof_path: form.proof_path,
+      proofs: form.proofs.map((p) => ({ filename: p.filename, path: p.path })),
+      proof_filename: form.proofs[0]?.filename,
+      proof_path: form.proofs[0]?.path,
     })
     ElMessage.success('草稿已保存')
     createVisible.value = false
@@ -1704,6 +1740,23 @@ watch(
 .upload-box small {
   color: var(--crm-ink-soft);
   font-size: 12px;
+}
+.proof-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  margin-bottom: 8px;
+}
+.proof-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
 }
 .health-list {
   display: flex;

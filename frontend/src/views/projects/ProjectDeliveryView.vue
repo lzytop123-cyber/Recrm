@@ -244,10 +244,14 @@
               <p class="sub">{{ row.contract_no || '未关联合同' }} · {{ typeLabel(row.project_type) }}</p>
             </div>
             <div class="card-top-tags">
-              <el-tag v-if="deferPending(row)" type="warning" size="small">无到款待审</el-tag>
-              <el-tag v-else-if="deferRejected(row)" type="danger" size="small">无到款驳回</el-tag>
+              <el-tag v-if="deferPending(row)" type="warning" size="small">
+                {{ row.contract_id ? '无到款待审' : '无合同待审' }}
+              </el-tag>
+              <el-tag v-else-if="deferRejected(row)" type="danger" size="small">
+                {{ row.contract_id ? '无到款驳回' : '无合同驳回' }}
+              </el-tag>
               <el-tag v-else-if="deferApproved(row) && !paymentOk(row)" type="warning" size="small">
-                待首付款
+                {{ row.contract_id ? '待首付款' : '无合同已通过' }}
               </el-tag>
               <el-tag :type="handoffReady(row) ? 'success' : 'danger'" size="small">
                 {{ handoffReady(row) ? '可发起' : '条件未满足' }}
@@ -255,22 +259,42 @@
             </div>
           </div>
           <div class="handoff-checks">
-            <span :class="{ failed: !row.contract_active_ok }">
-              {{ row.contract_active_ok ? '✓' : '⚠' }} 合同已签署
-            </span>
-            <span :class="{ failed: !paymentOk(row) && !deferApproved(row) }">
-              {{
-                paymentOk(row)
-                  ? '✓ 已确认到账'
-                  : deferPending(row)
-                    ? '◇ 无到款待审批'
+            <template v-if="!row.contract_id">
+              <span>◇ 无合同立项</span>
+              <span
+                :class="{
+                  failed: !deferApproved(row),
+                }"
+              >
+                {{
+                  deferPending(row)
+                    ? '◇ 无合同待审批'
                     : deferRejected(row)
-                      ? '⚠ 无到款已驳回'
+                      ? '⚠ 无合同已驳回'
                       : deferApproved(row)
-                        ? '◇ 无到款已通过'
-                        : '⚠ 已确认到账'
-              }}
-            </span>
+                        ? '✓ 无合同已通过'
+                        : '⚠ 待提交审批'
+                }}
+              </span>
+            </template>
+            <template v-else>
+              <span :class="{ failed: !row.contract_active_ok }">
+                {{ row.contract_active_ok ? '✓' : '⚠' }} 合同已签署
+              </span>
+              <span :class="{ failed: !paymentOk(row) && !deferApproved(row) }">
+                {{
+                  paymentOk(row)
+                    ? '✓ 已确认到账'
+                    : deferPending(row)
+                      ? '◇ 无到款待审批'
+                      : deferRejected(row)
+                        ? '⚠ 无到款已驳回'
+                        : deferApproved(row)
+                          ? '◇ 无到款已通过'
+                          : '⚠ 已确认到账'
+                }}
+              </span>
+            </template>
           </div>
           <p v-if="row.payment_deferred && row.payment_deferred_reason" class="sub deferred-reason">
             例外原因：{{ row.payment_deferred_reason }}
@@ -1311,7 +1335,7 @@
       destroy-on-close
       class="claim-dialog init-dialog"
     >
-      <p class="dialog-flow-hint">选合同 → 填目标 → 指定部门对接人</p>
+      <p class="dialog-flow-hint">选合同（可选）→ 填目标 → 指定部门对接人</p>
       <el-form
         ref="initFormRef"
         class="init-dialog-form"
@@ -1325,10 +1349,11 @@
             <el-select
               v-model="initForm.contract_id"
               filterable
+              clearable
               remote
               :remote-method="searchContracts"
               :loading="contractLoading"
-              placeholder="选择已签署且尚未立项的合同"
+              placeholder="可选：我负责且尚未立项的已签署合同"
               style="width: 100%"
               @change="onContractPicked"
             >
@@ -1346,38 +1371,57 @@
             </el-select>
           </el-form-item>
           <el-form-item label="立项门槛">
-            <div class="handoff-checks init-gate-checks">
-              <span :class="{ failed: !initGate.contractOk }">
-                {{ initGate.contractOk ? '✓' : '⚠' }} 合同已签署
-              </span>
-              <span :class="{ failed: !initGate.paymentOk && !initForm.payment_deferred }">
-                {{
-                  initGate.paymentOk
-                    ? '✓ 已确认到账'
-                    : initForm.payment_deferred
-                      ? '◇ 无到款例外'
-                      : '⚠ 已确认到账'
-                }}
-              </span>
-            </div>
-            <div class="sub" style="margin-top: 4px">
-              默认须已签署且至少一笔确认到账；先干活后付款可勾选下方例外。
-            </div>
-            <div v-if="initGate.contractOk && !initGate.paymentOk" class="init-defer-box">
-              <el-checkbox v-model="initForm.payment_deferred">
-                无到款立项（先干活后付款，需负责人审批）
-              </el-checkbox>
+            <div v-if="!initForm.contract_id" class="init-no-contract-box">
+              <div class="handoff-checks init-gate-checks">
+                <span>◇ 无合同立项（须负责人审批后才能进计划）</span>
+              </div>
+              <div class="sub" style="margin-top: 4px">
+                不关联合同时将提交审批；通过后方可确认资源并进入计划。
+              </div>
               <el-input
-                v-if="initForm.payment_deferred"
                 v-model="initForm.payment_deferred_reason"
                 type="textarea"
                 :rows="2"
                 maxlength="500"
                 show-word-limit
-                placeholder="必填：说明客户约定或业务原因；提交后进审批中心，通过后才能进计划；结项仍须回款收齐"
+                placeholder="必填：说明无合同立项的业务原因"
                 style="margin-top: 8px"
               />
             </div>
+            <template v-else>
+              <div class="handoff-checks init-gate-checks">
+                <span :class="{ failed: !initGate.contractOk }">
+                  {{ initGate.contractOk ? '✓' : '⚠' }} 合同已签署
+                </span>
+                <span :class="{ failed: !initGate.paymentOk && !initForm.payment_deferred }">
+                  {{
+                    initGate.paymentOk
+                      ? '✓ 已确认到账'
+                      : initForm.payment_deferred
+                        ? '◇ 无到款例外'
+                        : '⚠ 已确认到账'
+                  }}
+                </span>
+              </div>
+              <div class="sub" style="margin-top: 4px">
+                关联合同时默认须已签署且至少一笔确认到账；先干活后付款可勾选下方例外。
+              </div>
+              <div v-if="initGate.contractOk && !initGate.paymentOk" class="init-defer-box">
+                <el-checkbox v-model="initForm.payment_deferred">
+                  无到款立项（先干活后付款，需负责人审批）
+                </el-checkbox>
+                <el-input
+                  v-if="initForm.payment_deferred"
+                  v-model="initForm.payment_deferred_reason"
+                  type="textarea"
+                  :rows="2"
+                  maxlength="500"
+                  show-word-limit
+                  placeholder="必填：说明客户约定或业务原因；提交后进审批中心，通过后才能进计划；结项仍须回款收齐"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
           </el-form-item>
         </section>
         <section class="form-block">
@@ -2619,7 +2663,6 @@ const initForm = reactive({
   resource_roles: [] as RoleAssignRow[],
 })
 const initRules: FormRules = {
-  contract_id: [{ required: true, message: '请选择合同', trigger: 'change' }],
   name: [{ required: true, message: '请填写项目目标', trigger: 'blur' }],
   scope_desc: [{ required: true, message: '请填写交付范围', trigger: 'blur' }],
   manager_id: [{ required: true, message: '请选择负责人', trigger: 'change' }],
@@ -3138,6 +3181,8 @@ function deferRejected(row: Project) {
 }
 
 function handoffReady(row: Project) {
+  // 无合同立项：须审批通过后才能进计划
+  if (!row.contract_id) return deferApproved(row)
   return !!(row.contract_active_ok && (paymentOk(row) || deferApproved(row)))
 }
 
@@ -3439,7 +3484,7 @@ async function searchContracts(q: string) {
   contractLoading.value = true
   try {
     const [{ data }, occupied] = await Promise.all([
-      fetchDirectoryContracts({ keyword: q || undefined, page: 1, page_size: 50 }),
+      fetchDirectoryContracts({ keyword: q || undefined, mine: true, page: 1, page_size: 50 }),
       fetchProjects({ page: 1, page_size: 100 }),
     ])
     const busyContractIds = new Set(
@@ -3466,7 +3511,12 @@ async function searchEmployees(q: string) {
   }
 }
 
-function onContractPicked(id: number) {
+function onContractPicked(id: number | undefined) {
+  if (!id) {
+    initForm.payment_deferred = false
+    initForm.payment_deferred_reason = ''
+    return
+  }
   const c = contractOptions.value.find((x) => x.id === id)
   if (!c) return
   if (!initForm.name) initForm.name = `${c.customer_name || c.title} · 交付项目`
@@ -3583,23 +3633,22 @@ async function openInitiation() {
 async function onCreateProject() {
   const ok = await initFormRef.value?.validate().catch(() => false)
   if (!ok) return
-  if (!initForm.contract_id) {
-    ElMessage.warning('请选择合同')
-    return
-  }
-  if (!initGate.value.contractOk) {
+  const hasContract = !!initForm.contract_id
+  if (hasContract && !initGate.value.contractOk) {
     ElMessage.warning('合同须已签署后才能立项')
     return
   }
-  const useDefer = !initGate.value.paymentOk && initForm.payment_deferred
-  if (!initGate.value.paymentOk && !useDefer) {
+  const useDefer = hasContract
+    ? !initGate.value.paymentOk && initForm.payment_deferred
+    : true
+  if (hasContract && !initGate.value.paymentOk && !useDefer) {
     ElMessage.warning(
       '合同尚无确认到账：请先完成到款认领与财务复核，或勾选「无到款立项」并填写原因',
     )
     return
   }
   if (useDefer && !initForm.payment_deferred_reason.trim()) {
-    ElMessage.warning('无到款立项须填写原因')
+    ElMessage.warning(hasContract ? '无到款立项须填写原因' : '无合同立项须填写原因')
     return
   }
   const roles = initForm.resource_roles
@@ -3628,7 +3677,7 @@ async function onCreateProject() {
   try {
     await createProject({
       name: initForm.name,
-      contract_id: initForm.contract_id,
+      contract_id: initForm.contract_id || undefined,
       project_type: initForm.project_type,
       scope_desc: initForm.scope_desc,
       manager_id: initForm.manager_id,
@@ -3641,7 +3690,9 @@ async function onCreateProject() {
     })
     ElMessage.success(
       useDefer
-        ? '已提交无到款立项，请到审批中心处理；通过后并可确认资源后进入计划'
+        ? hasContract
+          ? '已提交无到款立项，请到审批中心处理；通过后并可确认资源后进入计划'
+          : '已提交无合同立项，请到审批中心处理；通过后并可确认资源后进入计划'
         : '立项申请已提交，请在下方确认部门资源',
     )
     initVisible.value = false
@@ -3668,13 +3719,19 @@ async function goToPlanWorkbench(projectId: number) {
 async function advanceInitiating(row: Project) {
   if (!handoffReady(row)) {
     const missing: string[] = []
-    if (!row.contract_active_ok) missing.push('合同已签署')
-    if (!paymentOk(row)) {
-      if (deferPending(row)) missing.push('无到款立项审批通过（请到审批中心处理）')
-      else if (deferRejected(row)) missing.push('到款认领（无到款立项已被驳回）')
-      else missing.push('已确认到账（或申请无到款立项并获审批）')
+    if (!row.contract_id) {
+      if (deferPending(row)) missing.push('无合同立项审批通过（请到审批中心处理）')
+      else if (deferRejected(row)) missing.push('无合同立项已被驳回，请重新发起或补充说明')
+      else missing.push('无合同立项审批通过')
+    } else {
+      if (!row.contract_active_ok) missing.push('合同已签署')
+      if (!paymentOk(row)) {
+        if (deferPending(row)) missing.push('无到款立项审批通过（请到审批中心处理）')
+        else if (deferRejected(row)) missing.push('到款认领（无到款立项已被驳回）')
+        else missing.push('已确认到账（或申请无到款立项并获审批）')
+      }
     }
-    ElMessage.warning(`缺失：${missing.join('、')}`)
+    ElMessage.warning(`缺失：${missing.join('、') || '立项条件未满足'}`)
     return
   }
   if (row.status === 'initiating') {

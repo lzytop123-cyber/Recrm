@@ -99,6 +99,7 @@ export function fetchDirectoryCustomers(params?: {
 
 export function fetchDirectoryContracts(params?: {
   keyword?: string
+  mine?: boolean
   page?: number
   page_size?: number
 }) {
