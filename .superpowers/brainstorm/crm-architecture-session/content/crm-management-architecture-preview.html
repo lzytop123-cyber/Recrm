@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM+OKR 统一经营管理架构</title>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #f8fafc;
+      --paper-2: #f1f5f9;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --soft: #94a3b8;
+      --accent: #1e40af;
+      --accent-tint: #eff6ff;
+      --link: #3b82f6;
+      --rule: #cbd5e1;
+      --sans: 'Noto Sans SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      --serif: 'Noto Serif SC', 'Songti SC', serif;
+      --mono: 'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      min-height: 100vh;
+      padding: 16px 32px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .frame { width: 100%; max-width: 1600px; }
+    .eyebrow {
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1 {
+      color: var(--ink);
+      font-family: var(--serif);
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      margin-top: 4px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    svg { width: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <main class="frame">
+    <p class="eyebrow">Management Architecture · CRM + OKR</p>
+    <h1>CRM+OKR 统一经营管理架构</h1>
+    <p class="subtitle">以飞书为协同入口，贯通销售、回款与交付，用统一数据支撑目标绩效和经营纠偏。</p>
+
+    <svg viewBox="0 0 1600 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="crm-management-architecture-title crm-management-architecture-desc">
+      <title id="crm-management-architecture-title">CRM+OKR 统一经营管理架构</title>
+      <desc id="crm-management-architecture-desc">管理层架构图，展示飞书协同入口、销售到项目交付的核心经营链路、目标绩效与经营预警，以及统一治理和数据底座。</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#64748b"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#1e40af"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3b82f6"/></marker>
+      </defs>
+
+      <rect width="1600" height="800" fill="#f8fafc"/>
+
+      <!-- Zones: background first -->
+      <rect x="80" y="40" width="1440" height="120" rx="8" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <rect x="104" y="44" width="152" height="16" rx="2" fill="#f8fafc"/>
+      <text x="180" y="56" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.14em">飞书协同层</text>
+
+      <rect x="80" y="192" width="1440" height="200" rx="8" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <rect x="104" y="196" width="152" height="16" rx="2" fill="#f8fafc"/>
+      <text x="180" y="208" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.14em">核心经营层</text>
+
+      <rect x="80" y="424" width="1440" height="144" rx="8" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <rect x="104" y="428" width="152" height="16" rx="2" fill="#f8fafc"/>
+      <text x="180" y="440" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.14em">管理抓手层</text>
+
+      <!-- Connectors before nodes -->
+      <path data-connector="feishu-entry" d="M800 144 V176 Q800 184 792 184 H328 Q320 184 320 192 V256" fill="none" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <rect x="520" y="156" width="80" height="16" rx="2" fill="#f8fafc"/>
+      <text x="560" y="168" fill="#3b82f6" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">统一入口</text>
+
+      <line data-connector="lead-to-contract" x1="480" y1="304" x2="640" y2="304" stroke="#64748b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="520" y="276" width="80" height="16" rx="2" fill="#f8fafc"/>
+      <text x="560" y="288" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">商机转化</text>
+
+      <line data-connector="contract-to-project" x1="960" y1="304" x2="1120" y2="304" stroke="#1e40af" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <rect x="1000" y="276" width="80" height="16" rx="2" fill="#f8fafc"/>
+      <text x="1040" y="288" fill="#1e40af" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">商务交接</text>
+
+      <line data-connector="okr-to-sales" x1="320" y1="472" x2="320" y2="352" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <rect x="224" y="396" width="72" height="16" rx="2" fill="#f8fafc"/>
+      <text x="260" y="408" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">目标评价</text>
+
+      <path data-connector="project-to-dashboard" d="M1200 352 V396 a8,8 0 0,0 0,16 V472" fill="none" stroke="#64748b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="1216" y="372" width="80" height="16" rx="2" fill="#f8fafc"/>
+      <text x="1256" y="384" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">进度风险</text>
+
+      <path data-connector="contract-to-dashboard" d="M880 352 V396 Q880 404 888 404 H1232 Q1240 404 1240 412 V472" fill="none" stroke="#1e40af" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <rect x="1000" y="376" width="96" height="16" rx="2" fill="#f8fafc"/>
+      <text x="1048" y="388" fill="#1e40af" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.06em">回款预警</text>
+
+      <!-- Nodes -->
+      <g data-node="feishu-collaboration">
+        <rect x="520" y="80" width="560" height="64" rx="6" fill="#f8fafc"/>
+        <rect x="520" y="80" width="560" height="64" rx="6" fill="rgba(15,23,42,0.03)" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="536" y="88" width="72" height="16" rx="2" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.8"/>
+        <text x="572" y="100" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">EXTERNAL</text>
+        <text x="800" y="112" fill="#0f172a" font-size="16" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">飞书协同入口</text>
+        <text x="800" y="132" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">工作台 · 通讯录 · 日历 · 消息</text>
+      </g>
+
+      <g data-node="sales-center">
+        <rect x="160" y="256" width="320" height="96" rx="6" fill="#f8fafc"/>
+        <rect x="160" y="256" width="320" height="96" rx="6" fill="#ffffff" stroke="#0f172a" stroke-width="1"/>
+        <rect x="176" y="268" width="48" height="16" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="0.8"/>
+        <text x="200" y="280" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">CRM</text>
+        <text x="320" y="304" fill="#0f172a" font-size="16" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">销售中心</text>
+        <text x="320" y="328" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">线索 · 客户 · 商机</text>
+      </g>
+
+      <g data-node="contract-receivables" data-focal="true">
+        <rect x="640" y="256" width="320" height="96" rx="6" fill="#f8fafc"/>
+        <rect x="640" y="256" width="320" height="96" rx="6" fill="#eff6ff" stroke="#1e40af" stroke-width="1.2"/>
+        <rect x="656" y="268" width="64" height="16" rx="2" fill="#eff6ff" stroke="#1e40af" stroke-width="0.8"/>
+        <text x="688" y="280" fill="#1e40af" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">REVENUE</text>
+        <text x="800" y="304" fill="#1e40af" font-size="16" font-weight="700" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">合同回款</text>
+        <text x="800" y="328" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">合同 · 收款计划 · 财务确认</text>
+      </g>
+
+      <g data-node="project-delivery">
+        <rect x="1120" y="256" width="320" height="96" rx="6" fill="#f8fafc"/>
+        <rect x="1120" y="256" width="320" height="96" rx="6" fill="#ffffff" stroke="#0f172a" stroke-width="1"/>
+        <rect x="1136" y="268" width="64" height="16" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="0.8"/>
+        <text x="1168" y="280" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">DELIVERY</text>
+        <text x="1280" y="304" fill="#0f172a" font-size="16" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">项目交付</text>
+        <text x="1280" y="328" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">立项 · 计划 · 任务 · 验收</text>
+      </g>
+
+      <g data-node="okr-performance">
+        <rect x="160" y="472" width="320" height="64" rx="6" fill="#f8fafc"/>
+        <rect x="160" y="472" width="320" height="64" rx="6" fill="#ffffff" stroke="#0f172a" stroke-width="1"/>
+        <rect x="176" y="480" width="48" height="16" rx="2" fill="#ffffff" stroke="#94a3b8" stroke-width="0.8"/>
+        <text x="200" y="492" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">GOAL</text>
+        <text x="320" y="504" fill="#0f172a" font-size="16" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">OKR · 绩效</text>
+        <text x="320" y="524" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">目标对齐 · 过程评价 · 结果校准</text>
+      </g>
+
+      <g data-node="dashboard-alerts" data-focal="true">
+        <rect x="1120" y="472" width="320" height="64" rx="6" fill="#f8fafc"/>
+        <rect x="1120" y="472" width="320" height="64" rx="6" fill="#eff6ff" stroke="#1e40af" stroke-width="1.2"/>
+        <rect x="1136" y="480" width="56" height="16" rx="2" fill="#eff6ff" stroke="#1e40af" stroke-width="0.8"/>
+        <text x="1164" y="492" fill="#1e40af" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">INSIGHT</text>
+        <text x="1280" y="504" fill="#1e40af" font-size="16" font-weight="700" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">经营看板 · 预警</text>
+        <text x="1280" y="524" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">指标汇总 · 异常识别 · 管理纠偏</text>
+      </g>
+
+      <g data-node="governance-foundation">
+        <rect x="240" y="608" width="1120" height="64" rx="6" fill="#f8fafc"/>
+        <rect x="240" y="608" width="1120" height="64" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1"/>
+        <rect x="256" y="616" width="80" height="16" rx="2" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.8"/>
+        <text x="296" y="628" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">FOUNDATION</text>
+        <text x="800" y="636" fill="#0f172a" font-size="16" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="middle">统一治理与数据底座</text>
+        <text x="800" y="656" fill="#64748b" font-size="12" font-family="'Geist Mono','Noto Sans SC',monospace" text-anchor="middle">组织权限 · 统一数据 · 审计留痕 · 知识库</text>
+      </g>
+
+      <!-- Legend outside the diagram area -->
+      <line x1="80" y1="712" x2="1520" y2="712" stroke="rgba(15,23,42,0.12)" stroke-width="0.8"/>
+      <text x="80" y="744" fill="#64748b" font-size="8" font-family="'Geist Mono',monospace" letter-spacing="0.14em">LEGEND</text>
+      <line x1="176" y1="740" x2="224" y2="740" stroke="#64748b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="240" y="744" fill="#64748b" font-size="12" font-family="'Noto Sans SC',sans-serif">核心经营流</text>
+      <rect x="384" y="728" width="24" height="24" rx="4" fill="#eff6ff" stroke="#1e40af" stroke-width="1"/>
+      <text x="424" y="744" fill="#64748b" font-size="12" font-family="'Noto Sans SC',sans-serif">管理重点</text>
+      <line x1="552" y1="740" x2="600" y2="740" stroke="#3b82f6" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="616" y="744" fill="#64748b" font-size="12" font-family="'Noto Sans SC',sans-serif">飞书协同</text>
+      <rect x="744" y="728" width="24" height="24" rx="4" fill="#f1f5f9" stroke="#64748b" stroke-width="1"/>
+      <text x="784" y="744" fill="#64748b" font-size="12" font-family="'Noto Sans SC',sans-serif">统一底座</text>
+      <text x="1520" y="744" fill="#0f172a" font-size="12" font-weight="600" font-family="'Noto Sans SC',sans-serif" text-anchor="end">一套数据口径 · 一条经营主线 · 两类管理抓手</text>
+    </svg>
+  </main>
+</body>
+</html>

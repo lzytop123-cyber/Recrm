@@ -1,0 +1,72 @@
+<h2>选择 CRM 管理层架构图版式</h2>
+<p class="subtitle">目标：16:9 汇报页，一眼看懂经营闭环、管理抓手与飞书协同。点击选择一个方案。</p>
+
+<div class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:stretch">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#f8fafc;min-height:300px">
+      <div style="font:700 13px 'Noto Serif SC',serif;color:#0f172a;margin-bottom:14px">A · 经营闭环主线</div>
+      <div style="display:flex;flex-direction:column;gap:9px;align-items:center">
+        <div style="width:72%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">线索与客户</div>
+        <div style="color:#64748b">↓</div>
+        <div style="width:72%;padding:9px;border:2px solid #1e40af;border-radius:6px;text-align:center;background:#eff6ff;color:#1e40af;font-weight:700">商机 · 合同 · 回款</div>
+        <div style="color:#64748b">↓</div>
+        <div style="width:72%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">项目 · 交付 · 验收</div>
+        <div style="color:#64748b">↓</div>
+        <div style="width:72%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">复盘 · 续费 · 知识</div>
+      </div>
+      <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;text-align:center">OKR / 绩效与经营看板从侧面驱动主线</div>
+    </div>
+    <div class="card-body">
+      <h3>经营闭环主线</h3>
+      <p>最容易讲故事，突出“从线索到续费”。适合战略汇报，但系统底座与飞书集成表达较弱。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#f8fafc;min-height:300px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font:700 13px 'Noto Serif SC',serif;color:#0f172a">B · 分层经营架构</div>
+        <span style="font-size:10px;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:2px 6px;background:#eff6ff">推荐</span>
+      </div>
+      <div style="display:grid;gap:10px">
+        <div style="padding:9px;border:1px dashed #94a3b8;border-radius:6px;text-align:center;color:#64748b;background:#fff">飞书工作台 · 通讯录 · 日历 · 消息</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
+          <div style="padding:12px 5px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">销售中心</div>
+          <div style="padding:12px 5px;border:2px solid #1e40af;border-radius:6px;text-align:center;background:#eff6ff;color:#1e40af;font-weight:700">合同回款</div>
+          <div style="padding:12px 5px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">项目交付</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+          <div style="padding:10px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff;color:#0f172a">OKR · 绩效</div>
+          <div style="padding:10px;border:2px solid #1e40af;border-radius:6px;text-align:center;background:#eff6ff;color:#1e40af;font-weight:700">经营看板 · 预警</div>
+        </div>
+        <div style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#f1f5f9;color:#64748b">组织权限 · 统一数据 · 审计留痕 · 知识库</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>分层经营架构</h3>
+      <p>同时回答“系统做什么、如何支撑经营、怎样连接飞书”。信息均衡，最适合管理层 PPT。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#f8fafc;min-height:300px">
+      <div style="font:700 13px 'Noto Serif SC',serif;color:#0f172a;margin-bottom:18px">C · 经营驾驶舱中枢</div>
+      <div style="position:relative;height:220px">
+        <div style="position:absolute;left:34%;top:65px;width:32%;height:76px;display:flex;align-items:center;justify-content:center;border:2px solid #1e40af;border-radius:50%;background:#eff6ff;color:#1e40af;font-weight:700;text-align:center">经营驾驶舱<br>指标与预警</div>
+        <div style="position:absolute;left:2%;top:16px;width:27%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff">销售与客户</div>
+        <div style="position:absolute;right:2%;top:16px;width:27%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff">合同与回款</div>
+        <div style="position:absolute;left:2%;bottom:14px;width:27%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff">项目与交付</div>
+        <div style="position:absolute;right:2%;bottom:14px;width:27%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;text-align:center;background:#fff">目标与绩效</div>
+        <div style="position:absolute;left:21%;top:54px;color:#94a3b8">↘</div>
+        <div style="position:absolute;right:21%;top:54px;color:#94a3b8">↙</div>
+        <div style="position:absolute;left:21%;bottom:54px;color:#94a3b8">↗</div>
+        <div style="position:absolute;right:21%;bottom:54px;color:#94a3b8">↖</div>
+      </div>
+      <div style="padding-top:8px;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;text-align:center">飞书与统一数据底座围绕外围支撑</div>
+    </div>
+    <div class="card-body">
+      <h3>驾驶舱中枢</h3>
+      <p>强调管理层以指标和预警统筹全局，视觉冲击强；业务先后关系和闭环过程不如前两种清晰。</p>
+    </div>
+  </div>
+</div>

@@ -68,6 +68,48 @@
       </section>
     </template>
 
+    <!-- 我录入：只看自己提交的线索，不套「我的线索」额度条 -->
+    <template v-else-if="embedded && pool === 'created'">
+      <section class="sales-quota-strip">
+        <button
+          type="button"
+          class="quota-item is-button"
+          :class="{ active: !status }"
+          @click="onCreatedQuickFilter()"
+        >
+          <small>我录入</small>
+          <b>{{ stats?.created ?? total }} 条</b>
+        </button>
+        <button
+          type="button"
+          class="quota-item is-button"
+          :class="{ active: status === 'pending_assign' }"
+          @click="onCreatedQuickFilter('pending_assign')"
+        >
+          <small>待分配</small>
+          <b>{{ stats?.created_pending_assign ?? 0 }} 条</b>
+        </button>
+        <button
+          type="button"
+          class="quota-item is-button"
+          :class="{ active: status === 'owned' }"
+          @click="onCreatedQuickFilter('owned')"
+        >
+          <small>已分配 / 跟进中</small>
+          <b>{{ (stats?.created_assigned ?? 0) + (stats?.created_following ?? 0) }} 条</b>
+        </button>
+        <button
+          type="button"
+          class="quota-item is-button"
+          :class="{ active: status === 'converted' }"
+          @click="onCreatedQuickFilter('converted')"
+        >
+          <small>已转化</small>
+          <b>{{ stats?.created_converted ?? 0 }} 条</b>
+        </button>
+      </section>
+    </template>
+
     <template v-else>
       <div class="crm-stats" :style="{ '--crm-stats-cols': String(statCards.length) }">
         <button
@@ -104,7 +146,10 @@
     </template>
 
     <section class="crm-panel" :class="{ 'allocation-panel': embedded && pool === 'public', 'crm-fit-panel': embedded }">
-      <div class="toolbar" :class="{ 'allocation-toolbar': embedded && pool === 'public' }">
+      <div
+        class="toolbar"
+        :class="{ 'allocation-toolbar': embedded && (pool === 'public' || pool === 'created' || pool === 'mine') }"
+      >
         <div class="filters">
           <el-radio-group v-if="!embedded" v-model="pool" @change="onPoolChange">
             <el-radio-button v-if="canManagePool" value="public">线索总览</el-radio-button>
@@ -250,6 +295,16 @@
           label="负责人"
           width="100"
         />
+        <el-table-column
+          v-if="embedded && pool === 'created'"
+          prop="owner_name"
+          label="当前负责人"
+          width="120"
+        >
+          <template #default="{ row }">
+            {{ isUnassigned(row) ? '尚未分配' : row.owner_name || '—' }}
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status)" size="small">
@@ -1042,6 +1097,12 @@ function rowClassName({ row }: { row: Lead }) {
 
 function onPoolChange() {
   status.value = undefined
+  page.value = 1
+  reload()
+}
+
+function onCreatedQuickFilter(next?: string) {
+  status.value = next
   page.value = 1
   reload()
 }

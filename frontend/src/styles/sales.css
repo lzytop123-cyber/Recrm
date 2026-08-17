@@ -110,11 +110,31 @@
   margin-bottom: 4px;
 }
 
-.sales-quota-strip .quota-item b {
-  font-size: 18px;
-  color: #0f172a;
-  font-family: var(--crm-font-data);
-  font-weight: 700;
+.sales-quota-strip .quota-item.is-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.sales-quota-strip .quota-item.is-button:hover {
+  background: #f8fafc;
+}
+
+.sales-quota-strip .quota-item.is-button.active {
+  background: #eff6ff;
+}
+
+.sales-quota-strip .quota-item.is-button.active small {
+  color: #1e40af;
+}
+
+.sales-quota-strip .quota-item.is-button.active b {
+  color: #1e40af;
 }
 
 .entity {
