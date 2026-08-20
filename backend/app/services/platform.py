@@ -149,6 +149,7 @@ def update_config(db: Session, user: User, key: str, payload: SystemConfigUpdate
 
 def list_dictionaries(db: Session) -> list[SystemDictionary]:
     ensure_business_type_dictionary(db)
+    ensure_lead_source_dictionary(db)
     return db.query(SystemDictionary).order_by(SystemDictionary.code.asc()).all()
 
 
@@ -166,6 +167,8 @@ def create_dictionary(db: Session, payload: SystemDictionaryCreate) -> SystemDic
 def get_dictionary(db: Session, code: str) -> SystemDictionary:
     if code == BUSINESS_TYPE_DICT_CODE:
         return ensure_business_type_dictionary(db)
+    if code == LEAD_SOURCE_DICT_CODE:
+        return ensure_lead_source_dictionary(db)
     row = db.query(SystemDictionary).filter(SystemDictionary.code == code).first()
     if not row:
         raise HTTPException(status_code=404, detail="字典不存在")
@@ -190,6 +193,14 @@ def update_dictionary(
                 raise HTTPException(status_code=400, detail="字典项格式无效")
             row.items_json = json.dumps(
                 _normalize_business_type_items(raw_items),
+                ensure_ascii=False,
+            )
+        elif code == LEAD_SOURCE_DICT_CODE:
+            raw_items = json.loads(data["items_json"] or "[]")
+            if not isinstance(raw_items, list):
+                raise HTTPException(status_code=400, detail="字典项格式无效")
+            row.items_json = json.dumps(
+                _normalize_lead_source_items(raw_items),
                 ensure_ascii=False,
             )
         else:
@@ -326,6 +337,90 @@ def assert_business_type(db: Session, value: str, *, enabled_only: bool = True) 
             raise HTTPException(status_code=400, detail="该业务类型已停用")
         raise HTTPException(status_code=400, detail="无效的业务类型")
     return code
+
+
+# ---- lead source dictionary ----
+
+LEAD_SOURCE_DICT_CODE = "lead_source"
+
+DEFAULT_LEAD_SOURCE_ITEMS: list[dict] = [
+    {"value": "manual", "label": "手动录入", "enabled": True, "sort": 10},
+    {"value": "import", "label": "批量导入", "enabled": True, "sort": 20},
+    {"value": "external", "label": "外部筛选", "enabled": True, "sort": 30},
+    {"value": "website", "label": "官网", "enabled": True, "sort": 40},
+    {"value": "ad", "label": "广告投放", "enabled": True, "sort": 50},
+    {"value": "event", "label": "展会/活动", "enabled": True, "sort": 60},
+    {"value": "referral", "label": "转介绍", "enabled": True, "sort": 70},
+    {"value": "im", "label": "飞书/企微", "enabled": True, "sort": 80},
+    {"value": "other", "label": "其他", "enabled": True, "sort": 90},
+]
+
+
+def _normalize_lead_source_items(raw: list) -> list[dict]:
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail=f"第 {idx + 1} 项格式无效")
+        value = str(item.get("value") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not value or not label:
+            raise HTTPException(status_code=400, detail=f"第 {idx + 1} 项编码和名称必填")
+        if not _VALUE_RE.match(value):
+            raise HTTPException(
+                status_code=400,
+                detail=f"编码「{value}」仅支持小写字母开头，字母/数字/下划线，最长 30",
+            )
+        if value in seen:
+            raise HTTPException(status_code=400, detail=f"编码重复：{value}")
+        seen.add(value)
+        enabled = bool(item.get("enabled", True))
+        try:
+            sort = int(item.get("sort", (idx + 1) * 10))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"编码「{value}」排序值无效") from exc
+        cleaned.append(
+            {"value": value, "label": label[:80], "enabled": enabled, "sort": sort}
+        )
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="至少保留一个录入来源")
+    if not any(x["enabled"] for x in cleaned):
+        raise HTTPException(status_code=400, detail="至少启用一个录入来源")
+    cleaned.sort(key=lambda x: (x["sort"], x["value"]))
+    return cleaned
+
+
+def ensure_lead_source_dictionary(db: Session) -> SystemDictionary:
+    row = (
+        db.query(SystemDictionary)
+        .filter(SystemDictionary.code == LEAD_SOURCE_DICT_CODE)
+        .first()
+    )
+    if row:
+        return row
+    row = SystemDictionary(
+        code=LEAD_SOURCE_DICT_CODE,
+        name="线索来源",
+        items_json=json.dumps(DEFAULT_LEAD_SOURCE_ITEMS, ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_lead_source_items(db: Session, *, enabled_only: bool = False) -> list[dict]:
+    row = ensure_lead_source_dictionary(db)
+    items = parse_dictionary_items(row.items_json)
+    if not items:
+        items = list(DEFAULT_LEAD_SOURCE_ITEMS)
+    if enabled_only:
+        items = [x for x in items if x.get("enabled", True)]
+    return items
+
+
+def lead_source_label_map(db: Session) -> dict[str, str]:
+    return {x["value"]: x["label"] for x in list_lead_source_items(db, enabled_only=False)}
 
 
 # ---- delegations ----

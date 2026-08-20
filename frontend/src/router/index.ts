@@ -205,6 +205,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/system/SystemView.vue'),
         meta: { title: '系统管理', permission: 'system:view' },
       },
+      {
+        path: 'system/dictionaries',
+        name: 'SystemDictionaries',
+        component: () => import('@/views/system/DictionaryView.vue'),
+        meta: { title: '字典管理', permission: 'system:view' },
+      },
     ],
   },
 ]

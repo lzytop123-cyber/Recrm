@@ -221,6 +221,7 @@ const activeMenu = computed(() => {
     '/tickets',
     '/schedules',
     '/org',
+    '/system/dictionaries',
     '/system',
     '/approvals',
     '/todos',
@@ -258,6 +259,7 @@ const hideChromeTitle = computed(() => {
     '/schedules',
     '/org',
     '/system',
+    '/system/dictionaries',
   ])
   return headed.has(path) || path.startsWith('/sales/')
 })

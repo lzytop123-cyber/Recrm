@@ -282,6 +282,7 @@ class LeadImportRowIn(BaseModel):
     business_type: str = Field(default="ai_product")
     need_desc: Optional[str] = None
     remark: Optional[str] = None
+    source: Optional[str] = Field(None, description="录入来源编码，留空则按批量导入处理")
     force: bool = Field(False, description="硬重复时是否强制录入")
 
 

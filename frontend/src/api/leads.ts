@@ -118,6 +118,7 @@ export const LEAD_STATUS_LABEL: Record<string, string> = {
 
 export const LEAD_SOURCE_OPTIONS = [
   { value: 'manual', label: '手动录入' },
+  { value: 'import', label: '批量导入' },
   { value: 'external', label: '外部筛选' },
   { value: 'website', label: '官网' },
   { value: 'ad', label: '广告投放' },
@@ -314,6 +315,7 @@ export function confirmLeadImport(data: {
     business_type: string
     need_desc?: string | null
     remark?: string | null
+    source?: string | null
     force?: boolean
   }>
   self_follow?: boolean | null

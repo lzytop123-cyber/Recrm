@@ -31,6 +31,7 @@ MENU_CATALOG: List[dict] = [
     {"path": "/assets", "title": "固定资产", "icon": "Box", "permission": "asset:view"},
     {"path": "/org", "title": "员工管理", "icon": "OfficeBuilding", "permission": "org:view"},
     {"path": "/system", "title": "系统管理", "icon": "Setting", "permission": "system:view"},
+    {"path": "/system/dictionaries", "title": "字典管理", "icon": "Collection", "permission": "system:view"},
 ]
 
 # 第二期再开放：菜单隐藏，路由/API 仍保留便于以后打开

@@ -267,6 +267,9 @@
         <el-table-column v-if="embedded" label="需求方向" width="120">
           <template #default="{ row }">{{ businessTypeLabel(row.business_type) }}</template>
         </el-table-column>
+        <el-table-column v-if="embedded" label="录入来源" width="120">
+          <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+        </el-table-column>
         <el-table-column v-if="embedded && pool === 'mine'" prop="region" label="地区" width="100">
           <template #default="{ row }">{{ row.region || '待补充' }}</template>
         </el-table-column>
@@ -411,6 +414,16 @@
               <el-select v-model="form.business_type" style="width: 100%">
                 <el-option
                   v-for="opt in businessTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="录入来源" prop="source">
+              <el-select v-model="form.source" style="width: 100%">
+                <el-option
+                  v-for="opt in leadSourceOptions"
                   :key="opt.value"
                   :label="opt.label"
                   :value="opt.value"
@@ -570,6 +583,10 @@
               <div class="detail-cell">
                 <small>需求方向</small>
                 <b>{{ businessTypeLabel(drawerLead.business_type) }}</b>
+              </div>
+              <div class="detail-cell">
+                <small>录入来源</small>
+                <b>{{ sourceLabel(drawerLead.source) }}{{ drawerLead.source_detail ? ` · ${drawerLead.source_detail}` : '' }}</b>
               </div>
               <div class="detail-cell">
                 <small>客户地区</small>
@@ -820,10 +837,8 @@ import { fetchDirectoryPeople, type DirectoryPerson } from '@/api/directory'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 import type { SalesJourney } from '@/api/salesJourney'
-import { useBusinessTypes } from '@/api/dictionaries'
 import {
   LEAD_RETURN_REASON_OPTIONS,
-  LEAD_SOURCE_OPTIONS,
   LEAD_STATUS_LABEL,
   batchAssignLeads,
   checkLeadDuplicates,
@@ -841,6 +856,7 @@ import {
   type LeadQuota,
   type LeadStats,
 } from '@/api/leads'
+import { useBusinessTypes, useLeadSources } from '@/api/dictionaries'
 
 const props = withDefaults(
   defineProps<{
@@ -865,6 +881,7 @@ const canSelfFollowOnCreate = computed(() =>
 )
 
 const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
+const { leadSourceOptions, leadSourceLabel } = useLeadSources()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -931,6 +948,7 @@ const rules: FormRules = {
   company_name: [{ required: true, message: '请填写客户主体', trigger: 'blur' }],
   phone: [{ required: true, message: '请填写联系电话', trigger: 'blur' }],
   business_type: [{ required: true, message: '请选择需求方向', trigger: 'change' }],
+  source: [{ required: true, message: '请选择录入来源', trigger: 'change' }],
 }
 
 const dupChecking = ref(false)
@@ -1035,8 +1053,7 @@ watch(batchOwnerIds, (ids) => {
 })
 
 function sourceLabel(code?: string | null) {
-  if (!code) return '员工录入'
-  return LEAD_SOURCE_OPTIONS.find((x) => x.value === code)?.label || code
+  return leadSourceLabel(code)
 }
 function statusTag(s: string) {
   const map: Record<string, string> = {

@@ -46,7 +46,7 @@
           <el-descriptions-item label="电话">{{ lead.phone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="邮箱">{{ lead.email || '-' }}</el-descriptions-item>
           <el-descriptions-item label="地区">{{ lead.region || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="来源">{{ sourceLabel(lead.source) }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ sourceLabel(lead.source) }}{{ lead.source_detail ? ` · ${lead.source_detail}` : '' }}</el-descriptions-item>
           <el-descriptions-item label="跟进人">{{ lead.owner_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="录入人">{{ lead.creator_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保护截止">{{ formatTime(lead.protect_until) }}</el-descriptions-item>
@@ -262,7 +262,6 @@ import { fetchDirectoryPeople, type DirectoryPerson } from '@/api/directory'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import {
   LEAD_RETURN_REASON_OPTIONS,
-  LEAD_SOURCE_OPTIONS,
   LEAD_STATUS_LABEL,
   assignLead,
   convertLead,
@@ -275,12 +274,13 @@ import {
   type LeadDetail,
   type LeadQuota,
 } from '@/api/leads'
-import { useBusinessTypes } from '@/api/dictionaries'
+import { useBusinessTypes, useLeadSources } from '@/api/dictionaries'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const { businessTypeOptions } = useBusinessTypes()
+const { leadSourceLabel } = useLeadSources()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -339,7 +339,7 @@ const canAssign = computed(() => {
 })
 
 function sourceLabel(code: string) {
-  return LEAD_SOURCE_OPTIONS.find((x) => x.value === code)?.label || code
+  return leadSourceLabel(code)
 }
 function statusTag(s: string) {
   const map: Record<string, string> = {

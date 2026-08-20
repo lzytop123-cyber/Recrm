@@ -39,6 +39,9 @@
           <el-table-column label="需求方向" width="130">
             <template #default="{ row }">{{ businessTypeLabel(row.business_type) }}</template>
           </el-table-column>
+          <el-table-column label="录入来源" width="120">
+            <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <el-tag :type="statusTag(row.status)" size="small">
@@ -105,6 +108,16 @@
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="录入来源" prop="source">
+              <el-select v-model="form.source" style="width: 100%">
+                <el-option
+                  v-for="opt in leadSourceOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="录入人">
               <el-input :model-value="recorderName" disabled />
             </el-form-item>
@@ -163,11 +176,12 @@ import {
   fetchLeads,
   type Lead,
 } from '@/api/leads'
-import { useBusinessTypes } from '@/api/dictionaries'
+import { useBusinessTypes, useLeadSources } from '@/api/dictionaries'
 import { useUserStore } from '@/stores/user'
 import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
 const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
+const { leadSourceOptions, leadSourceLabel } = useLeadSources()
 const userStore = useUserStore()
 const router = useRouter()
 /** 与后端 can_self_follow_on_create 一致：销售录入自跟进，其他岗进待分配池 */
@@ -199,6 +213,7 @@ const rules: FormRules = {
   company_name: [{ required: true, message: '请填写客户主体', trigger: 'blur' }],
   phone: [{ required: true, message: '请填写联系电话', trigger: 'blur' }],
   business_type: [{ required: true, message: '请选择需求方向', trigger: 'change' }],
+  source: [{ required: true, message: '请选择录入来源', trigger: 'change' }],
 }
 
 const dupChecking = ref(false)
@@ -260,6 +275,10 @@ const dupDesc = computed(() => {
 
 function isUnassigned(row: Lead) {
   return row.status === 'pending_assign' || row.status === 'returned'
+}
+
+function sourceLabel(code?: string | null) {
+  return leadSourceLabel(code)
 }
 
 function statusTag(s: string) {

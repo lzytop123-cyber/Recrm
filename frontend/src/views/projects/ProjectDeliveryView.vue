@@ -1385,7 +1385,7 @@
                 maxlength="500"
                 show-word-limit
                 placeholder="必填：说明无合同立项的业务原因"
-                style="margin-top: 8px"
+                style="margin-top: 8px; width: 100%"
               />
             </div>
             <template v-else>
@@ -1418,7 +1418,7 @@
                   maxlength="500"
                   show-word-limit
                   placeholder="必填：说明客户约定或业务原因；提交后进审批中心，通过后才能进计划；结项仍须回款收齐"
-                  style="margin-top: 8px"
+                  style="margin-top: 8px; width: 100%"
                 />
               </div>
             </template>
@@ -5108,6 +5108,11 @@ async function applyRouteTabAndLoad() {
 }
 .init-dialog-form :deep(.form-block h3) {
   margin-bottom: 8px;
+}
+.init-no-contract-box,
+.init-defer-box {
+  width: 100%;
+  min-width: 0;
 }
 .init-defer-box {
   margin-top: 10px;

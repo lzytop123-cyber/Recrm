@@ -254,10 +254,13 @@ def list_dictionary_items(
 ) -> list[DictionaryItemOut]:
     """业务下拉框用：任意登录用户可读，不要求 system:view。"""
     _ = current_user
-    if code != platform_service.BUSINESS_TYPE_DICT_CODE:
+    if code == platform_service.BUSINESS_TYPE_DICT_CODE:
+        items = platform_service.list_business_type_items(db, enabled_only=enabled_only)
+    elif code == platform_service.LEAD_SOURCE_DICT_CODE:
+        items = platform_service.list_lead_source_items(db, enabled_only=enabled_only)
+    else:
         # 预留：其它字典暂仍走管理权限
         raise HTTPException(status_code=404, detail="字典不存在")
-    items = platform_service.list_business_type_items(db, enabled_only=enabled_only)
     return [
         DictionaryItemOut(
             value=x["value"],

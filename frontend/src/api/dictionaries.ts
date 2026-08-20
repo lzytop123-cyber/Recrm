@@ -21,6 +21,7 @@ export interface SystemDictionary {
 }
 
 export const BUSINESS_TYPE_DICT_CODE = 'business_type'
+export const LEAD_SOURCE_DICT_CODE = 'lead_source'
 
 /** 离线/接口失败时的兜底选项 */
 export const DEFAULT_BUSINESS_TYPE_OPTIONS: DictionaryItem[] = [
@@ -30,8 +31,22 @@ export const DEFAULT_BUSINESS_TYPE_OPTIONS: DictionaryItem[] = [
   { value: 'other', label: '其他', enabled: true, sort: 90 },
 ]
 
+export const DEFAULT_LEAD_SOURCE_OPTIONS: DictionaryItem[] = [
+  { value: 'manual', label: '手动录入', enabled: true, sort: 10 },
+  { value: 'import', label: '批量导入', enabled: true, sort: 20 },
+  { value: 'external', label: '外部筛选', enabled: true, sort: 30 },
+  { value: 'website', label: '官网', enabled: true, sort: 40 },
+  { value: 'ad', label: '广告投放', enabled: true, sort: 50 },
+  { value: 'event', label: '展会/活动', enabled: true, sort: 60 },
+  { value: 'referral', label: '转介绍', enabled: true, sort: 70 },
+  { value: 'im', label: '飞书/企微', enabled: true, sort: 80 },
+  { value: 'other', label: '其他', enabled: true, sort: 90 },
+]
+
 let cachedAll: DictionaryItem[] | null = null
 let inflight: Promise<DictionaryItem[]> | null = null
+let cachedLeadSources: DictionaryItem[] | null = null
+let leadSourceInflight: Promise<DictionaryItem[]> | null = null
 
 export function fetchDictionaries() {
   return request.get<SystemDictionary[]>('/system/dictionaries')
@@ -87,6 +102,39 @@ export function businessTypeLabel(code?: string | null): string {
   return list.find((x) => x.value === code)?.label || code
 }
 
+export async function loadLeadSourceOptions(force = false): Promise<DictionaryItem[]> {
+  if (!force && cachedLeadSources) return cachedLeadSources
+  if (!force && leadSourceInflight) return leadSourceInflight
+  leadSourceInflight = (async () => {
+    try {
+      const { data } = await fetchDictionaryItems(LEAD_SOURCE_DICT_CODE, false)
+      cachedLeadSources = Array.isArray(data) && data.length ? data : [...DEFAULT_LEAD_SOURCE_OPTIONS]
+    } catch {
+      cachedLeadSources = [...DEFAULT_LEAD_SOURCE_OPTIONS]
+    } finally {
+      leadSourceInflight = null
+    }
+    return cachedLeadSources || [...DEFAULT_LEAD_SOURCE_OPTIONS]
+  })()
+  return leadSourceInflight
+}
+
+export function invalidateLeadSourceCache() {
+  cachedLeadSources = null
+  leadSourceInflight = null
+}
+
+export function enabledLeadSourceOptions(all?: DictionaryItem[] | null): DictionaryItem[] {
+  const list = all ?? cachedLeadSources ?? DEFAULT_LEAD_SOURCE_OPTIONS
+  return list.filter((x) => x.enabled !== false)
+}
+
+export function leadSourceLabel(code?: string | null): string {
+  if (!code) return '手动录入'
+  const list = cachedLeadSources ?? DEFAULT_LEAD_SOURCE_OPTIONS
+  return list.find((x) => x.value === code)?.label || code
+}
+
 /**
  * 页面内业务类型下拉：自动加载字典，失败回落默认值。
  */
@@ -116,5 +164,37 @@ export function useBusinessTypes() {
     businessTypeLoading: loading,
     refreshBusinessTypes: refresh,
     businessTypeLabel,
+  }
+}
+
+/**
+ * 页面内线索来源下拉：自动加载字典，失败回落默认值。
+ */
+export function useLeadSources() {
+  const options: Ref<DictionaryItem[]> = ref(enabledLeadSourceOptions())
+  const allOptions: Ref<DictionaryItem[]> = ref([...(cachedLeadSources ?? DEFAULT_LEAD_SOURCE_OPTIONS)])
+  const loading = ref(false)
+
+  async function refresh(force = false) {
+    loading.value = true
+    try {
+      const all = await loadLeadSourceOptions(force)
+      allOptions.value = all
+      options.value = enabledLeadSourceOptions(all)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  onMounted(() => {
+    void refresh()
+  })
+
+  return {
+    leadSourceOptions: options,
+    leadSourceAllOptions: allOptions,
+    leadSourceLoading: loading,
+    refreshLeadSources: refresh,
+    leadSourceLabel,
   }
 }

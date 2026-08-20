@@ -35,6 +35,7 @@ from app.models.lead import (
     LeadLog,
 )
 from app.models.user import User
+from app.services import platform as platform_service
 from app.schemas.lead import (
     LeadAssignRequest,
     LeadConvertRequest,
@@ -304,7 +305,12 @@ def create_lead(db: Session, user: User, payload: LeadCreate, *, force: bool = F
 
     db.add(lead)
     db.flush()
-    detail = f"录入线索 {lead.name}"
+    source_label = platform_service.lead_source_label_map(db).get(
+        lead.source, lead.source or "手动录入"
+    )
+    detail = f"录入线索 {lead.name}；录入来源={source_label}"
+    if lead.source_detail:
+        detail += f"（{lead.source_detail}）"
     if want_self:
         detail += "；销售自跟进，已进入我的线索"
     else:
@@ -1408,7 +1414,7 @@ def confirm_lead_import(
                 business_type=bt_code,
                 need_desc=row.need_desc,
                 remark=row.remark,
-                source="batch_import",
+                source=row.source or "import",
                 source_detail=f"批量导入第{row.row_no}行",
                 self_follow=payload.self_follow,
             )

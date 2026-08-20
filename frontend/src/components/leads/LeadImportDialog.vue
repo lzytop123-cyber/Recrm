@@ -11,6 +11,7 @@ import {
   type LeadImportPreview,
   type LeadImportPreviewRow,
 } from '@/api/leads'
+import { useLeadSources } from '@/api/dictionaries'
 
 const props = defineProps<{
   selfFollow?: boolean | null
@@ -22,11 +23,14 @@ const emit = defineEmits<{
 
 const visible = defineModel<boolean>('visible', { default: false })
 
+const { leadSourceOptions } = useLeadSources()
+
 const uploading = ref(false)
 const confirming = ref(false)
 const preview = ref<LeadImportPreview | null>(null)
 const selected = ref<Set<number>>(new Set())
 const forceHard = ref<Record<number, boolean>>({})
+const rowSource = ref<Record<number, string>>({})
 const fileInputKey = ref(0)
 
 const selectedCount = computed(() => selected.value.size)
@@ -75,6 +79,7 @@ function resetPreview() {
   preview.value = null
   selected.value = new Set()
   forceHard.value = {}
+  rowSource.value = {}
   fileInputKey.value += 1
 }
 
@@ -89,6 +94,9 @@ async function onFileChange(uploadFile: UploadFile) {
       data.rows.filter((r) => r.status === 'ok' || r.status === 'soft').map((r) => r.row_no),
     )
     forceHard.value = {}
+    rowSource.value = Object.fromEntries(
+      data.rows.map((r) => [r.row_no, 'import']),
+    )
     ElMessage.success(`已解析 ${data.total} 行`)
   } catch {
     preview.value = null
@@ -133,6 +141,7 @@ async function onConfirm() {
         business_type: r.business_type,
         need_desc: r.need_desc,
         remark: r.remark,
+        source: rowSource.value[r.row_no] || 'import',
         force: !!forceHard.value[r.row_no],
       })),
     })
@@ -211,6 +220,23 @@ function onClosed() {
       <el-table-column prop="phone" label="电话" width="120" />
       <el-table-column prop="name" label="联系人" width="90" show-overflow-tooltip />
       <el-table-column prop="business_type_label" label="需求方向" width="110" show-overflow-tooltip />
+      <el-table-column label="录入来源" width="140">
+        <template #default="{ row }">
+          <el-select
+            v-model="rowSource[row.row_no]"
+            size="small"
+            style="width: 100%"
+            :disabled="row.status === 'error'"
+          >
+            <el-option
+              v-for="opt in leadSourceOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>

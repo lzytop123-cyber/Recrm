@@ -128,77 +128,6 @@
             </div>
           </div>
         </el-tab-pane>
-
-        <el-tab-pane label="业务类型" name="businessTypes">
-          <div class="tab-pane-body">
-            <div class="toolbar">
-              <span class="hint">
-                项目类型 / 合同类型 / 线索需求方向共用此字典。编码 other 请保留。
-              </span>
-              <div v-if="canManageSystem" class="filters">
-                <el-button @click="addBusinessTypeRow">新增类型</el-button>
-                <el-button type="primary" :loading="dictSaving" @click="saveBusinessTypes">
-                  保存
-                </el-button>
-              </div>
-            </div>
-            <div class="crm-table-wrap">
-              <el-table :data="businessTypeRows" v-loading="dictLoading" stripe height="100%">
-                <el-table-column label="编码" width="160">
-                  <template #default="{ row }">
-                    <el-input
-                      v-model="row.value"
-                      :disabled="row._locked || !canManageSystem"
-                      placeholder="如 ai_product"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column label="名称" min-width="160">
-                  <template #default="{ row }">
-                    <el-input
-                      v-model="row.label"
-                      :disabled="!canManageSystem"
-                      placeholder="显示名称"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column label="排序" width="110">
-                  <template #default="{ row }">
-                    <el-input-number
-                      v-model="row.sort"
-                      :min="0"
-                      :max="9999"
-                      :disabled="!canManageSystem"
-                      controls-position="right"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column label="启用" width="90" align="center">
-                  <template #default="{ row }">
-                    <el-switch
-                      v-model="row.enabled"
-                      :disabled="row.value === 'other' || !canManageSystem"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="90" fixed="right">
-                  <template #default="{ row, $index }">
-                    <el-button
-                      v-if="canManageSystem"
-                      link
-                      type="danger"
-                      :disabled="row.value === 'other'"
-                      @click="removeBusinessTypeRow($index)"
-                    >
-                      删除
-                    </el-button>
-                    <span v-else class="hint">—</span>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </div>
-        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -318,17 +247,7 @@ import {
   type SystemRole,
   type SystemStats,
 } from '@/api/system'
-import {
-  BUSINESS_TYPE_DICT_CODE,
-  DEFAULT_BUSINESS_TYPE_OPTIONS,
-  fetchDictionary,
-  invalidateBusinessTypeCache,
-  updateDictionary,
-  type DictionaryItem,
-} from '@/api/dictionaries'
 import { useUserStore } from '@/stores/user'
-
-type BusinessTypeRow = DictionaryItem & { _locked?: boolean }
 
 const userStore = useUserStore()
 const canManageSystem = computed(
@@ -349,11 +268,6 @@ const auditModule = ref('')
 const auditPage = ref(1)
 const auditPageSize = ref(20)
 const auditTotal = ref(0)
-
-const dictLoading = ref(false)
-const dictSaving = ref(false)
-const businessTypeRows = ref<BusinessTypeRow[]>([])
-const businessTypeDictName = ref('业务类型')
 
 const roleVisible = ref(false)
 const roleCodeManual = ref(false)
@@ -503,87 +417,6 @@ function reloadAudits() {
   loadAudits()
 }
 
-async function loadBusinessTypes() {
-  dictLoading.value = true
-  try {
-    const { data } = await fetchDictionary(BUSINESS_TYPE_DICT_CODE)
-    businessTypeDictName.value = data.name || '业务类型'
-    const items =
-      data.items?.length
-        ? data.items
-        : DEFAULT_BUSINESS_TYPE_OPTIONS
-    businessTypeRows.value = items.map((x) => ({
-      value: x.value,
-      label: x.label,
-      enabled: x.enabled !== false,
-      sort: x.sort ?? 100,
-      _locked: true,
-    }))
-  } catch {
-    businessTypeRows.value = DEFAULT_BUSINESS_TYPE_OPTIONS.map((x) => ({
-      ...x,
-      enabled: true,
-      _locked: true,
-    }))
-  } finally {
-    dictLoading.value = false
-  }
-}
-
-function addBusinessTypeRow() {
-  businessTypeRows.value.push({
-    value: '',
-    label: '',
-    enabled: true,
-    sort: (businessTypeRows.value.length + 1) * 10,
-    _locked: false,
-  })
-}
-
-function removeBusinessTypeRow(index: number) {
-  const row = businessTypeRows.value[index]
-  if (row?.value === 'other') {
-    ElMessage.warning('「其他」类型不可删除')
-    return
-  }
-  businessTypeRows.value.splice(index, 1)
-}
-
-async function saveBusinessTypes() {
-  const rows = businessTypeRows.value
-  if (!rows.length) {
-    ElMessage.warning('至少保留一个业务类型')
-    return
-  }
-  for (const row of rows) {
-    if (!row.value.trim() || !row.label.trim()) {
-      ElMessage.warning('请完整填写编码和名称')
-      return
-    }
-  }
-  dictSaving.value = true
-  try {
-    await updateDictionary(BUSINESS_TYPE_DICT_CODE, {
-      name: businessTypeDictName.value,
-      items_json: JSON.stringify(
-        rows.map((r) => ({
-          value: r.value.trim(),
-          label: r.label.trim(),
-          enabled: r.enabled !== false,
-          sort: Number(r.sort) || 0,
-        })),
-      ),
-    })
-    invalidateBusinessTypeCache()
-    ElMessage.success('业务类型已保存')
-    await loadBusinessTypes()
-  } catch {
-    /* interceptor */
-  } finally {
-    dictSaving.value = false
-  }
-}
-
 function openRoleCreate() {
   roleForm.id = 0
   roleForm.name = ''
@@ -660,7 +493,6 @@ async function onDeleteRole(row: SystemRole) {
 
 watch(tab, (v) => {
   if (v === 'audits' && !audits.value.length) loadAudits()
-  if (v === 'businessTypes' && !businessTypeRows.value.length) loadBusinessTypes()
 })
 
 onMounted(async () => {
