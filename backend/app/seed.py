@@ -4,10 +4,13 @@
   python -m app.seed
 默认管理员：admin / admin123
 """
+import json
+
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.database import SessionLocal, engine
+from app.models.approval_rule import RULE_STATUS_PUBLISHED, ApprovalRule
 from app.models import (  # noqa: F401 — 确保 metadata 注册
     AuditLog,
     Contract,
@@ -36,6 +39,8 @@ from app.models import (  # noqa: F401 — 确保 metadata 注册
     Refund,
 )
 from app.database import Base
+
+from app.seed_roles_v2 import bind_demo_approval_roles, migrate_user_roles_to_v2, seed_roles_v2
 
 # 预置权限：(name, code, module, description)
 # name/description 用于系统管理「权限目录」；入口 ≠ 业务下拉（下拉走 /directory）
@@ -81,104 +86,317 @@ PERMISSIONS = [
     ("系统管理（维护）", "system:manage", "system", "改角色权限、账号启停、配置与字典"),
 ]
 
-# 预置角色：(name, code, data_scope, permission_codes)
-# data_scope: company / department / personal
-ROLES = [
-    ("系统管理员", "admin", "company", ["*"]),  # * 表示全部，种子时绑定全部权限
-    ("董事会", "board", "company", [
-        "dashboard:view", "approval:center",
-        "lead:view", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:complete", "payment:view",
-        "project:view", "project:accept_approve", "project:complete",
-        "ticket:view", "schedule:view", "org:view", "knowledge:view",
-    ]),
-    ("管理层", "executive", "company", [
-        "dashboard:view", "approval:center",
-        "lead:view", "lead:manage", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:complete",
-        "payment:view",
-        "project:view", "project:manage",
-        "project:accept_submit", "project:accept_approve",
-        "project:finance_submit", "project:complete",
-        "okr:view", "timesheet:view", "timesheet:approve",
-        "ticket:view", "schedule:view", "asset:view", "asset:manage",
-        "knowledge:view", "org:view",
-    ]),
-    ("中层管理", "middle_manager", "department", [
-        "dashboard:view", "approval:center",
-        "lead:view", "lead:manage", "customer:view", "opportunity:view",
-        "contract:view", "contract:approve", "contract:complete",
-        "payment:view",
-        "project:view", "project:manage",
-        "project:accept_submit", "project:accept_approve",
-        "project:finance_submit", "project:complete",
-        "okr:view", "timesheet:view", "timesheet:approve",
-        "ticket:view", "schedule:view", "asset:view", "asset:manage",
-        "knowledge:view", "knowledge:manage", "org:view",
-    ]),
-    ("普通员工", "employee", "personal", [
-        "lead:view", "okr:view", "timesheet:view", "ticket:view", "schedule:view", "asset:view",
-        "knowledge:view",
-    ]),
-    ("销售", "sales", "department", [
-        # 无 lead:manage：待分配线索池仅管理层/中层可看
-        # ticket:view：待办可接单；侧栏「协作工单」对纯销售隐藏（见 menu.py）
-        "dashboard:view",
-        "lead:view", "customer:view", "customer:manage",
-        "opportunity:view", "opportunity:manage",
-        "contract:view", "contract:complete",
-        "payment:view", "payment:claim",
-        "ticket:view",
-        "knowledge:view",
-    ]),
-    ("交付负责人", "delivery_lead", "department", [
-        "dashboard:view", "approval:center",
-        "customer:view", "contract:view",
-        "project:view", "project:manage",
-        "project:accept_submit", "project:accept_approve",
-        "project:finance_submit", "project:complete",
-        "timesheet:view", "timesheet:approve",
-        "ticket:view", "schedule:view", "knowledge:view",
-    ]),
-    ("运营", "operations", "department", [
-        "dashboard:view", "approval:center",
-        "lead:view", "customer:view", "project:view", "ticket:view", "timesheet:view", "schedule:view",
-        "asset:view", "asset:manage",
-        "knowledge:view",
-    ]),
-    ("开发", "developer", "personal", [
-        "dashboard:view", "project:view", "timesheet:view", "ticket:view", "knowledge:view",
-    ]),
-    ("讲师主播", "instructor", "personal", [
-        "dashboard:view", "project:view", "timesheet:view", "schedule:view", "knowledge:view",
-    ]),
-    ("财务", "finance", "company", [
-        "lead:view", "approval:center",
-        "contract:view", "contract:approve", "contract:complete",
-        "payment:view", "payment:manage", "payment:claim",
-        "payment:confirm", "payment:allocate", "payment:refund",
-        "project:view", "project:finance_approve",
-        "customer:view",
-    ]),
-    ("部门负责人", "dept_head", "department", [
-        "dashboard:view", "approval:center",
-        "lead:view", "customer:view",
-        "contract:view", "contract:approve", "contract:complete",
-        "project:view", "project:accept_submit", "project:accept_approve",
-        "project:finance_submit", "project:complete",
-        "ticket:view", "schedule:view", "okr:view", "knowledge:view",
-        "timesheet:view", "timesheet:approve",
-    ]),
-    ("品宣专员", "brand", "department", [
-        "lead:view", "knowledge:view", "schedule:view",
-    ]),
-    ("综合管理主管", "hr_supervisor", "company", [
-        "lead:view", "approval:center", "org:view", "okr:view", "ticket:view", "schedule:view", "knowledge:view",
-    ]),
-    ("资产管理员", "asset_admin", "company", [
-        "lead:view", "approval:center", "asset:view", "asset:manage", "knowledge:view",
-    ]),
+# 预置审批流规则（《审批流程配置表》v2，角色码对齐 15 岗）。
+APPROVAL_RULES = [
+    {
+        "code": "AP-18",
+        "name": "退款审批",
+        "biz_type": "refund",
+        "timeout_hours": 48,
+        "conditions": None,
+        "nodes": {
+            "nodes": [
+                {"name": "总经理审批", "type": "approve", "roles": ["gm", "chairman"]},
+                {"name": "财务负责人执行退款", "type": "execute", "roles": ["finance"]},
+            ],
+            "cc": ["chairman", "finance"],
+        },
+        "remark": "AP-18 定版(2026-08-23)：财务专员提交 → 总经理审批 → 财务负责人执行；抄送董事长、财务；高风险不代理。",
+    },
+    {
+        "code": "AP-01",
+        "name": "合同审批·小额(<1万元)",
+        "biz_type": "contract",
+        "timeout_hours": 72,
+        "conditions": {"when": {"field": "amount", "op": "lt", "value": 10000}},
+        "nodes": {
+            "nodes": [
+                {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+                {"name": "法务审批", "type": "approve", "roles": ["legal"]},
+                {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+                {"name": "中心负责人终审", "type": "approve", "roles": ["center_lead"]},
+            ],
+            "cc": ["gm"],
+        },
+        "remark": "AP-01：金额<1万元走本流程；高层节点知会。法务节点待 legal 角色建立后生效。",
+    },
+    {
+        "code": "AP-02",
+        "name": "合同审批·大额(≥1万元)",
+        "biz_type": "contract",
+        "timeout_hours": 72,
+        "conditions": {"when": {"field": "amount", "op": "gte", "value": 10000}},
+        "nodes": {
+            "nodes": [
+                {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+                {"name": "法务审批", "type": "approve", "roles": ["legal"]},
+                {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+                {"name": "中心负责人审批", "type": "approve", "roles": ["center_lead"]},
+                {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+            ],
+            "cc": ["chairman"],
+        },
+        "remark": "AP-02：金额≥1万元走本流程，较 AP-01 多一级总经理终审；抄送董事长。",
+    },
+    {
+        "code": "AP-21",
+        "name": "资产赔偿审批(会签)",
+        "biz_type": "asset_compensation",
+        "timeout_hours": 72,
+        "conditions": None,
+        "nodes": {
+            "nodes": [
+                {
+                    "name": "财务 + 行政主管会签",
+                    "type": "countersign",
+                    "groups": [
+                        {"label": "财务", "roles": ["finance"]},
+                        {"label": "行政主管", "roles": ["admin_office", "ops"]},
+                    ],
+                }
+            ],
+            "cc": [],
+        },
+        "remark": "AP-21：资产遗失/损坏赔偿，财务+行政主管会签(串行规则的例外)，两方均通过才生效。",
+    },
+    # —— 合同类 ——
+    {
+        "code": "AP-03", "name": "合同签署与激活", "biz_type": "contract_activate",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "财务确认激活", "type": "execute", "roles": ["finance"]},
+        ], "cc": []},
+        "remark": "AP-03：合同审批通过并上传双章合同图片+付款截图后，财务确认激活。",
+    },
+    {
+        "code": "AP-04-A", "name": "合同修改重审·小额(<1万元)", "biz_type": "contract_modify",
+        "timeout_hours": 72,
+        "conditions": {"when": {"field": "amount", "op": "lt", "value": 10000}},
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "法务审批", "type": "approve", "roles": ["legal"]},
+            {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+            {"name": "中心负责人终审", "type": "approve", "roles": ["center_lead"]},
+        ], "cc": ["gm"]},
+        "remark": "AP-04：已生效合同修改金额/条款，重新走 AP-01 链路；通过后新版本覆盖旧版。",
+    },
+    {
+        "code": "AP-04-B", "name": "合同修改重审·大额(≥1万元)", "biz_type": "contract_modify",
+        "timeout_hours": 72,
+        "conditions": {"when": {"field": "amount", "op": "gte", "value": 10000}},
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "法务审批", "type": "approve", "roles": ["legal"]},
+            {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+            {"name": "中心负责人审批", "type": "approve", "roles": ["center_lead"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["chairman"]},
+        "remark": "AP-04：已生效合同修改金额/条款，重新走 AP-02 链路；通过后新版本覆盖旧版。",
+    },
+    {
+        "code": "AP-05", "name": "合同终止审批", "biz_type": "contract_terminate",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+            {"name": "中心负责人审批", "type": "approve", "roles": ["center_lead"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["chairman"]},
+        "remark": "AP-05：独立流程，终审通过后合同状态=终止；抄送董事长。",
+    },
+    # —— 立项/项目类 ——
+    {
+        "code": "AP-06", "name": "无合同立项特批", "biz_type": "project_no_contract",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "副总经理审批", "type": "approve", "roles": ["vp"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["chairman"]},
+        "remark": "AP-06：无合同/未到账先立项；副总经理→总经理终审；抄送董事长。副总经理角色(vp)待建，暂映射管理层。",
+    },
+    {
+        "code": "AP-07", "name": "项目立项审批", "biz_type": "project_initiation",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "中心负责人终审", "type": "approve", "roles": ["center_lead"]},
+        ], "cc": ["chairman"]},
+        "remark": "AP-07：审批目标/范围/预算/负责人/周期/资源/付款/交付标准；抄送董事会。",
+    },
+    {
+        "code": "AP-08", "name": "项目交接与基线确认", "biz_type": "project_handover",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "中心负责人确认交接", "type": "approve", "roles": ["center_lead"]},
+        ], "cc": []},
+        "remark": "AP-08：中心负责人确认交接后由项目负责人制定基线；基线重大变更走 AP-07。",
+    },
+    {
+        "code": "AP-10", "name": "项目结项归档", "biz_type": "project_settlement",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "中心负责人归档核验", "type": "approve", "roles": ["center_lead"]},
+        ], "cc": []},
+        "remark": "AP-10：归档核验(合同/收款/工单验收/工时/验收报告齐备)，不设财务检查环节。",
+    },
+    {
+        "code": "AP-11", "name": "项目终止/重启", "biz_type": "project_terminate",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "中心负责人审批", "type": "approve", "roles": ["center_lead"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["chairman"]},
+        "remark": "AP-11：终止/延期/范围变更/重启均走本流程，通过后重新立项；抄送董事长。",
+    },
+    {
+        "code": "AP-09", "name": "项目验收", "biz_type": "project_acceptance",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "项目发起人验收", "type": "assignee", "assignee_key": "acceptor_id"},
+        ], "cc": ["dept_head"]},
+        "remark": "AP-09：项目负责人发起→项目发起人本人验收(指定人节点，发起时传 acceptor_id)。",
+    },
+    # —— 工时 ——
+    {
+        "code": "AP-15", "name": "工时月度审批", "biz_type": "timesheet",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+        ], "cc": []},
+        "remark": "AP-15：工单/排期完成自动提交，部门负责人按月批量审批。",
+    },
+    # —— 收款 ——
+    {
+        "code": "AP-16", "name": "收款到账确认", "biz_type": "receipt",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "财务确认到账", "type": "execute", "roles": ["finance"]},
+        ], "cc": []},
+        "remark": "AP-16：销售上传付款截图+合同，财务凭银行流水/回单确认到账并核销。",
+    },
+    {
+        "code": "AP-17", "name": "收款金额差异审批", "biz_type": "receipt_diff",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["finance"]},
+        "remark": "AP-17：实收≠应收时按差异金额核销；抄送财务。",
+    },
+    # —— 资产 ——
+    {
+        "code": "AP-19", "name": "资产领用审批", "biz_type": "asset_borrow",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "行政部负责人终审(出库)", "type": "execute", "roles": ["admin_office", "ops"]},
+        ], "cc": []},
+        "remark": "AP-19：不分级；行政部负责人终审并执行出库登记领用人/时间。",
+    },
+    {
+        "code": "AP-20", "name": "资产归还确认", "biz_type": "asset_return",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "行政确认归还", "type": "execute", "roles": ["admin_office", "ops"]},
+        ], "cc": []},
+        "remark": "AP-20：行政确认归还与资产状态、情况说明(无需分级审批)；归还后自动清空持有人。",
+    },
+    {
+        "code": "AP-22-B", "name": "资产维修费审批·大额(≥1万)", "biz_type": "asset_maintenance",
+        "timeout_hours": 72, "conditions": {"when": {"field": "amount", "op": "gte", "value": 10000}},
+        "nodes": {"nodes": [
+            {"name": "董事会审批", "type": "approve", "roles": ["chairman"]},
+        ], "cc": []},
+        "remark": "AP-22：维修费≥1万元走董事会审批。⚠️董事会执行人(董事长/总经理)待确认。",
+    },
+    {
+        "code": "AP-22-A", "name": "资产维修费审批·中额(≥3千)", "biz_type": "asset_maintenance",
+        "timeout_hours": 72, "conditions": {"when": {"field": "amount", "op": "gte", "value": 3000}},
+        "nodes": {"nodes": [
+            {"name": "财务审批", "type": "approve", "roles": ["finance"]},
+        ], "cc": []},
+        "remark": "AP-22：维修费≥3千且<1万走财务审批(＜3千无需审批，业务侧不发起流程)。",
+    },
+    {
+        "code": "AP-23", "name": "资产盘点差异审批", "biz_type": "asset_inventory_diff",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["finance"]},
+        "remark": "AP-23：行政部负责人发起，总经理终审；抄送财务。",
+    },
+    # —— 组织 ——
+    {
+        "code": "AP-24", "name": "角色权限调整审批", "biz_type": "role_change",
+        "timeout_hours": 72, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "中心负责人审批", "type": "approve", "roles": ["center_lead"]},
+            {"name": "总经理终审", "type": "approve", "roles": ["gm", "chairman"]},
+        ], "cc": ["hr", "admin"]},
+        "remark": "AP-24：部门负责人发起→中心负责人→总经理终审；抄送人力资源+系统管理员。",
+    },
+    # —— 工单/排期（含"指定人确认"节点） ——
+    {
+        "code": "AP-12", "name": "工单审批与接单", "biz_type": "ticket",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "执行部门负责人审批", "type": "approve", "roles": ["dept_head"]},
+            {"name": "执行人确认接单", "type": "assignee", "assignee_key": "executor_id"},
+        ], "cc": []},
+        "remark": "AP-12：部门负责人审批→执行人本人确认接单(不可代接)→自动排期。执行人为指定人节点。",
+    },
+    {
+        "code": "AP-13", "name": "跨部门工单验收", "biz_type": "ticket_cross_accept",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "发起人验收", "type": "assignee", "assignee_key": "creator_id"},
+        ], "cc": []},
+        "remark": "AP-13：跨部门工单执行完成后由发起人本人验收关闭(指定人节点)。",
+    },
+    {
+        "code": "AP-14", "name": "排期确认", "biz_type": "schedule",
+        "timeout_hours": 48, "conditions": None,
+        "nodes": {"nodes": [
+            {"name": "执行人确认排期", "type": "assignee", "assignee_key": "owner_id"},
+        ], "cc": []},
+        "remark": "AP-14：工单确认后自动创建排期，由执行人本人确认(指定人节点)；排期全公司可见。",
+    },
 ]
+
+
+def seed_approval_rules(db: Session) -> None:
+    """写入/更新首批审批流规则并置为已发布（引擎按 biz_type + 条件命中）。"""
+    for spec in APPROVAL_RULES:
+        nodes_json = json.dumps(spec["nodes"], ensure_ascii=False)
+        conditions_json = (
+            json.dumps(spec["conditions"], ensure_ascii=False) if spec["conditions"] else None
+        )
+        rule = db.query(ApprovalRule).filter(ApprovalRule.code == spec["code"]).first()
+        if not rule:
+            rule = ApprovalRule(
+                code=spec["code"],
+                name=spec["name"],
+                biz_type=spec["biz_type"],
+                nodes_json=nodes_json,
+                conditions_json=conditions_json,
+                timeout_hours=spec["timeout_hours"],
+                version=1,
+                status=RULE_STATUS_PUBLISHED,
+                remark=spec["remark"],
+            )
+            db.add(rule)
+            print(f"[seed] 创建审批规则: {spec['code']} {spec['name']}")
+        else:
+            rule.name = spec["name"]
+            rule.biz_type = spec["biz_type"]
+            rule.nodes_json = nodes_json
+            rule.conditions_json = conditions_json
+            rule.timeout_hours = spec["timeout_hours"]
+            rule.status = RULE_STATUS_PUBLISHED
+            rule.remark = spec["remark"]
+            print(f"[seed] 更新审批规则: {spec['code']} {spec['name']}")
 
 
 def seed(db: Session) -> None:
@@ -214,30 +432,10 @@ def seed(db: Session) -> None:
                 print(f"[seed] 更新权限: {code}")
         perm_map[code] = perm
 
-    # 3) 角色
-    for name, code, data_scope, perm_codes in ROLES:
-        role = db.query(Role).filter(Role.code == code).first()
-        if not role:
-            role = db.query(Role).filter(Role.name == name).first()
-        if role:
-            if role.code == code:
-                # 预置角色存在:同步预设权限
-                if perm_codes == ["*"]:
-                    role.permissions = list(perm_map.values())
-                else:
-                    role.permissions = [perm_map[c] for c in perm_codes if c in perm_map]
-            else:
-                # 同名但不同 code:用户自定义角色,跳过,不覆盖其权限配置
-                print(f"[seed] 跳过同名自定义角色: {name} (code={role.code})")
-            continue
-        role = Role(name=name, code=code, data_scope=data_scope, description=name)
-        db.add(role)
-        db.flush()
-        print(f"[seed] 创建角色: {name}")
-        if perm_codes == ["*"]:
-            role.permissions = list(perm_map.values())
-        else:
-            role.permissions = [perm_map[c] for c in perm_codes if c in perm_map]
+    # 3) 角色 v2（15 岗 + admin）
+    seed_roles_v2(db, perm_map)
+    migrate_user_roles_to_v2(db)
+    bind_demo_approval_roles(db)
 
     # 4) 管理员
     admin = db.query(User).filter(User.username == "admin").first()
@@ -255,6 +453,9 @@ def seed(db: Session) -> None:
         if admin_role:
             admin.roles.append(admin_role)
         print("[seed] 创建管理员: admin / admin123")
+
+    # 5) 审批流规则（首批：AP-18/AP-01/AP-02/AP-21）
+    seed_approval_rules(db)
 
     db.commit()
     print("[seed] 完成")

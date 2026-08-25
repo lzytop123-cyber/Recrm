@@ -26,6 +26,7 @@ export interface Timesheet {
   project_no?: string | null
   project_name?: string | null
   approver_name?: string | null
+  approval_in_center?: boolean
 }
 
 export interface TimesheetStats {

@@ -429,7 +429,61 @@ def lead_source_label_map(db: Session) -> dict[str, str]:
 def _enrich_delegation(db: Session, row: Delegation) -> Delegation:
     row.granter_name = _user_name(db, row.granter_id)  # type: ignore[attr-defined]
     row.grantee_name = _user_name(db, row.grantee_id)  # type: ignore[attr-defined]
+    # 反序列化 biz_types 供前端展示
+    try:
+        row.biz_types = json.loads(row.biz_types_json) if row.biz_types_json else None  # type: ignore[attr-defined]
+    except (json.JSONDecodeError, TypeError):
+        row.biz_types = None  # type: ignore[attr-defined]
     return row
+
+
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """规范化为 UTC-aware（SQLite 读回来的 datetime 常为 naive）。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _check_delegation_conflict(
+    db: Session,
+    *,
+    granter_id: int,
+    starts_at: datetime,
+    ends_at: Optional[datetime],
+    biz_types: Optional[list[str]],
+    exclude_id: Optional[int] = None,
+) -> None:
+    """N-02：同一委托人在时段重叠时，同一 biz_type 只能有一个生效委托。"""
+    starts_at = _as_utc(starts_at)
+    far = datetime(9999, 12, 31, tzinfo=timezone.utc)
+    end_time = _as_utc(ends_at) or far
+    q = db.query(Delegation).filter(
+        Delegation.granter_id == granter_id,
+        Delegation.status == "active",
+    )
+    if exclude_id is not None:
+        q = q.filter(Delegation.id != exclude_id)
+    peers = q.all()
+    want = set(biz_types) if biz_types else None
+    for peer in peers:
+        peer_start = _as_utc(peer.starts_at) or far
+        peer_end = _as_utc(peer.ends_at) or far
+        # 无时段重叠
+        if peer_end <= starts_at or peer_start >= end_time:
+            continue
+        try:
+            peer_types = json.loads(peer.biz_types_json) if peer.biz_types_json else None
+        except (json.JSONDecodeError, TypeError):
+            peer_types = None
+        peer_want = set(peer_types) if peer_types else None
+        # 任一方为空(全部) → 视为完全重叠
+        if want is None or peer_want is None or (want & peer_want):
+            raise HTTPException(
+                status_code=409,
+                detail="该时段/流程范围已存在生效委托，同一流程仅允许一个代理人",
+            )
 
 
 def list_delegations(db: Session, user: User) -> list[Delegation]:
@@ -448,12 +502,23 @@ def create_delegation(db: Session, user: User, payload: DelegationCreate) -> Del
     grantee = db.query(User).filter(User.id == payload.grantee_id).first()
     if not grantee:
         raise HTTPException(status_code=400, detail="被委托人不存在")
+    if not grantee.is_active:
+        raise HTTPException(status_code=400, detail="被委托人已停用，无法委托")
     if payload.ends_at and payload.ends_at <= payload.starts_at:
         raise HTTPException(status_code=400, detail="结束时间必须晚于开始时间")
+    biz_types = [b.strip() for b in (payload.biz_types or []) if b and b.strip()] or None
+    _check_delegation_conflict(
+        db,
+        granter_id=user.id,
+        starts_at=payload.starts_at,
+        ends_at=payload.ends_at,
+        biz_types=biz_types,
+    )
     row = Delegation(
         granter_id=user.id,
         grantee_id=payload.grantee_id,
         scope=payload.scope.strip() or "all",
+        biz_types_json=json.dumps(biz_types, ensure_ascii=False) if biz_types else None,
         reason=payload.reason,
         starts_at=payload.starts_at,
         ends_at=payload.ends_at,
@@ -476,8 +541,25 @@ def update_delegation(
     if row.status != "active":
         raise HTTPException(status_code=400, detail="仅生效中委托可修改")
     data = payload.model_dump(exclude_unset=True)
+    biz_types = data.pop("biz_types", "__missing__")
     for k, v in data.items():
         setattr(row, k, v)
+    if biz_types != "__missing__":
+        cleaned = [b.strip() for b in (biz_types or []) if b and b.strip()] or None
+        row.biz_types_json = json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+    # 变更后重新校验时段/流程冲突
+    try:
+        current_biz = json.loads(row.biz_types_json) if row.biz_types_json else None
+    except (json.JSONDecodeError, TypeError):
+        current_biz = None
+    _check_delegation_conflict(
+        db,
+        granter_id=row.granter_id,
+        starts_at=row.starts_at,
+        ends_at=row.ends_at,
+        biz_types=current_biz,
+        exclude_id=row.id,
+    )
     db.commit()
     db.refresh(row)
     return _enrich_delegation(db, row)

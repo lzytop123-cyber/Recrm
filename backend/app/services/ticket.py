@@ -304,6 +304,10 @@ def can_manage(user: User) -> bool:
     role_codes = {r.code for r in user.roles}
     return bool(
         "admin" in role_codes
+        or "center_lead" in role_codes
+        or "gm" in role_codes
+        or "vp" in role_codes
+        or "pm" in role_codes
         or "middle_manager" in role_codes
         or "executive" in role_codes
         or "delivery_lead" in role_codes
@@ -406,6 +410,93 @@ def _replace_candidates(db: Session, ticket: Ticket, user_ids: list[int]) -> Non
             continue
         seen.add(uid)
         db.add(TicketAssigneeCandidate(ticket_id=ticket.id, user_id=uid))
+
+
+def _is_cross_dept_ticket(db: Session, ticket: Ticket) -> bool:
+    """发起人部门与承接部门不同视为跨部门工单。"""
+    if not ticket.department_id:
+        return False
+    creator = db.query(User).filter(User.id == ticket.creator_id).first()
+    if not creator or not creator.department_id:
+        return False
+    return creator.department_id != ticket.department_id
+
+
+def _maybe_start_ticket_approval(db: Session, ticket: Ticket, initiator: User) -> None:
+    """AP-12 工单审批与接单：有执行人时发起部门负责人→执行人确认。"""
+    from app.services import approval_flow
+
+    if not ticket.assignee_id:
+        return
+    if approval_flow.find_open_instance(db, "ticket", ticket.id) is not None:
+        return
+    if approval_flow.select_rule(db, "ticket", {}) is None:
+        return
+    approval_flow.start_instance(
+        db,
+        biz_type="ticket",
+        biz_id=ticket.id,
+        initiator=initiator,
+        title=f"工单接单 {ticket.ticket_no} · {ticket.title}",
+        summary=(ticket.content or "")[:120] or None,
+        department_id=ticket.department_id,
+        deep_link=f"/tickets/{ticket.id}",
+        assignees={"executor_id": ticket.assignee_id},
+        commit=False,
+    )
+
+
+def _apply_accept_from_flow(db: Session, ticket: Ticket, actor: User, note: str) -> None:
+    if ticket.status not in {TICKET_STATUS_PENDING_ASSIGN, TICKET_STATUS_PENDING_ACCEPT}:
+        return
+    if not ticket.assignee_id:
+        ticket.assignee_id = actor.id
+    ticket.status = TICKET_STATUS_PROCESSING
+    ticket.accepted_at = _now()
+    _add_record(db, ticket, actor, "accept", note)
+
+
+def on_ticket_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-12 终审回调：通过则自动接单，驳回/撤回保持待接单。"""
+    from app.services import approval_flow
+
+    ticket = db.query(Ticket).filter(Ticket.id == instance.biz_id).first()
+    if not ticket:
+        return
+    if approved:
+        actor = approval_flow.last_actor(db, instance)
+        if actor is not None:
+            _apply_accept_from_flow(db, ticket, actor, "审批通过自动接单")
+    elif not withdrawn:
+        actor = approval_flow.last_actor(db, instance)
+        if actor is not None:
+            _add_record(db, ticket, actor, "reject", instance.reject_reason or "接单审批驳回")
+
+
+def on_ticket_cross_accept_result(
+    db: Session, instance, *, approved: bool, withdrawn: bool = False
+) -> None:
+    """AP-13 终审回调：跨部门验收通过则确认完成。"""
+    from app.services import approval_flow
+
+    ticket = db.query(Ticket).filter(Ticket.id == instance.biz_id).first()
+    if not ticket or ticket.status != TICKET_STATUS_PENDING_CONFIRM:
+        return
+    if not approved:
+        if not withdrawn:
+            actor = approval_flow.last_actor(db, instance)
+            if actor is not None:
+                _add_record(db, ticket, actor, "reject", instance.reject_reason or "验收驳回")
+        return
+    actor = approval_flow.last_actor(db, instance)
+    if actor is None:
+        creator = db.query(User).filter(User.id == ticket.creator_id).first()
+        if not creator:
+            return
+        actor = creator
+    _resume_sla(ticket)
+    ticket.status = TICKET_STATUS_COMPLETED
+    _add_record(db, ticket, actor, "confirm", "审批通过自动确认完成")
 
 
 def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
@@ -531,6 +622,7 @@ def create_ticket(db: Session, user: User, payload: TicketCreate) -> Ticket:
             _add_record(db, ticket, user, "assign", f"指定处理人：{names}")
         else:
             _add_record(db, ticket, user, "assign", f"指定候选处理人：{names}（谁先接单谁主责）")
+    _maybe_start_ticket_approval(db, ticket, user)
     db.commit()
     db.refresh(ticket)
     return enrich_detail(db, ticket, user=user)
@@ -687,6 +779,7 @@ def assign_ticket(
     _replace_candidates(db, ticket, [assignee.id])
     note = payload.remark or f"分派给 {_user_name(db, assignee.id)}"
     _add_record(db, ticket, user, "assign", note)
+    _maybe_start_ticket_approval(db, ticket, user)
     db.commit()
     db.refresh(ticket)
     return enrich_detail(db, ticket, user=user)
@@ -699,6 +792,18 @@ def accept_ticket(db: Session, user: User, ticket_id: int) -> Ticket:
     assert_can_view(user, ticket)
     if ticket.status not in {TICKET_STATUS_PENDING_ASSIGN, TICKET_STATUS_PENDING_ACCEPT}:
         raise HTTPException(status_code=400, detail="仅待分派/待接收工单可接单")
+    from app.services import approval_flow
+
+    flow_status = approval_flow.latest_instance_status(db, "ticket", ticket.id)
+    if flow_status in ("pending", "blocked"):
+        detail = (
+            "接单审批已挂起（无可用审批人），请联系管理员"
+            if flow_status == "blocked"
+            else "接单审批中，请在审批中心处理后再接单"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+    if approval_flow.find_open_instance(db, "ticket", ticket.id) is not None:
+        raise HTTPException(status_code=409, detail="接单审批中，请在审批中心处理")
     if not _can_accept(user, ticket):
         raise HTTPException(
             status_code=403,
@@ -808,6 +913,26 @@ def complete_ticket(
     if _is_admin(user) and ticket.assignee_id != user.id:
         note = f"[管理员代办] {note}"
     _add_record(db, ticket, user, "complete", note)
+
+    # AP-13 跨部门工单验收：发起人本人确认
+    from app.services import approval_flow
+
+    if (
+        _is_cross_dept_ticket(db, ticket)
+        and approval_flow.select_rule(db, "ticket_cross_accept", {}) is not None
+    ):
+        approval_flow.start_instance(
+            db,
+            biz_type="ticket_cross_accept",
+            biz_id=ticket.id,
+            initiator=user,
+            title=f"跨部门工单验收 {ticket.ticket_no}",
+            summary=(ticket.result or "")[:120] or None,
+            department_id=ticket.department_id,
+            deep_link=f"/tickets/{ticket.id}",
+            assignees={"creator_id": ticket.creator_id},
+            commit=False,
+        )
     db.commit()
     db.refresh(ticket)
     return enrich_detail(db, ticket, user=user)
@@ -849,6 +974,19 @@ def confirm_ticket(
         raise HTTPException(status_code=403, detail="仅发起人可确认完成（系统管理员可应急代办）")
     if ticket.status != TICKET_STATUS_PENDING_CONFIRM:
         raise HTTPException(status_code=400, detail="仅待确认工单可确认")
+    from app.services import approval_flow
+
+    if _is_cross_dept_ticket(db, ticket):
+        flow_status = approval_flow.latest_instance_status(db, "ticket_cross_accept", ticket.id)
+        if flow_status in ("pending", "blocked"):
+            detail = (
+                "跨部门验收已挂起（无可用审批人），请联系管理员"
+                if flow_status == "blocked"
+                else "跨部门验收审批中，请在审批中心处理"
+            )
+            raise HTTPException(status_code=400, detail=detail)
+        if approval_flow.find_open_instance(db, "ticket_cross_accept", ticket.id) is not None:
+            raise HTTPException(status_code=409, detail="跨部门验收审批中，请在审批中心处理")
 
     _resume_sla(ticket)
     close = True

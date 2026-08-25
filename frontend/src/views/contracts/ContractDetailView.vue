@@ -6,13 +6,17 @@
         <el-button v-if="contract.status === 'draft'" type="primary" @click="editVisible = true">编辑</el-button>
         <el-button v-if="contract.status === 'draft'" type="warning" @click="onSubmit">提交审批</el-button>
         <el-tag
-          v-if="contract.status === 'pending_approval' && !canApproveContract"
+          v-if="contract.status === 'pending_approval' && !contract.approval_in_center && !canApproveContract"
           type="warning"
           effect="plain"
           style="margin-right: 8px"
         >
           已提交，等待财务 / 管理层审批
         </el-tag>
+        <ApprovalCenterHint
+          v-if="contract.approval_in_center"
+          :label="approvalCenterLabel"
+        />
         <el-button
           v-if="contract.status === 'pending_approval' && canWithdraw"
           @click="onWithdraw"
@@ -20,7 +24,7 @@
           撤回审批
         </el-button>
         <el-button
-          v-if="contract.status === 'pending_approval' && canApproveContract"
+          v-if="contract.status === 'pending_approval' && canApproveContract && !contract.approval_in_center"
           v-perm="'contract:approve'"
           type="success"
           @click="onApprove"
@@ -28,7 +32,7 @@
           审批通过
         </el-button>
         <el-button
-          v-if="contract.status === 'pending_approval' && canApproveContract"
+          v-if="contract.status === 'pending_approval' && canApproveContract && !contract.approval_in_center"
           v-perm="'contract:approve'"
           @click="onReject"
         >
@@ -50,12 +54,28 @@
           签署
         </el-button>
         <el-button
-          v-if="contract.status === 'signed' && canActivateContract"
+          v-if="contract.status === 'signed' && canActivateContract && !contract.approval_in_center"
           type="primary"
           @click="onActivate"
         >
           进入执行
         </el-button>
+        <el-button
+          v-if="canModifyContract"
+          type="warning"
+          plain
+          @click="openModify"
+        >
+          申请修改
+        </el-button>
+        <el-tag
+          v-if="contract.modification_pending"
+          type="warning"
+          effect="plain"
+          style="margin-right: 8px"
+        >
+          修改审批中（v{{ contract.revision }} → v{{ (contract.revision || 1) + 1 }}）
+        </el-tag>
         <el-button
           v-if="contract.status === 'active' && canCompleteContract"
           :type="isCollectionCollected ? 'success' : 'info'"
@@ -65,7 +85,7 @@
           完成
         </el-button>
         <el-button
-          v-if="canTerminate"
+          v-if="canTerminate && !contract.approval_in_center"
           v-perm.any="['contract:manage']"
           type="danger"
           plain
@@ -81,6 +101,9 @@
         <div class="detail-summary">
           <el-tag :type="statusTag(contract.status)" size="small">
             {{ CONTRACT_STATUS_LABEL[contract.status] || contract.status }}
+          </el-tag>
+          <el-tag v-if="(contract.revision || 1) > 1" type="info" size="small" effect="plain">
+            修订 v{{ contract.revision }}
           </el-tag>
           <small>
             {{ contract.contract_no }} ·
@@ -366,6 +389,87 @@
     </el-dialog>
 
     <el-dialog
+      v-model="modifyVisible"
+      title="合同修改重审"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <p v-if="contract" class="dialog-context">
+        {{ contract.contract_no }} · 当前修订 v{{ contract.revision || 1 }}
+      </p>
+      <p class="dialog-hint">仅填写需要变更的字段；提交后进入审批中心，通过后方生效。</p>
+      <el-form :model="modifyForm" label-width="100px">
+        <el-form-item label="合同名称">
+          <el-input v-model="modifyForm.title" placeholder="不变更可留空" />
+        </el-form-item>
+        <el-form-item label="合同类型">
+          <el-select v-model="modifyForm.contract_type" clearable placeholder="不变更" style="width: 100%">
+            <el-option
+              v-for="opt in businessTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="合同金额">
+          <el-input-number
+            v-model="modifyForm.amount"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            placeholder="不变更"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="付款方式">
+          <el-select v-model="modifyForm.payment_method" clearable placeholder="不变更" style="width: 100%">
+            <el-option
+              v-for="opt in PAYMENT_METHOD_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="生效日期">
+          <el-date-picker
+            v-model="modifyForm.effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="不变更"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="到期日期">
+          <el-date-picker
+            v-model="modifyForm.expire_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="不变更"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="modifyForm.remark" type="textarea" :rows="2" placeholder="不变更可留空" />
+        </el-form-item>
+        <el-form-item label="修改原因" required>
+          <el-input
+            v-model="modifyForm.reason"
+            type="textarea"
+            :rows="3"
+            placeholder="必填：说明修改原因与依据"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="modifyVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onModify">提交修改审批</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="terminateVisible"
       title="终止合同"
       width="480px"
@@ -387,6 +491,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
+import ApprovalCenterHint from '@/components/approval/ApprovalCenterHint.vue'
 import {
   CONTRACT_PROOF_MAX,
   CONTRACT_STATUS_LABEL,
@@ -396,7 +501,9 @@ import {
   approveContract,
   completeContract,
   fetchContractDetail,
+  modifyContract,
   rejectContract,
+  type ContractModifyPayload,
   signContract,
   submitContract,
   terminateContract,
@@ -419,6 +526,7 @@ const uploadingProof = ref(false)
 const contract = ref<Contract | null>(null)
 const editVisible = ref(false)
 const signVisible = ref(false)
+const modifyVisible = ref(false)
 const terminateVisible = ref(false)
 const terminateReason = ref('')
 const editProofInputRef = ref<HTMLInputElement>()
@@ -439,6 +547,17 @@ const signForm = reactive({
   signed_date: '',
   effective_date: '',
   expire_date: '',
+})
+
+const modifyForm = reactive({
+  title: '' as string | undefined,
+  contract_type: '' as string | undefined,
+  amount: undefined as number | undefined,
+  payment_method: '' as string | undefined,
+  effective_date: '' as string | undefined,
+  expire_date: '' as string | undefined,
+  remark: '' as string | undefined,
+  reason: '',
 })
 
 const contractId = computed(() => Number(route.params.id))
@@ -498,6 +617,29 @@ const canWithdraw = computed(() => {
 const canApproveContract = computed(() =>
   userStore.hasAnyPermission('contract:approve', 'contract:manage'),
 )
+
+const approvalCenterLabel = computed(() => {
+  if (!contract.value) return '审批进行中，请在审批中心处理'
+  if (contract.value.modification_pending) return '合同修改审批进行中'
+  if (contract.value.terminate_reason && contract.value.approval_in_center) {
+    return '合同终止审批进行中'
+  }
+  if (contract.value.status === 'signed' && contract.value.approval_in_center) {
+    return '激活确认审批进行中'
+  }
+  if (contract.value.status === 'pending_approval') return '合同分级审批进行中'
+  return '审批进行中，请在审批中心处理'
+})
+
+const canModifyContract = computed(() => {
+  const c = contract.value
+  if (!c) return false
+  if (!['approved', 'signed', 'active'].includes(c.status)) return false
+  if (c.modification_pending || c.approval_in_center) return false
+  if (userStore.hasAnyPermission('contract:manage')) return true
+  const uid = userStore.user?.id
+  return c.owner_id === uid || c.creator_id === uid
+})
 
 /** 仅合同负责人可签署（线索分配到谁，起草后负责人即谁）；admin 可代签 */
 const canSignContract = computed(() => {
@@ -722,8 +864,12 @@ async function onSubmit() {
   try {
     await ElMessageBox.confirm('确认提交审批？提交后将不可编辑。', '提交审批')
     await submitContract(contractId.value)
-    ElMessage.success('已提交审批')
     await loadDetail()
+    if (contract.value?.approval_in_center) {
+      ElMessage.success('已提交审批，请到审批中心处理')
+    } else {
+      ElMessage.success('已提交审批')
+    }
   } catch {
     /* cancel */
   }
@@ -807,11 +953,55 @@ async function onSign() {
   }
 }
 
+function openModify() {
+  modifyForm.title = undefined
+  modifyForm.contract_type = undefined
+  modifyForm.amount = undefined
+  modifyForm.payment_method = undefined
+  modifyForm.effective_date = undefined
+  modifyForm.expire_date = undefined
+  modifyForm.remark = undefined
+  modifyForm.reason = ''
+  modifyVisible.value = true
+}
+
+async function onModify() {
+  if (!modifyForm.reason.trim()) {
+    ElMessage.warning('请填写修改原因')
+    return
+  }
+  const payload: ContractModifyPayload = { reason: modifyForm.reason.trim() }
+  if (modifyForm.title?.trim()) payload.title = modifyForm.title.trim()
+  if (modifyForm.contract_type) payload.contract_type = modifyForm.contract_type
+  if (modifyForm.amount != null) payload.amount = modifyForm.amount
+  if (modifyForm.payment_method) payload.payment_method = modifyForm.payment_method
+  if (modifyForm.effective_date) payload.effective_date = modifyForm.effective_date
+  if (modifyForm.expire_date) payload.expire_date = modifyForm.expire_date
+  if (modifyForm.remark?.trim()) payload.remark = modifyForm.remark.trim()
+  if (Object.keys(payload).length <= 1) {
+    ElMessage.warning('请填写至少一项修改内容')
+    return
+  }
+  saving.value = true
+  try {
+    await modifyContract(contractId.value, payload)
+    ElMessage.success('修改已提交，请到审批中心处理')
+    modifyVisible.value = false
+    await loadDetail()
+  } finally {
+    saving.value = false
+  }
+}
+
 async function onActivate() {
   try {
     await ElMessageBox.confirm('确认进入执行中？', '进入执行')
-    await activateContract(contractId.value)
-    ElMessage.success('已进入执行')
+    const { data } = await activateContract(contractId.value)
+    if (data.approval_in_center) {
+      ElMessage.success('已提交激活确认，请到审批中心处理')
+    } else {
+      ElMessage.success('已进入执行')
+    }
     await loadDetail()
   } catch {
     /* cancel */
@@ -844,9 +1034,14 @@ async function onTerminate() {
   }
   saving.value = true
   try {
-    await terminateContract(contractId.value, terminateReason.value.trim())
-    ElMessage.success('合同已终止')
+    const { data } = await terminateContract(contractId.value, terminateReason.value.trim())
+    if (data.approval_in_center) {
+      ElMessage.success('终止申请已提交，请到审批中心处理')
+    } else {
+      ElMessage.success('合同已终止')
+    }
     terminateVisible.value = false
+    terminateReason.value = ''
     await loadDetail()
   } finally {
     saving.value = false

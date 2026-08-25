@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.rbac import require_permissions
 from app.core.security import TokenError, get_subject_from_token
 from app.database import get_db
+from app.models.department import Department
 from app.models.role import Role
 from app.models.user import User
 
@@ -38,7 +39,30 @@ def get_current_user(
     )
     if user is None or not user.is_active:
         raise credentials_exception
+    user.dept_scope_ids = _compute_dept_scope_ids(db, user.department_id)  # type: ignore[attr-defined]
     return user
+
+
+def _compute_dept_scope_ids(db: Session, root_id: Optional[int]) -> set[int]:
+    """本部门 + 全部子孙部门 id；用于 data_scope=department 的可见范围过滤。
+
+    在请求入口一次算好挂到 user 上，避免各 service 层重复查询。
+    """
+    if not root_id:
+        return set()
+    rows = db.query(Department.id, Department.parent_id).all()
+    children_map: dict[Optional[int], list[int]] = {}
+    for dept_id, parent_id in rows:
+        children_map.setdefault(parent_id, []).append(dept_id)
+    result: set[int] = set()
+    stack = [root_id]
+    while stack:
+        cur = stack.pop()
+        if cur in result:
+            continue
+        result.add(cur)
+        stack.extend(children_map.get(cur, []))
+    return result
 
 
 def get_current_active_user(

@@ -462,9 +462,42 @@ def create_borrow(db: Session, user: User, payload: BorrowCreate) -> AssetBorrow
     db.flush()
     for a in assets:
         db.add(AssetBorrowItem(request_id=br.id, asset_id=a.id))
+
+    # AP-19 资产领用审批流：部门负责人 → 行政部负责人(执行出库)
+    from app.services import approval_flow
+
+    if approval_flow.select_rule(db, "asset_borrow", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="asset_borrow",
+            biz_id=br.id,
+            initiator=user,
+            title=f"资产领用 {br.request_no}",
+            summary=(br.purpose or None),
+            department_id=user.department_id,
+            deep_link=f"/assets?tab=borrow&borrow_id={br.id}",
+            commit=False,
+        )
     db.commit()
     db.refresh(br)
     return enrich_borrow(db, br)
+
+
+def on_borrow_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-19 终审回调：通过则复用 approve_borrow(执行出库/占用)，驳回/撤回置驳回。"""
+    from app.services import approval_flow
+
+    br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == instance.biz_id).first()
+    if not br or br.status != BORROW_PENDING:
+        return
+    if approved:
+        actor = approval_flow.last_actor(db, instance)
+        if actor is not None:
+            approve_borrow(db, actor, br.id)  # 复用既有逻辑（含资产预留/持有人）
+    else:
+        br.status = BORROW_REJECTED
+        br.reject_reason = "申请人撤回" if withdrawn else (instance.reject_reason or "审批驳回")
+        br.approved_at = _now()
 
 
 def list_borrows(
@@ -485,6 +518,10 @@ def approve_borrow(db: Session, user: User, request_id: int) -> AssetBorrowReque
     br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == request_id).first()
     if not br or br.status != BORROW_PENDING:
         raise HTTPException(status_code=400, detail="申请不存在或状态不可批准")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "asset_borrow", br.id) is not None:
+        raise HTTPException(status_code=409, detail="该领用已进入审批流程，请在审批中心处理")
     items = (
         db.query(AssetBorrowItem, FixedAsset)
         .join(FixedAsset, FixedAsset.id == AssetBorrowItem.asset_id)
@@ -514,6 +551,10 @@ def reject_borrow(
     br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == request_id).first()
     if not br or br.status != BORROW_PENDING:
         raise HTTPException(status_code=400, detail="申请不存在或状态不可驳回")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "asset_borrow", br.id) is not None:
+        raise HTTPException(status_code=409, detail="该领用已进入审批流程，请在审批中心处理")
     br.status = BORROW_REJECTED
     br.reject_reason = payload.reason.strip()
     br.approved_by = user.id
@@ -544,12 +585,8 @@ def checkout_borrow(db: Session, user: User, request_id: int) -> AssetBorrowRequ
     return enrich_borrow(db, br)
 
 
-def return_borrow(db: Session, user: User, request_id: int) -> AssetBorrowRequest:
-    br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == request_id).first()
-    if not br or br.status not in {BORROW_IN_USE, BORROW_APPROVED, BORROW_PENDING_RETURN}:
-        raise HTTPException(status_code=400, detail="当前状态不可归还")
-    if br.applicant_id != user.id and not can_manage_assets(user):
-        raise HTTPException(status_code=403, detail="无权归还该申请")
+def _finalize_borrow_return(db: Session, br: AssetBorrowRequest) -> None:
+    """执行归还：清空持有人并标记已归还。"""
     items = (
         db.query(AssetBorrowItem, FixedAsset)
         .join(FixedAsset, FixedAsset.id == AssetBorrowItem.asset_id)
@@ -563,9 +600,57 @@ def return_borrow(db: Session, user: User, request_id: int) -> AssetBorrowReques
         asset.schedule_ref = None
     br.status = BORROW_RETURNED
     br.returned_at = _now()
+
+
+def return_borrow(db: Session, user: User, request_id: int) -> AssetBorrowRequest:
+    br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == request_id).first()
+    if not br or br.status not in {BORROW_IN_USE, BORROW_APPROVED, BORROW_PENDING_RETURN}:
+        raise HTTPException(status_code=400, detail="当前状态不可归还")
+    if br.applicant_id != user.id and not can_manage_assets(user):
+        raise HTTPException(status_code=403, detail="无权归还该申请")
+    from app.services import approval_flow
+
+    if br.status == BORROW_RETURNED:
+        return enrich_borrow(db, br)
+    if approval_flow.find_open_instance(db, "asset_return", br.id) is not None:
+        raise HTTPException(status_code=409, detail="归还确认审批中，请在审批中心处理")
+
+    # AP-20 资产归还确认：行政确认后清空持有人
+    if approval_flow.select_rule(db, "asset_return", {}) is not None:
+        br.status = BORROW_PENDING_RETURN
+        approval_flow.start_instance(
+            db,
+            biz_type="asset_return",
+            biz_id=br.id,
+            initiator=user,
+            title=f"资产归还确认 {br.request_no}",
+            summary=(br.purpose or None),
+            department_id=user.department_id,
+            deep_link=f"/assets?tab=borrow&borrow_id={br.id}",
+            commit=False,
+        )
+        db.commit()
+        db.refresh(br)
+        return enrich_borrow(db, br)
+
+    _finalize_borrow_return(db, br)
     db.commit()
     db.refresh(br)
     return enrich_borrow(db, br)
+
+
+def on_return_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-20 终审回调：通过则执行归还，驳回/撤回恢复在用。"""
+    br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == instance.biz_id).first()
+    if not br or br.status != BORROW_PENDING_RETURN:
+        return
+    if approved:
+        _finalize_borrow_return(db, br)
+    elif withdrawn:
+        br.status = BORROW_IN_USE
+    else:
+        br.status = BORROW_IN_USE
+        br.reject_reason = instance.reject_reason or "归还确认驳回"
 
 
 def get_or_create_inventory(db: Session) -> AssetInventorySession:
@@ -862,12 +947,40 @@ def submit_inventory(db: Session, user: User, inventory_id: int) -> AssetInvento
     inv = db.query(AssetInventorySession).filter(AssetInventorySession.id == inventory_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="盘点不存在")
-    if inv.status != "in_progress":
+    if inv.status not in {"in_progress", "pending_approval"}:
         raise HTTPException(status_code=400, detail="盘点已提交")
-    inv.status = "submitted"
+    from app.services import approval_flow
+
+    has_diff = (inv.anomaly_count or 0) > 0
+    if has_diff and approval_flow.select_rule(db, "asset_inventory_diff", {}) is not None:
+        inv.status = "pending_approval"
+        approval_flow.start_instance(
+            db,
+            biz_type="asset_inventory_diff",
+            biz_id=inv.id,
+            initiator=user,
+            title=f"盘点差异审批 {inv.period_label}",
+            summary=f"异常 {inv.anomaly_count} 项",
+            department_id=user.department_id,
+            deep_link=f"/assets?tab=inventory&inventory_id={inv.id}",
+            commit=False,
+        )
+    else:
+        inv.status = "submitted"
     db.commit()
     db.refresh(inv)
     return get_inventory(db, inv.id)
+
+
+def on_inventory_diff_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-23 终审回调：通过则提交盘点，驳回/撤回恢复进行中。"""
+    inv = db.query(AssetInventorySession).filter(AssetInventorySession.id == instance.biz_id).first()
+    if not inv or inv.status != "pending_approval":
+        return
+    if approved:
+        inv.status = "submitted"
+    else:
+        inv.status = "in_progress"
 
 
 def inventory_difference(db: Session, user: User, inventory_id: int) -> dict:
@@ -929,19 +1042,62 @@ def create_maintenance(db: Session, user: User, payload: MaintenanceCreate) -> A
     asset = db.query(FixedAsset).filter(FixedAsset.id == payload.asset_id).first()
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    cost = payload.cost or Decimal("0")
     row = AssetMaintenance(
         asset_id=payload.asset_id,
         title=payload.title.strip(),
         plan_date=payload.plan_date,
         status="pending_approval",
         applicant_id=user.id,
-        cost=payload.cost,
+        cost=cost,
         remark=payload.remark,
     )
     db.add(row)
+    db.flush()
+
+    # AP-22 维修费：≥3千走审批，＜3千无需审批
+    from app.services import approval_flow
+
+    if cost < Decimal("3000"):
+        row.status = "approved"
+        row.approved_by = user.id
+        row.approved_at = _now()
+        asset.status = ASSET_STATUS_MAINTENANCE
+        asset.current_use = row.title
+    elif approval_flow.select_rule(db, "asset_maintenance", {"amount": cost}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="asset_maintenance",
+            biz_id=row.id,
+            initiator=user,
+            title=f"资产维修费 {asset.name} · {row.title}",
+            summary=f"¥{cost}",
+            amount=cost,
+            department_id=user.department_id,
+            deep_link=f"/assets?tab=maintenance&maintenance_id={row.id}",
+            facts={"amount": str(cost)},
+            commit=False,
+        )
     db.commit()
     db.refresh(row)
     return _enrich_maintenance(db, row)
+
+
+def on_maintenance_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-22 终审回调：通过则批准维保，驳回/撤回置驳回。"""
+    from app.services import approval_flow
+
+    row = db.query(AssetMaintenance).filter(AssetMaintenance.id == instance.biz_id).first()
+    if not row or row.status != "pending_approval":
+        return
+    if approved:
+        actor = approval_flow.last_actor(db, instance)
+        if actor is not None:
+            approve_maintenance(db, actor, row.id)
+    else:
+        row.status = "rejected"
+        row.reject_reason = "申请人撤回" if withdrawn else (instance.reject_reason or "审批驳回")
+        row.approved_at = _now()
 
 
 def approve_maintenance(db: Session, user: User, maintenance_id: int) -> AssetMaintenance:
@@ -950,6 +1106,10 @@ def approve_maintenance(db: Session, user: User, maintenance_id: int) -> AssetMa
     row = db.query(AssetMaintenance).filter(AssetMaintenance.id == maintenance_id).first()
     if not row or row.status not in {"pending_approval", "planned"}:
         raise HTTPException(status_code=400, detail="维保不存在或状态不可批准")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "asset_maintenance", row.id) is not None:
+        raise HTTPException(status_code=409, detail="该维保已进入审批流程，请在审批中心处理")
     row.status = "approved"
     row.approved_by = user.id
     row.approved_at = _now()
@@ -970,6 +1130,10 @@ def reject_maintenance(
     row = db.query(AssetMaintenance).filter(AssetMaintenance.id == maintenance_id).first()
     if not row or row.status not in {"pending_approval", "planned"}:
         raise HTTPException(status_code=400, detail="维保不存在或状态不可驳回")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "asset_maintenance", row.id) is not None:
+        raise HTTPException(status_code=409, detail="该维保已进入审批流程，请在审批中心处理")
     row.status = "rejected"
     row.reject_reason = payload.reason.strip()
     row.approved_by = user.id

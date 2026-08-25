@@ -49,6 +49,11 @@ def enrich_timesheet(db: Session, ts: Timesheet) -> Timesheet:
     else:
         ts.project_no = None  # type: ignore[attr-defined]
         ts.project_name = None  # type: ignore[attr-defined]
+    from app.services import approval_flow
+
+    ts.approval_in_center = (  # type: ignore[attr-defined]
+        approval_flow.find_open_instance(db, "timesheet", ts.id) is not None
+    )
     return ts
 
 
@@ -198,9 +203,47 @@ def submit_timesheet(db: Session, user: User, ts_id: int) -> Timesheet:
         raise HTTPException(status_code=400, detail="仅草稿或已驳回可提交")
     ts.status = TIMESHEET_STATUS_SUBMITTED
     ts.reject_reason = None
+
+    # AP-15 工时月度审批：部门负责人审批
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "timesheet", ts.id) is None and \
+            approval_flow.select_rule(db, "timesheet", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="timesheet",
+            biz_id=ts.id,
+            initiator=user,
+            title=f"工时 {ts.work_date} · {ts.hours}h",
+            summary=(ts.content or None),
+            department_id=ts.department_id,
+            deep_link=f"/timesheets/{ts.id}",
+            commit=False,
+        )
     db.commit()
     db.refresh(ts)
     return enrich_timesheet(db, ts)
+
+
+def on_timesheet_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-15 终审回调：直接落工时状态（引擎已授权，避免二次范围校验）。"""
+    from app.services import approval_flow
+
+    ts = db.query(Timesheet).filter(Timesheet.id == instance.biz_id).first()
+    if not ts or ts.status != TIMESHEET_STATUS_SUBMITTED:
+        return
+    if withdrawn:
+        ts.status = TIMESHEET_STATUS_DRAFT
+    elif approved:
+        ts.status = TIMESHEET_STATUS_APPROVED
+        ts.approver_id = approval_flow.last_actor_id(instance)
+        ts.approved_at = _now()
+        ts.reject_reason = None
+    else:
+        ts.status = TIMESHEET_STATUS_REJECTED
+        ts.approver_id = approval_flow.last_actor_id(instance)
+        ts.approved_at = _now()
+        ts.reject_reason = instance.reject_reason or "审批驳回"
 
 
 def approve_timesheet(db: Session, user: User, ts_id: int) -> Timesheet:
@@ -209,6 +252,10 @@ def approve_timesheet(db: Session, user: User, ts_id: int) -> Timesheet:
     ts = db.query(Timesheet).filter(Timesheet.id == ts_id).first()
     if not ts:
         raise HTTPException(status_code=404, detail="工时记录不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "timesheet", ts.id) is not None:
+        raise HTTPException(status_code=409, detail="该工时已进入审批流程，请在审批中心处理")
     assert_can_view(user, ts)
     if ts.status != TIMESHEET_STATUS_SUBMITTED:
         raise HTTPException(status_code=400, detail="仅待审批工时可审批")
@@ -229,6 +276,10 @@ def reject_timesheet(
     ts = db.query(Timesheet).filter(Timesheet.id == ts_id).first()
     if not ts:
         raise HTTPException(status_code=404, detail="工时记录不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "timesheet", ts.id) is not None:
+        raise HTTPException(status_code=409, detail="该工时已进入审批流程，请在审批中心处理")
     assert_can_view(user, ts)
     if ts.status != TIMESHEET_STATUS_SUBMITTED:
         raise HTTPException(status_code=400, detail="仅待审批工时可驳回")

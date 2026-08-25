@@ -55,6 +55,8 @@ class Delegation(Base):
     granter_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     grantee_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     scope: Mapped[str] = mapped_column(String(120), nullable=False, default="all")
+    # AP-25/N-02：可代理的流程范围（biz_type 列表 JSON），空=按 scope 判定
+    biz_types_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

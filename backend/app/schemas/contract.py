@@ -49,6 +49,21 @@ class ContractUpdate(BaseModel):
     )
 
 
+class ContractModifyRequest(BaseModel):
+    """已生效合同修改重审（AP-04）。"""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    contract_type: Optional[str] = None
+    amount: Optional[Decimal] = Field(None, ge=0)
+    currency: Optional[str] = None
+    payment_method: Optional[str] = None
+    effective_date: Optional[date] = None
+    expire_date: Optional[date] = None
+    remark: Optional[str] = None
+    proofs: Optional[List[ContractProofFile]] = None
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class ContractTerminateRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
@@ -82,6 +97,9 @@ class ContractOut(BaseModel):
     approved_at: Optional[datetime] = None
     terminate_reason: Optional[str] = None
     remark: Optional[str] = None
+    revision: int = 1
+    modification_pending: bool = False
+    approval_in_center: bool = False
     proof_filename: Optional[str] = None
     proof_path: Optional[str] = None
     created_at: datetime

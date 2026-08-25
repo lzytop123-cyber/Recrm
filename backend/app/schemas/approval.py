@@ -51,6 +51,10 @@ class ApprovalTimelineNode(BaseModel):
     actor_name: Optional[str] = None
     acted_at: Optional[datetime] = None
     comment: Optional[str] = None
+    # 未处理节点的候选审批人（展示"下一步该谁审"）
+    candidate_names: list[str] = Field(default_factory=list)
+    candidate_count: int = 0
+    role_label: Optional[str] = None  # 角色/组标签，如 "法务"、"财务/行政（会签）"
 
 
 class ApprovalDetailOut(ApprovalItemOut):

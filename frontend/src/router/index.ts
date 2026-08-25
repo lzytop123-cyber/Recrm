@@ -211,6 +211,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/system/DictionaryView.vue'),
         meta: { title: '字典管理', permission: 'system:view' },
       },
+      {
+        path: 'system/approval-rules',
+        name: 'SystemApprovalRules',
+        component: () => import('@/views/system/ApprovalRulesView.vue'),
+        meta: { title: '审批规则', permission: 'system:view' },
+      },
     ],
   },
 ]

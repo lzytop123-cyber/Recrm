@@ -36,6 +36,9 @@ export interface ApprovalDetail extends ApprovalItem {
     actor_name?: string | null
     acted_at?: string | null
     comment?: string | null
+    candidate_names?: string[]
+    candidate_count?: number
+    role_label?: string | null
   }>
   nodes?: ApprovalDetail['timeline']
   rule_version?: number | null
@@ -75,4 +78,8 @@ export function rejectApproval(
   payload: { reason?: string; comment?: string },
 ) {
   return request.post(`/approvals/${encodeURIComponent(approvalId)}/reject`, payload)
+}
+
+export function withdrawApproval(approvalId: string) {
+  return request.post(`/approvals/${encodeURIComponent(approvalId)}/withdraw`, {})
 }

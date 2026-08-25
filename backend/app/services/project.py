@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import resolve_data_scope, user_can
+from app.core.rbac import resolve_data_scope, user_can, user_dept_scope
 from app.models.contract import (
     CONTRACT_STATUS_ACTIVE,
     CONTRACT_STATUS_COMPLETED,
@@ -300,7 +300,7 @@ def assert_can_view(user: User, project: Project) -> None:
         return
     if project.manager_id == user.id or project.creator_id == user.id:
         return
-    if scope == "department" and user.department_id and project.department_id == user.department_id:
+    if scope == "department" and project.department_id in user_dept_scope(user):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该项目")
 
@@ -471,6 +471,36 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
     )
     db.add(project)
     db.flush()
+
+    from app.services import approval_flow
+
+    # AP-06 无合同/无到款立项特批：副总经理 → 总经理
+    if payment_deferred:
+        if approval_flow.select_rule(db, "project_no_contract", {}) is not None:
+            approval_flow.start_instance(
+                db,
+                biz_type="project_no_contract",
+                biz_id=project.id,
+                initiator=user,
+                title=f"{'无合同立项' if not contract_id else '无到款立项'} {project.project_no} · {project.name}",
+                summary=(deferred_reason or None),
+                department_id=project.department_id,
+                deep_link="/projects/delivery?tab=initiation",
+                commit=False,
+            )
+    # AP-07 项目立项审批（合同项目）：部门负责人 → 中心负责人
+    elif contract_id and approval_flow.select_rule(db, "project_initiation", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="project_initiation",
+            biz_id=project.id,
+            initiator=user,
+            title=f"项目立项 {project.project_no} · {project.name}",
+            department_id=project.department_id,
+            deep_link=f"/projects/{project.id}",
+            commit=False,
+        )
+
     from app.services import project_resource as resource_service
 
     resource_service.seed_resource_needs(
@@ -482,6 +512,52 @@ def create_project(db: Session, user: User, payload: ProjectCreate) -> Project:
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
+
+
+def on_project_no_contract_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-06 终审回调：落无合同/无到款立项审批结果（不在此提交）。"""
+    from app.services import approval_flow
+
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project or project.payment_defer_status != PAYMENT_DEFER_PENDING:
+        return
+    project.payment_defer_approved_by = approval_flow.last_actor_id(instance)
+    project.payment_defer_approved_at = datetime.now(timezone.utc)
+    if approved:
+        project.payment_defer_status = PAYMENT_DEFER_APPROVED
+        project.payment_defer_reject_reason = None
+    else:
+        project.payment_defer_status = PAYMENT_DEFER_REJECTED
+        project.payment_defer_reject_reason = (
+            "发起人撤回" if withdrawn else (instance.reject_reason or "审批驳回")
+        )
+
+
+def on_project_initiation_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-07 终审回调：立项审批结果留痕（进计划门槛由 approval_instances 状态判定）。"""
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project or not project.contract_id:
+        return
+    if project.status != PROJECT_STATUS_INITIATING:
+        return
+    if approved:
+        return
+    reason = "发起人撤回" if withdrawn else (instance.reject_reason or "立项审批驳回")
+    project.remark = ((project.remark or "") + f"\n[立项驳回] {reason}").strip()
+
+
+def on_project_handover_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-08 终审回调：中心负责人确认交接后标记 handoff_complete。"""
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project:
+        return
+    if approved:
+        project.handoff_complete = True
+        return
+    if withdrawn:
+        return
+    reason = (instance.reject_reason or "交接确认驳回").strip()
+    project.remark = ((project.remark or "") + f"\n[交接驳回] {reason}").strip()
 
 
 def update_project(db: Session, user: User, project_id: int, payload: ProjectUpdate) -> Project:
@@ -547,9 +623,10 @@ def list_projects(
         if scope == "personal":
             q = q.filter(or_(Project.manager_id == user.id, Project.creator_id == user.id))
         elif scope == "department" and user.department_id:
+            dept_ids = user_dept_scope(user)
             q = q.filter(
                 or_(
-                    Project.department_id == user.department_id,
+                    Project.department_id.in_(dept_ids) if dept_ids else False,
                     Project.manager_id == user.id,
                     Project.creator_id == user.id,
                 )
@@ -635,6 +712,10 @@ def review_payment_defer(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "project_no_contract", project.id) is not None:
+        raise HTTPException(status_code=409, detail="该立项特批已进入审批流程，请在审批中心处理")
     assert_can_view(user, project)
     kind = _defer_kind_label(project)
     if not can_review_payment_defer(user):
@@ -682,12 +763,38 @@ def _assert_defer_ready_for_planning(project: Project) -> None:
         raise HTTPException(status_code=400, detail=f"{kind}尚未审批通过")
 
 
+def _assert_initiation_approved(db: Session, project: Project) -> None:
+    """AP-07 立项审批门槛（合同项目）：立项审批通过后方可进入计划。"""
+    from app.services import approval_flow
+
+    if not project.contract_id:
+        return
+    if approval_flow.select_rule(db, "project_initiation", {}) is None:
+        return
+    status = approval_flow.latest_instance_status(db, "project_initiation", project.id)
+    if status == "approved":
+        return
+    if status in ("pending", "blocked"):
+        detail = (
+            "立项审批已挂起（无可用审批人），请联系管理员"
+            if status == "blocked"
+            else "立项审批中，通过后方可进入计划"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+    if status == "rejected":
+        raise HTTPException(status_code=400, detail="立项审批已驳回，请修改后重新发起")
+    raise HTTPException(status_code=400, detail="立项尚未审批通过")
+
+
 def start_planning(db: Session, user: User, project_id: int) -> Project:
     from app.services import project_resource as resource_service
+    from app.services import approval_flow
 
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+
+    _assert_initiation_approved(db, project)
 
     if project.contract_id:
         contract = db.query(Contract).filter(Contract.id == project.contract_id).first()
@@ -709,10 +816,47 @@ def start_planning(db: Session, user: User, project_id: int) -> Project:
 
     resource_service.seed_resource_needs(db, project)
     resource_service.assert_resources_ready(db, project_id)
-    return _transition(db, user, project_id, {PROJECT_STATUS_INITIATING}, PROJECT_STATUS_PLANNING)
+    result = _transition(db, user, project_id, {PROJECT_STATUS_INITIATING}, PROJECT_STATUS_PLANNING)
+
+    # AP-08 项目交接与基线确认：进入计划后发起，中心负责人确认交接
+    if (
+        approval_flow.select_rule(db, "project_handover", {}) is not None
+        and approval_flow.find_open_instance(db, "project_handover", project_id) is None
+        and not approval_flow.has_approved_instance(db, "project_handover", project_id)
+    ):
+        approval_flow.start_instance(
+            db,
+            biz_type="project_handover",
+            biz_id=project_id,
+            initiator=user,
+            title=f"项目交接确认 {project.project_no or project.id} · {project.name}",
+            department_id=project.department_id,
+            deep_link=f"/projects/{project.id}",
+            commit=True,
+        )
+    return result
 
 
 def start_executing(db: Session, user: User, project_id: int) -> Project:
+    from app.services import approval_flow
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    # AP-08 交接确认门槛：交接审批通过后方可进入执行
+    if approval_flow.select_rule(db, "project_handover", {}) is not None:
+        status = approval_flow.latest_instance_status(db, "project_handover", project_id)
+        if status in ("pending", "blocked"):
+            detail = (
+                "项目交接确认已挂起（无可用审批人），请联系管理员"
+                if status == "blocked"
+                else "项目交接确认审批中，通过后方可进入执行"
+            )
+            raise HTTPException(status_code=400, detail=detail)
+        if status == "rejected":
+            raise HTTPException(status_code=400, detail="项目交接确认被驳回，请处理后重试")
+        if status != "approved":
+            raise HTTPException(status_code=400, detail="项目交接尚未确认通过")
     return _transition(
         db,
         user,
@@ -780,9 +924,48 @@ def accept_project(
         project.leftover_closed = False
     else:
         project.leftover_closed = True
+
+    # AP-09 项目验收：由项目发起人(销售)本人验收（指定人节点）
+    from app.services import approval_flow
+
+    if approval_flow.select_rule(db, "project_acceptance", {}) is not None:
+        acceptor = project.business_owner_id or project.creator_id
+        approval_flow.start_instance(
+            db,
+            biz_type="project_acceptance",
+            biz_id=project.id,
+            initiator=user,
+            title=f"项目验收 {project.project_no or project.id} · {project.name}",
+            summary=(project.acceptance_conclusion or None),
+            department_id=project.department_id,
+            deep_link=f"/projects/{project.id}",
+            assignees={"acceptor_id": acceptor},
+            commit=False,
+        )
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
+
+
+def on_project_acceptance_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-09 终审回调：落验收结果（不在此提交）。"""
+    from app.services import approval_flow
+
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project or project.acceptance_approval_status != ACCEPTANCE_APPROVAL_PENDING:
+        return
+    project.acceptance_approved_by = approval_flow.last_actor_id(instance)
+    project.acceptance_approved_at = datetime.now(timezone.utc)
+    if approved:
+        project.acceptance_approval_status = ACCEPTANCE_APPROVAL_APPROVED
+        project.status = PROJECT_STATUS_ACCEPTED
+        if project.progress < 90:
+            project.progress = max(project.progress, 90)
+    else:
+        project.acceptance_approval_status = ACCEPTANCE_APPROVAL_REJECTED
+        project.acceptance_reject_reason = (
+            "发起人撤回" if withdrawn else (instance.reject_reason or "验收驳回")
+        )
 
 
 def can_approve_acceptance(user: User) -> bool:
@@ -802,6 +985,10 @@ def review_acceptance(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "project_acceptance", project.id) is not None:
+        raise HTTPException(status_code=409, detail="该验收已进入审批流程，请在审批中心处理")
     assert_can_view(user, project)
     if not can_approve_acceptance(user):
         raise HTTPException(status_code=403, detail="无权审批项目验收")
@@ -864,9 +1051,50 @@ def submit_finance_check(
     project.finance_check_reject_reason = None
     if payload.remark:
         project.remark = ((project.remark or "") + f"\n[财务核对申请] {payload.remark}").strip()
+
+    # AP-10 项目结项归档：中心负责人归档核验
+    from app.services import approval_flow
+
+    if approval_flow.select_rule(db, "project_settlement", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="project_settlement",
+            biz_id=project.id,
+            initiator=user,
+            title=f"结项归档核验 {project.project_no or project.id} · {project.name}",
+            department_id=project.department_id,
+            deep_link=f"/projects/{project.id}",
+            commit=False,
+        )
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
+
+
+def on_project_settlement_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-10 归档核验回调：通过前仍校验回款收齐（P-16 归档须合同/收款齐备）。"""
+    from app.services import approval_flow
+
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project or project.finance_check_status != FINANCE_CHECK_PENDING:
+        return
+    project.finance_check_approved_by = approval_flow.last_actor_id(instance)
+    project.finance_check_approved_at = datetime.now(timezone.utc)
+    if approved:
+        _, amount, paid, complete = _project_contract_settlement(db, project)
+        if project.contract_id and complete:
+            project.finance_check_status = FINANCE_CHECK_APPROVED
+            project.finance_check_passed = True
+        else:
+            project.finance_check_status = FINANCE_CHECK_REJECTED
+            project.finance_check_passed = False
+            project.finance_check_reject_reason = "回款未收齐或未关联合同，不予归档核验"
+    else:
+        project.finance_check_status = FINANCE_CHECK_REJECTED
+        project.finance_check_passed = False
+        project.finance_check_reject_reason = (
+            "发起人撤回" if withdrawn else (instance.reject_reason or "归档核验驳回")
+        )
 
 
 def review_finance_check(
@@ -880,6 +1108,10 @@ def review_finance_check(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "project_settlement", project.id) is not None:
+        raise HTTPException(status_code=409, detail="该结项归档已进入审批流程，请在审批中心处理")
     assert_can_view(user, project)
     if not can_review_finance_check(user):
         raise HTTPException(status_code=403, detail="无权审批财务核对")
@@ -976,12 +1208,42 @@ def terminate_project(
     assert_can_operate(user, project)
     if project.status in {PROJECT_STATUS_COMPLETED, PROJECT_STATUS_TERMINATED}:
         raise HTTPException(status_code=400, detail="当前状态不可终止")
-    project.status = PROJECT_STATUS_TERMINATED
+
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "project_terminate", project.id) is not None:
+        raise HTTPException(status_code=409, detail="该项目终止审批进行中，请勿重复提交")
+
+    # AP-11 项目终止/重启审批流：部门负责人 → 中心负责人 → 总经理；通过后才终止
     project.terminate_reason = payload.reason
-    project.actual_end_date = date.today()
+    if approval_flow.select_rule(db, "project_terminate", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="project_terminate",
+            biz_id=project.id,
+            initiator=user,
+            title=f"终止项目 {project.project_no or project.id} · {project.name}",
+            summary=payload.reason,
+            department_id=project.department_id,
+            deep_link=f"/projects/{project.id}",
+            commit=False,
+        )
+    else:
+        project.status = PROJECT_STATUS_TERMINATED
+        project.actual_end_date = date.today()
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)
+
+
+def on_project_terminate_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-11 终审回调：通过才置终止；驳回/撤回不改状态。"""
+    project = db.query(Project).filter(Project.id == instance.biz_id).first()
+    if not project:
+        return
+    if approved and project.status not in {PROJECT_STATUS_COMPLETED, PROJECT_STATUS_TERMINATED}:
+        project.status = PROJECT_STATUS_TERMINATED
+        project.actual_end_date = date.today()
 
 
 def _normalize_evidence_link(raw: Optional[str]) -> Optional[str]:
@@ -1597,11 +1859,12 @@ def list_tasks(
                 )
             )
         elif scope == "department" and user.department_id:
+            dept_ids = user_dept_scope(user)
             q = q.filter(
                 or_(
-                    Project.department_id == user.department_id,
+                    Project.department_id.in_(dept_ids) if dept_ids else False,
                     ProjectTask.assignee_id == user.id,
-                    ProjectTask.department_id == user.department_id,
+                    ProjectTask.department_id.in_(dept_ids) if dept_ids else False,
                 )
             )
 
@@ -1717,14 +1980,15 @@ def department_monitor(db: Session, user: User) -> dict:
 
     _, tasks = list_tasks(db, user, page=1, page_size=5000)
     if not is_admin and dept_id:
+        dept_ids = user_dept_scope(user) or {dept_id}
         filtered = []
         for t in tasks:
-            if t.department_id == dept_id:
+            if t.department_id in dept_ids:
                 filtered.append(t)
                 continue
             if t.assignee_id:
                 u = db.query(User).filter(User.id == t.assignee_id).first()
-                if u and u.department_id == dept_id:
+                if u and u.department_id in dept_ids:
                     filtered.append(t)
         tasks = filtered
 

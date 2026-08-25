@@ -116,6 +116,17 @@ def descendant_department_ids(db: Session, root_id: int) -> list[int]:
     return result
 
 
+def user_dept_scope_ids(db: Session, user: User) -> list[int]:
+    """用户 department 数据范围：本部门 + 全部子孙部门 id；无部门则空列表。
+
+    用于 data_scope=department 时的可见范围过滤，确保中心/部门负责人
+    能看到子部门数据，跨中心/跨部门自动隔离。
+    """
+    if not user.department_id:
+        return []
+    return descendant_department_ids(db, user.department_id)
+
+
 def build_department_tree(db: Session) -> list[Department]:
     depts = list_departments_flat(db)
     by_id = {d.id: d for d in depts}
@@ -225,6 +236,31 @@ def _load_roles(db: Session, role_ids: list[int]) -> list[Role]:
     if len(roles) != len(set(role_ids)):
         raise HTTPException(status_code=400, detail="存在无效角色")
     return roles
+
+
+def _role_names_label(db: Session, role_ids: list[int]) -> str:
+    """角色 id 列表 → 「销售、财务」展示文案。"""
+    if not role_ids:
+        return "无"
+    rows = db.query(Role).filter(Role.id.in_(role_ids)).order_by(Role.id.asc()).all()
+    by_id = {r.id: r.name for r in rows}
+    parts = [by_id.get(int(rid), f"角色#{rid}") for rid in role_ids]
+    return "、".join(parts) if parts else "无"
+
+
+def describe_role_change(
+    db: Session, prev_role_ids: list[int], new_role_ids: list[int]
+) -> tuple[str, dict[str, object]]:
+    """生成审批摘要与上下文（含可读角色名）。"""
+    prev_names = _role_names_label(db, prev_role_ids)
+    new_names = _role_names_label(db, new_role_ids)
+    summary = f"{prev_names} → {new_names}"
+    return summary, {
+        "role_ids": new_role_ids,
+        "prev_role_ids": prev_role_ids,
+        "prev_roles": prev_names,
+        "new_roles": new_names,
+    }
 
 
 def list_employees(
@@ -383,7 +419,31 @@ def update_employee(db: Session, user_id: int, payload: EmployeeUpdate, *, actor
     if role_ids is not None:
         if user.id == actor.id:
             raise HTTPException(status_code=400, detail="不能修改自己的角色")
-        user.roles = _load_roles(db, role_ids)
+        current_ids = sorted(r.id for r in user.roles)
+        new_ids = sorted(role_ids)
+        if current_ids != new_ids:
+            from app.services import approval_flow
+
+            if approval_flow.find_open_instance(db, "role_change", user.id) is not None:
+                raise HTTPException(status_code=409, detail="该员工角色调整审批进行中，请等待结果")
+            if approval_flow.select_rule(db, "role_change", {}) is not None:
+                change_summary, change_facts = describe_role_change(db, current_ids, new_ids)
+                approval_flow.start_instance(
+                    db,
+                    biz_type="role_change",
+                    biz_id=user.id,
+                    initiator=actor,
+                    title=f"角色权限调整 · {user.real_name or user.username}",
+                    summary=change_summary,
+                    department_id=user.department_id,
+                    deep_link=f"/org/employees/{user.id}",
+                    facts=change_facts,
+                    commit=False,
+                )
+            else:
+                user.roles = _load_roles(db, role_ids)
+        else:
+            user.roles = _load_roles(db, role_ids)
 
     # 转岗 / 离职简单留痕
     new_status = user.employment_status
@@ -485,3 +545,19 @@ def org_stats(db: Session) -> dict:
 
 def list_role_options(db: Session) -> list[Role]:
     return db.query(Role).order_by(Role.id.asc()).all()
+
+
+def on_role_change_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-24 终审回调：通过则应用角色调整。"""
+    import json
+
+    user = db.query(User).filter(User.id == instance.biz_id).first()
+    if not user or not approved:
+        return
+    try:
+        facts = json.loads(instance.context_json) if instance.context_json else {}
+    except (json.JSONDecodeError, TypeError):
+        facts = {}
+    role_ids = facts.get("role_ids")
+    if isinstance(role_ids, list) and role_ids:
+        user.roles = _load_roles(db, [int(x) for x in role_ids])

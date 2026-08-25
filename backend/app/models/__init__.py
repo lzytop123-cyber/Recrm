@@ -4,6 +4,7 @@ ORM 模型汇总导出，供 Alembic 与业务层统一导入。
 """
 from app.models.associations import role_permissions, user_roles
 from app.models.approval_rule import ApprovalRule
+from app.models.approval_flow import ApprovalInstance, ApprovalTask
 from app.models.audit_log import AuditLog
 from app.models.contract import Contract
 from app.models.customer import Customer, CustomerFollowUp
@@ -56,6 +57,8 @@ __all__ = [
     "Role",
     "Permission",
     "ApprovalRule",
+    "ApprovalInstance",
+    "ApprovalTask",
     "Lead",
     "LeadFollowUp",
     "LeadLog",

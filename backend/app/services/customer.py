@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import resolve_data_scope, user_can
+from app.core.rbac import resolve_data_scope, user_can, user_dept_scope
 from app.models.customer import (
     CUSTOMER_STATUS_ACTIVE,
     CUSTOMER_STATUS_PAUSED,
@@ -69,7 +69,7 @@ def assert_can_view(user: User, customer: Customer) -> None:
         return
     if customer.owner_id == user.id or customer.creator_id == user.id:
         return
-    if scope == "department" and user.department_id and customer.department_id == user.department_id:
+    if scope == "department" and customer.department_id in user_dept_scope(user):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该客户")
 
@@ -160,9 +160,10 @@ def list_customers(
         if not is_admin and scope == "personal":
             q = q.filter(or_(Customer.owner_id == user.id, Customer.creator_id == user.id))
         elif not is_admin and scope == "department" and user.department_id:
+            dept_ids = user_dept_scope(user)
             q = q.filter(
                 or_(
-                    Customer.department_id == user.department_id,
+                    Customer.department_id.in_(dept_ids) if dept_ids else False,
                     Customer.owner_id == user.id,
                     Customer.creator_id == user.id,
                 )

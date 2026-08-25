@@ -222,6 +222,7 @@ const activeMenu = computed(() => {
     '/schedules',
     '/org',
     '/system/dictionaries',
+    '/system/approval-rules',
     '/system',
     '/approvals',
     '/todos',

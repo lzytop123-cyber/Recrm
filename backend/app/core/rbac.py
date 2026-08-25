@@ -127,6 +127,20 @@ def user_can(user, permission_code: str) -> bool:
     return permission_code in collect_permission_codes(user)
 
 
+def user_dept_scope(user) -> Set[int]:
+    """返回请求入口预计算好的部门数据范围（本部门 + 全部子孙）。
+
+    - 挂在 user.dept_scope_ids 上（deps.get_current_user 生成）
+    - 无部门时返回空集
+    - 未挂（如未经 deps 走的内部调用）回退到 {user.department_id}
+    """
+    scope = getattr(user, "dept_scope_ids", None)
+    if isinstance(scope, set):
+        return scope
+    dept_id = getattr(user, "department_id", None)
+    return {dept_id} if dept_id else set()
+
+
 def resolve_owner_filter(user, module: Optional[str] = None) -> dict:
     """
     根据数据范围返回查询过滤提示。

@@ -94,6 +94,10 @@ class Contract(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     terminate_reason: Mapped[Optional[str]] = mapped_column(String(500), comment="终止原因")
     remark: Mapped[Optional[str]] = mapped_column(Text, comment="备注")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="内容版本号")
+    modification_snapshot_json: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="待审批的合同修改快照 JSON"
+    )
     proof_filename: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, comment="合同证明原文件名（首张，兼容旧字段）"
     )

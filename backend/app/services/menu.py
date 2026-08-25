@@ -7,13 +7,13 @@ from app.schemas.auth import MenuItem, RoleBrief, UserInfoResponse
 
 # 仅线索录入岗（非销售链路）
 LEAD_ENTRY_ONLY_ROLE_CODES: Set[str] = {
-    "dept_head",  # 部门负责人
-    "brand",  # 品宣专员
-    "finance",  # 财务
-    "hr_supervisor",  # 综合管理主管
-    "asset_admin",  # 资产管理员
-    "employee",  # 普通员工：也可录入，但不进销售全链路
-    "operations",  # 运营：可录入并回看自己提交的线索
+    "dept_head",
+    "admin_staff",
+    "finance",
+    "hr",
+    "admin_office",
+    "staff",
+    "ops",
 }
 
 # 菜单定义：permission 为空表示登录即可见；有值则需具备对应权限（admin 角色放行）
@@ -32,6 +32,7 @@ MENU_CATALOG: List[dict] = [
     {"path": "/org", "title": "员工管理", "icon": "OfficeBuilding", "permission": "org:view"},
     {"path": "/system", "title": "系统管理", "icon": "Setting", "permission": "system:view"},
     {"path": "/system/dictionaries", "title": "字典管理", "icon": "Collection", "permission": "system:view"},
+    {"path": "/system/approval-rules", "title": "审批规则", "icon": "SetUp", "permission": "system:view"},
 ]
 
 # 第二期再开放：菜单隐藏，路由/API 仍保留便于以后打开
@@ -42,15 +43,15 @@ PHASE2_HIDDEN_MENU_PATHS: Set[str] = {
 # 这些角色有 ticket:view 时仍显示「协作工单」侧栏；纯销售有码可接单但不进全量菜单
 TICKET_MENU_ROLE_CODES: Set[str] = {
     "admin",
-    "board",
-    "executive",
-    "middle_manager",
-    "delivery_lead",
-    "operations",
-    "developer",
+    "chairman",
+    "gm",
+    "vp",
+    "center_lead",
+    "pm",
+    "ops",
     "dept_head",
-    "hr_supervisor",
-    "employee",
+    "hr",
+    "staff",
 }
 
 
@@ -65,7 +66,7 @@ def _hide_tickets_menu(user: User) -> bool:
 def is_lead_entry_only(user: User) -> bool:
     """无销售全链路权限的岗位：登录后走线索录入页。"""
     role_codes = {r.code for r in user.roles}
-    if role_codes & {"admin", "sales", "executive", "middle_manager", "board"}:
+    if role_codes & {"admin", "sales", "gm", "vp", "center_lead", "chairman"}:
         return False
     if role_codes & LEAD_ENTRY_ONLY_ROLE_CODES:
         return True

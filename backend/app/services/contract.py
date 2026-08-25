@@ -12,7 +12,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import resolve_data_scope, user_can
+from app.core.rbac import resolve_data_scope, user_can, user_dept_scope
 from app.models.contract import (
     CONTRACT_STATUS_ACTIVE,
     CONTRACT_STATUS_APPROVED,
@@ -266,6 +266,15 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
         contract.collection_status = "collected"  # type: ignore[attr-defined]
     else:
         contract.collection_status = "collecting"  # type: ignore[attr-defined]
+    from app.services.contract_modify import enrich_modification_flags
+
+    enrich_modification_flags(contract)
+    from app.services import approval_flow
+
+    contract.approval_in_center = any(  # type: ignore[attr-defined]
+        approval_flow.find_open_instance(db, bt, contract.id) is not None
+        for bt in ("contract", "contract_activate", "contract_modify", "contract_terminate")
+    )
     contract.proof_url = (  # type: ignore[attr-defined]
         f"/uploads/{contract.proof_path}" if contract.proof_path else None
     )
@@ -290,7 +299,7 @@ def assert_can_view(user: User, contract: Contract) -> None:
         return
     if contract.owner_id == user.id or contract.creator_id == user.id:
         return
-    if scope == "department" and user.department_id and contract.department_id == user.department_id:
+    if scope == "department" and contract.department_id in user_dept_scope(user):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该合同")
 
@@ -423,9 +432,10 @@ def list_contracts(
         if not is_admin and scope == "personal":
             q = q.filter(or_(Contract.owner_id == user.id, Contract.creator_id == user.id))
         elif not is_admin and scope == "department" and user.department_id:
+            dept_ids = user_dept_scope(user)
             q = q.filter(
                 or_(
-                    Contract.department_id == user.department_id,
+                    Contract.department_id.in_(dept_ids) if dept_ids else False,
                     Contract.owner_id == user.id,
                     Contract.creator_id == user.id,
                 )
@@ -471,6 +481,27 @@ def submit_approval(db: Session, user: User, contract_id: int) -> Contract:
         raise HTTPException(status_code=400, detail="请先上传合同照片或证明后再提交审批")
     contract.status = CONTRACT_STATUS_PENDING_APPROVAL
     _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已提交审批")
+
+    # AP-01/02 合同分级审批：规则已发布 contract 类型时走引擎；否则退回旧版单节点审批。
+    from app.services import approval_flow
+
+    amount = Decimal(str(contract.amount or 0))
+    facts = {"amount": amount}
+    if approval_flow.select_rule(db, "contract", facts) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="contract",
+            biz_id=contract.id,
+            initiator=user,
+            title=f"合同 {contract.contract_no} · {contract.title} · ¥{amount}",
+            summary=(contract.remark or None),
+            amount=amount,
+            currency=contract.currency or "CNY",
+            department_id=contract.department_id,
+            deep_link=f"/contracts/{contract.id}",
+            facts=facts,
+            commit=False,
+        )
     db.commit()
     db.refresh(contract)
     return enrich_contract(db, contract)
@@ -492,6 +523,10 @@ def approve_contract(db: Session, user: User, contract_id: int) -> Contract:
         raise HTTPException(status_code=404, detail="合同不存在")
     if contract.status != CONTRACT_STATUS_PENDING_APPROVAL:
         raise HTTPException(status_code=400, detail="仅待审批合同可审批")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "contract", contract.id) is not None:
+        raise HTTPException(status_code=409, detail="该合同已进入分级审批流程，请在审批中心处理")
     contract.status = CONTRACT_STATUS_APPROVED
     contract.approved_by = user.id
     contract.approved_at = _now()
@@ -510,6 +545,10 @@ def reject_contract(db: Session, user: User, contract_id: int, reason: Optional[
         raise HTTPException(status_code=404, detail="合同不存在")
     if contract.status != CONTRACT_STATUS_PENDING_APPROVAL:
         raise HTTPException(status_code=400, detail="仅待审批合同可驳回")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "contract", contract.id) is not None:
+        raise HTTPException(status_code=409, detail="该合同已进入分级审批流程，请在审批中心处理")
     contract.status = CONTRACT_STATUS_DRAFT
     if reason:
         contract.remark = ((contract.remark or "") + f"\n[驳回] {reason}").strip()
@@ -551,8 +590,29 @@ def activate_contract(db: Session, user: User, contract_id: int) -> Contract:
     assert_can_view(user, contract)
     if contract.status != CONTRACT_STATUS_SIGNED:
         raise HTTPException(status_code=400, detail="仅已签署合同可进入执行")
-    contract.status = CONTRACT_STATUS_ACTIVE
-    _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 进入执行")
+
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "contract_activate", contract.id) is not None:
+        raise HTTPException(status_code=409, detail="该合同激活确认进行中，请在审批中心处理")
+
+    # AP-03 合同签署与激活：财务确认激活（发起人提交，财务在审批中心确认后生效）
+    if approval_flow.select_rule(db, "contract_activate", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="contract_activate",
+            biz_id=contract.id,
+            initiator=user,
+            title=f"合同激活确认 {contract.contract_no} · {contract.title}",
+            amount=Decimal(str(contract.amount or 0)),
+            currency=contract.currency or "CNY",
+            department_id=contract.department_id,
+            deep_link=f"/contracts/{contract.id}",
+            commit=False,
+        )
+    else:
+        contract.status = CONTRACT_STATUS_ACTIVE
+        _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 进入执行")
     db.commit()
     db.refresh(contract)
     return enrich_contract(db, contract)
@@ -597,8 +657,15 @@ def withdraw_approval(db: Session, user: User, contract_id: int) -> Contract:
         and contract.creator_id != user.id
     ):
         raise HTTPException(status_code=403, detail="无权撤回该合同审批")
-    contract.status = CONTRACT_STATUS_DRAFT
     _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 撤回审批")
+
+    from app.services import approval_flow
+
+    inst = approval_flow.find_open_instance(db, "contract", contract.id)
+    if inst is not None:
+        approval_flow.cancel_instance(db, inst, reason="发起人撤回", commit=False)
+    else:
+        contract.status = CONTRACT_STATUS_DRAFT
     db.commit()
     db.refresh(contract)
     return enrich_contract(db, contract)
@@ -622,12 +689,77 @@ def terminate_contract(
         and contract.owner_id != user.id
     ):
         raise HTTPException(status_code=403, detail="无权终止合同")
-    contract.status = CONTRACT_STATUS_TERMINATED
+
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "contract_terminate", contract.id) is not None:
+        raise HTTPException(status_code=409, detail="该合同终止审批进行中，请勿重复提交")
+
+    # AP-05 合同终止审批：通过后合同状态=终止；抄送董事长。
     contract.terminate_reason = payload.reason
-    _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已终止")
+    if approval_flow.select_rule(db, "contract_terminate", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="contract_terminate",
+            biz_id=contract.id,
+            initiator=user,
+            title=f"终止合同 {contract.contract_no} · {contract.title}",
+            summary=payload.reason,
+            amount=Decimal(str(contract.amount or 0)),
+            currency=contract.currency or "CNY",
+            department_id=contract.department_id,
+            deep_link=f"/contracts/{contract.id}",
+            commit=False,
+        )
+    else:
+        contract.status = CONTRACT_STATUS_TERMINATED
+        _log_opp_contract_milestone(db, user, contract, f"合同 {contract.contract_no} 已终止")
     db.commit()
     db.refresh(contract)
     return enrich_contract(db, contract)
+
+
+def on_contract_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-01/02 终审回调：通过→已审批；驳回/撤回→草稿。"""
+    from app.services import approval_flow
+
+    contract = db.query(Contract).filter(Contract.id == instance.biz_id).first()
+    if not contract or contract.status != CONTRACT_STATUS_PENDING_APPROVAL:
+        return
+    if withdrawn:
+        contract.status = CONTRACT_STATUS_DRAFT
+        return
+    if approved:
+        contract.status = CONTRACT_STATUS_APPROVED
+        contract.approved_by = approval_flow.last_actor_id(instance)
+        contract.approved_at = _now()
+    else:
+        contract.status = CONTRACT_STATUS_DRAFT
+        reason = instance.reject_reason or "审批驳回"
+        contract.remark = ((contract.remark or "") + f"\n[驳回] {reason}").strip()
+
+
+def on_contract_activate_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-03 终审回调：财务确认通过后进入执行。"""
+    contract = db.query(Contract).filter(Contract.id == instance.biz_id).first()
+    if not contract or contract.status != CONTRACT_STATUS_SIGNED:
+        return
+    if withdrawn or not approved:
+        return
+    contract.status = CONTRACT_STATUS_ACTIVE
+
+
+def on_contract_terminate_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-05 终审回调：通过才终止；驳回/撤回恢复原状。"""
+    contract = db.query(Contract).filter(Contract.id == instance.biz_id).first()
+    if not contract:
+        return
+    if withdrawn or not approved:
+        if contract.status in {CONTRACT_STATUS_SIGNED, CONTRACT_STATUS_ACTIVE}:
+            contract.terminate_reason = None
+        return
+    if contract.status in {CONTRACT_STATUS_SIGNED, CONTRACT_STATUS_ACTIVE}:
+        contract.status = CONTRACT_STATUS_TERMINATED
 
 
 def contract_stats(db: Session, user: User) -> dict:

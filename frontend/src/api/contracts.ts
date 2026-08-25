@@ -52,6 +52,9 @@ export interface Contract {
   paid_amount?: number | string | null
   next_due_date?: string | null
   collection_status?: string | null
+  revision?: number
+  modification_pending?: boolean
+  approval_in_center?: boolean
 }
 
 /** 合同证明最多张数 */
@@ -154,4 +157,21 @@ export function completeContract(id: number) {
 
 export function terminateContract(id: number, reason: string) {
   return request.post<Contract>(`/contracts/${id}/terminate`, { reason })
+}
+
+export interface ContractModifyPayload {
+  title?: string
+  contract_type?: string
+  amount?: number
+  currency?: string
+  payment_method?: string
+  effective_date?: string
+  expire_date?: string
+  remark?: string
+  proofs?: ContractProofFile[]
+  reason: string
+}
+
+export function modifyContract(id: number, data: ContractModifyPayload) {
+  return request.post<Contract>(`/contracts/${id}/modify`, data)
 }

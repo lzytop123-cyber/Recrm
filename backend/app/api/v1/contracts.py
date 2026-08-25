@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.contract import (
     ContractCreate,
     ContractListOut,
+    ContractModifyRequest,
     ContractOut,
     ContractSignRequest,
     ContractStatsOut,
@@ -18,6 +19,7 @@ from app.schemas.contract import (
 )
 from app.schemas.lead import SalesJourneyOut
 from app.services import contract as contract_service
+from app.services import contract_modify as contract_modify_service
 from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/contracts", tags=["合同管理"])
@@ -165,6 +167,17 @@ def complete_contract(
     current_user: Annotated[User, Depends(PermissionChecker(["contract:view"]))],
 ) -> ContractOut:
     contract = contract_service.complete_contract(db, current_user, contract_id)
+    return ContractOut.model_validate(contract)
+
+
+@router.post("/{contract_id}/modify", response_model=ContractOut, summary="合同修改重审")
+def modify_contract(
+    contract_id: int,
+    payload: ContractModifyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["contract:view"]))],
+) -> ContractOut:
+    contract = contract_modify_service.submit_modification(db, current_user, contract_id, payload)
     return ContractOut.model_validate(contract)
 
 

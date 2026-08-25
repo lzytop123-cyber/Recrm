@@ -20,6 +20,7 @@ from app.config import get_settings
 from app.core.rbac import (
     resolve_data_scope,
     user_can,
+    user_dept_scope,
 )
 from app.models.customer import Customer
 from app.models.department import Department
@@ -231,7 +232,7 @@ def assert_can_view(user: User, lead: Lead) -> None:
         return
     if lead.owner_id == user.id:
         return
-    if scope == "department" and user.department_id and lead.department_id == user.department_id:
+    if scope == "department" and lead.department_id in user_dept_scope(user):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该线索")
 

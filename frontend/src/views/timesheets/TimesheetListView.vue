@@ -83,13 +83,21 @@
               提交
             </el-button>
             <el-button
-              v-if="row.status === 'submitted'"
+              v-if="row.status === 'submitted' && !row.approval_in_center"
               v-perm="'timesheet:approve'"
               link
               type="success"
               @click.stop="quickApprove(row)"
             >
               通过
+            </el-button>
+            <el-button
+              v-if="row.status === 'submitted' && row.approval_in_center"
+              link
+              type="primary"
+              @click.stop="router.push('/approvals')"
+            >
+              审批中心
             </el-button>
           </template>
         </el-table-column>

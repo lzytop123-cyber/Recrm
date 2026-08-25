@@ -11,7 +11,7 @@
       </div>
     </header>
 
-    <section class="approvals-kpis" style="--kpi-cols: 3" aria-label="审批分类">
+    <section class="approvals-kpis" :style="{ '--kpi-cols': tabs.length }" aria-label="审批分类">
       <button
         v-for="tab in tabs"
         :key="tab.key"
@@ -74,7 +74,7 @@
           </button>
           <div class="approval-card-actions">
             <el-button link type="primary" @click="openItem(row)">查看</el-button>
-            <template v-if="activeTab === 'pending' && row.can_act">
+            <template v-if="canActItem(row)">
               <el-button
                 v-if="row.actions.includes('approve')"
                 link
@@ -94,6 +94,15 @@
                 驳回
               </el-button>
             </template>
+            <el-button
+              v-if="activeTab === 'initiated' && row.actions.includes('withdraw')"
+              link
+              type="warning"
+              :loading="actingId === row.id"
+              @click="withdrawItem(row)"
+            >
+              撤回
+            </el-button>
           </div>
         </article>
         <div v-if="!items.length" class="approval-card-empty">暂无审批事项</div>
@@ -123,7 +132,7 @@
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="openItem(row)">查看</el-button>
-              <template v-if="activeTab === 'pending' && row.can_act">
+              <template v-if="canActItem(row)">
                 <el-button
                   v-if="row.actions.includes('approve')"
                   link
@@ -143,6 +152,15 @@
                   驳回
                 </el-button>
               </template>
+              <el-button
+                v-if="activeTab === 'initiated' && row.actions.includes('withdraw')"
+                link
+                type="warning"
+                :loading="actingId === row.id"
+                @click="withdrawItem(row)"
+              >
+                撤回
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -187,9 +205,26 @@
                 <span> · {{ formatTime(detail.submitted_at) }}</span>
               </p>
               <p v-if="detail.node" class="drawer-node">
-                {{ activeTab === 'pending' && detail.can_act ? '待处理' : '当前节点' }}：{{ detail.node }}
+                {{ canActItem(detail) ? '待处理' : '当前节点' }}：{{ detail.node }}
               </p>
             </header>
+
+            <section v-if="roleChangeHighlight" class="role-change-card">
+              <p v-if="roleChangeEmployee" class="role-change-employee">
+                员工：<b>{{ roleChangeEmployee }}</b>
+              </p>
+              <div class="role-change-flow">
+                <div class="role-change-box from">
+                  <small>调整前角色</small>
+                  <b>{{ roleChangeHighlight.before }}</b>
+                </div>
+                <span class="role-change-arrow" aria-hidden="true">→</span>
+                <div class="role-change-box to">
+                  <small>调整后角色</small>
+                  <b>{{ roleChangeHighlight.after }}</b>
+                </div>
+              </div>
+            </section>
 
             <section v-if="highlightAmount && detail.type !== 'project_payment_defer'" class="amount-card">
               <small>{{ highlightAmount.label }}</small>
@@ -392,6 +427,13 @@
                       <span v-if="node.actor_name">{{ node.actor_name }}</span>
                       <span v-if="node.acted_at"> · {{ formatTime(node.acted_at) }}</span>
                     </div>
+                    <div v-if="timelineCandidateText(node)" class="tl-meta tl-candidate">
+                      <span class="tl-cand-label">
+                        {{ node.status === 'active' ? '待' : '预计' }}
+                      </span>
+                      <span :title="node.candidate_names?.join('、')">{{ timelineCandidateText(node) }}</span>
+                      <span v-if="node.role_label" class="tl-role"> · {{ node.role_label }}</span>
+                    </div>
                     <div v-if="timelineComment(node)" class="tl-comment">
                       {{ timelineComment(node) }}
                     </div>
@@ -403,7 +445,7 @@
 
           <div class="drawer-actions">
             <el-button @click="openDeepLink">{{ deepLinkLabel }}</el-button>
-            <template v-if="activeTab === 'pending' && detail?.can_act">
+            <template v-if="detail && canActItem(detail)">
               <el-button
                 v-if="detail.actions.includes('approve')"
                 v-perm="'approval:center'"
@@ -423,6 +465,15 @@
                 驳回
               </el-button>
             </template>
+            <el-button
+              v-if="activeTab === 'initiated' && detail?.actions.includes('withdraw')"
+              type="warning"
+              plain
+              :loading="actingId === detail.id"
+              @click="withdrawItem(detail)"
+            >
+              撤回申请
+            </el-button>
           </div>
         </template>
         <el-empty v-else-if="!detailLoading" description="暂无详情" />
@@ -441,6 +492,7 @@ import {
   fetchApprovalStats,
   fetchApprovals,
   rejectApproval,
+  withdrawApproval,
   type ApprovalDetail,
   type ApprovalItem,
   type ApprovalStats,
@@ -461,10 +513,53 @@ const tabs = [
   { key: 'pending', label: '待我审批', statKey: 'pending' as const, note: '需尽快处理' },
   { key: 'initiated', label: '我发起的', statKey: 'initiated' as const, note: '跟踪进度' },
   { key: 'processed', label: '已处理', statKey: 'processed' as const, note: '历史记录' },
+  { key: 'cc', label: '抄送我的', statKey: 'cc' as const, note: '知会事项' },
 ]
 
-/** 与后端 category 对齐；目标绩效二期隐藏 */
-const categories = ['全部业务', '销售合同', '到款复核', '收款核销', '固定资产', '项目交付']
+/** 与后端 BIZ_CATEGORY 对齐 */
+const categories = [
+  '全部业务',
+  '销售合同',
+  '项目立项',
+  '项目交付',
+  '工时审批',
+  '收款到账',
+  '到款复核',
+  '收款核销',
+  '固定资产',
+  '协作工单',
+  '排期会议',
+  '组织权限',
+  '财务退款',
+]
+
+const BIZ_TYPE_TITLE: Record<string, string> = {
+  contract: '合同审批',
+  contract_activate: '合同激活确认',
+  contract_modify: '合同修改重审',
+  contract_terminate: '合同终止审批',
+  project_no_contract: '无合同立项',
+  project_initiation: '项目立项',
+  project_handover: '项目交接',
+  project_acceptance: '内部验收',
+  project_settlement: '财务核对',
+  project_terminate: '项目终止',
+  project_payment_defer: '无到款立项',
+  timesheet: '工时审批',
+  receipt: '到款复核',
+  receipt_diff: '到款差异复核',
+  allocation: '收款核销',
+  asset_borrow: '资产借用审批',
+  asset_return: '资产归还审批',
+  asset_maintenance: '资产维修审批',
+  asset_inventory_diff: '盘点差异审批',
+  asset_compensation: '资产赔偿审批',
+  role_change: '角色变更审批',
+  ticket: '工单受理审批',
+  ticket_cross_accept: '跨部门验收',
+  schedule: '排期会议审批',
+  refund: '财务退款审批',
+}
 
 const loading = ref(false)
 const actingId = ref<string | null>(null)
@@ -491,8 +586,15 @@ const detailLoading = ref(false)
 const detail = ref<ApprovalDetail | null>(null)
 const detailProject = ref<Project | null>(null)
 
+function canActItem(row: ApprovalItem) {
+  if (!row.can_act) return false
+  return activeTab.value === 'pending' || activeTab.value === 'initiated'
+}
+
 const detailTitle = computed(() => {
   if (!detail.value) return '审批详情'
+  const biz = effectiveBizType(detail.value)
+  if (BIZ_TYPE_TITLE[biz]) return BIZ_TYPE_TITLE[biz]
   if (detail.value.type === 'project_acceptance') return '内部验收'
   if (detail.value.type === 'project_finance') return '财务核对'
   if (detail.value.type === 'project_payment_defer') return '无到款立项'
@@ -553,6 +655,16 @@ const highlightAmount = computed(() => {
   return hit
 })
 
+const roleChangeHighlight = computed(() => {
+  if (effectiveBizType(detail.value) !== 'role_change') return null
+  const before = factValue('调整前角色')
+  const after = factValue('调整后角色')
+  if (!before && !after) return null
+  return { before: before || '无', after: after || '无' }
+})
+
+const roleChangeEmployee = computed(() => factValue('员工'))
+
 const displayFacts = computed(() => {
   const facts = detail.value?.facts || []
   if (!highlightAmount.value) return facts
@@ -576,15 +688,32 @@ const timelineProgressText = computed(() => {
 })
 
 const timelineChainHint = computed(() => {
-  const t = detail.value?.type
-  if (t === 'project_payment_defer') {
+  const biz = effectiveBizType(detail.value)
+  if (biz === 'project_payment_defer' || detail.value?.type === 'project_payment_defer') {
     return '链路：提交申请 → 负责人审批 → 进入计划 → 结项仍须财务核对回款'
   }
-  if (t === 'project_acceptance') return '链路：提交验收 → 审批 → 验收归档'
-  if (t === 'project_finance') return '链路：提交核对 → 财务审批 → 项目结项'
-  if (t === 'contract') return '链路：提交合同 → 审批 → 签署 / 执行'
-  if (t === 'receipt') return '链路：登记到账 → 复核确认 → 核销到应收'
-  if (t === 'allocation') return '链路：提交核销 → 审批 → 计入应收'
+  if (biz === 'project_acceptance' || detail.value?.type === 'project_acceptance') {
+    return '链路：提交验收 → 审批 → 验收归档'
+  }
+  if (biz === 'project_settlement' || detail.value?.type === 'project_finance') {
+    return '链路：提交核对 → 财务审批 → 项目结项'
+  }
+  if (biz === 'contract' || detail.value?.type === 'contract') {
+    return '链路：提交合同 → 分级审批 → 签署 / 执行'
+  }
+  if (biz === 'contract_modify') return '链路：提交修改 → 重审 → 通过后更新合同修订版'
+  if (biz === 'contract_activate') return '链路：申请激活 → 财务确认 → 进入执行'
+  if (biz === 'contract_terminate') return '链路：申请终止 → 审批 → 合同终止'
+  if (biz === 'timesheet') return '链路：提交工时 → 部门负责人审批'
+  if (biz === 'receipt' || detail.value?.type === 'receipt') {
+    return '链路：登记到账 → 复核确认 → 核销到应收'
+  }
+  if (biz === 'allocation' || detail.value?.type === 'allocation') {
+    return '链路：提交核销 → 审批 → 计入应收'
+  }
+  if (detail.value?.status === 'blocked' || detail.value?.status_label?.includes('挂起')) {
+    return '当前流程已挂起：无可用审批人，请联系管理员配置角色或审批规则'
+  }
   return ''
 })
 
@@ -594,16 +723,44 @@ const paymentDeferUnpaid = computed(() => {
 })
 
 const deepLinkLabel = computed(() => {
-  const t = detail.value?.type
-  if (t === 'receipt') return '查看到款合同'
-  if (t === 'allocation') return '查看合同'
-  if (t === 'contract') return '查看合同'
-  if (t === 'project_acceptance' || t === 'project_finance' || t === 'project_payment_defer') {
+  const biz = effectiveBizType(detail.value)
+  if (biz === 'receipt' || biz === 'receipt_diff' || detail.value?.type === 'receipt') {
+    return '查看到款合同'
+  }
+  if (biz === 'allocation' || detail.value?.type === 'allocation') return '查看合同'
+  if (
+    biz === 'contract' ||
+    biz === 'contract_modify' ||
+    biz === 'contract_activate' ||
+    biz === 'contract_terminate' ||
+    detail.value?.type === 'contract'
+  ) {
+    return '查看合同'
+  }
+  if (
+    biz === 'project_acceptance' ||
+    biz === 'project_settlement' ||
+    biz === 'project_no_contract' ||
+    detail.value?.type === 'project_acceptance' ||
+    detail.value?.type === 'project_finance' ||
+    detail.value?.type === 'project_payment_defer'
+  ) {
     return '查看项目'
   }
-  if (t === 'asset_borrow') return '打开借用单'
+  if (biz.startsWith('asset_') || detail.value?.type === 'asset_borrow') return '打开资产单'
+  if (biz === 'timesheet') return '查看工时'
+  if (biz === 'ticket' || biz === 'ticket_cross_accept') return '查看工单'
+  if (biz === 'schedule') return '查看排期'
   return '查看原单'
 })
+
+function effectiveBizType(item: ApprovalItem | ApprovalDetail | null): string {
+  if (!item) return ''
+  if (item.type === 'approval_instance') {
+    return String(item.meta?.biz_type || '')
+  }
+  return item.type
+}
 
 function factValue(label: string): string {
   const hit = (detail.value?.facts || []).find((f) => f.label === label)
@@ -625,6 +782,20 @@ function timelineStatusLabel(status?: string) {
   return '未开始'
 }
 
+function timelineCandidateText(node: {
+  status?: string
+  candidate_names?: string[]
+  candidate_count?: number
+  actor_name?: string | null
+}) {
+  if (node.actor_name) return ''
+  const names = node.candidate_names || []
+  const total = node.candidate_count || names.length
+  if (!total) return ''
+  if (total <= 2) return names.join('、')
+  return `${names[0]} 等 ${total} 人`
+}
+
 function timelineClass(status?: string) {
   if (status === 'done') return 'is-done'
   if (status === 'pending' || status === 'active') return 'is-current'
@@ -632,7 +803,8 @@ function timelineClass(status?: string) {
 }
 
 function statusTag(label: string) {
-  if (label.includes('待')) return 'warning'
+  if (label.includes('挂起')) return 'danger'
+  if (label.includes('待') || label.includes('审批中')) return 'warning'
   if (label.includes('驳回') || label.includes('拒绝')) return 'danger'
   if (label.includes('通过') || label.includes('已')) return 'success'
   return 'info'
@@ -739,6 +911,25 @@ async function runAction(row: ApprovalItem, approve: boolean, remark = '') {
     ElMessage.success(approve ? '已通过' : '已驳回')
     detailVisible.value = false
     await reload()
+  } finally {
+    actingId.value = null
+  }
+}
+
+async function withdrawItem(row: ApprovalItem) {
+  try {
+    await ElMessageBox.confirm(`确认撤回「${row.title}」？`, '撤回申请', {
+      confirmButtonText: '确认撤回',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    actingId.value = row.id
+    await withdrawApproval(row.id)
+    ElMessage.success('已撤回')
+    detailVisible.value = false
+    await reload()
+  } catch {
+    /* cancel */
   } finally {
     actingId.value = null
   }
@@ -1091,6 +1282,60 @@ onMounted(reload)
   font-family: var(--crm-font-data);
 }
 
+.role-change-card {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #fff7ed, #fffbeb);
+  border: 1px solid #fed7aa;
+}
+
+.role-change-employee {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--ap-ink-muted);
+}
+
+.role-change-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.role-change-box {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--ap-line);
+}
+
+.role-change-box small {
+  display: block;
+  font-size: 12px;
+  color: var(--ap-ink-faint);
+  margin-bottom: 4px;
+}
+
+.role-change-box b {
+  display: block;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ap-ink);
+}
+
+.role-change-box.to b {
+  color: #c2410c;
+}
+
+.role-change-arrow {
+  display: flex;
+  align-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ea580c;
+}
+
 .fact-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1307,6 +1552,23 @@ onMounted(reload)
 .is-current .tl-comment {
   color: #b45309;
   font-weight: 600;
+}
+
+.tl-candidate {
+  color: var(--ap-ink);
+}
+.is-current .tl-candidate {
+  color: #1d4ed8;
+  font-weight: 500;
+}
+.tl-cand-label {
+  color: var(--ap-ink-faint);
+  margin-right: 4px;
+  font-weight: 400;
+}
+.tl-role {
+  color: var(--ap-ink-faint);
+  font-weight: 400;
 }
 
 .decision-hint {

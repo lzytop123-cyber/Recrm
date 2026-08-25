@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.rbac import resolve_data_scope
+from app.core.rbac import resolve_data_scope, user_dept_scope
 from app.models.contract import Contract
 from app.models.customer import Customer
 from app.models.finance import (
@@ -26,6 +26,7 @@ from app.models.finance import (
     RECEIVABLE_STATUS_PAID,
     RECEIVABLE_STATUS_PARTIALLY_PAID,
     RECEIVABLE_STATUS_UNPAID,
+    REFUND_STATUS_CANCELLED,
     REFUND_STATUS_CONFIRMED,
     REFUND_STATUS_PENDING,
     REFUND_STATUS_REJECTED,
@@ -79,9 +80,10 @@ def _apply_contract_scope(query, user: User):
     if scope == "company":
         return query
     if scope == "department" and user.department_id:
+        dept_ids = user_dept_scope(user)
         return query.filter(
             or_(
-                Contract.department_id == user.department_id,
+                Contract.department_id.in_(dept_ids) if dept_ids else False,
                 Contract.owner_id == user.id,
                 Contract.creator_id == user.id,
             )
@@ -444,9 +446,55 @@ def create_receipt(db: Session, user: User, payload: ReceiptCreate) -> Receipt:
         remark=payload.remark,
     )
     db.add(item)
+    db.flush()
+
+    # AP-16 到账确认：财务确认到账
+    from app.services import approval_flow
+
+    if approval_flow.select_rule(db, "receipt", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="receipt",
+            biz_id=item.id,
+            initiator=user,
+            title=f"到账确认 {item.receipt_no} · ¥{item.amount}",
+            summary=f"{item.payer_name} · {_contract_brief_no(db, item.contract_id)}",
+            amount=_money(item.amount),
+            department_id=item.department_id,
+            deep_link=(f"/contracts/{item.contract_id}" if item.contract_id else "/approvals"),
+            commit=False,
+        )
     db.commit()
     db.refresh(item)
     return enrich_receipt(db, item)
+
+
+def _contract_brief_no(db: Session, contract_id) -> str:
+    if not contract_id:
+        return "—"
+    c = db.query(Contract).filter(Contract.id == contract_id).first()
+    return (c.contract_no if c else None) or f"#{contract_id}"
+
+
+def on_receipt_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-16 终审回调：通过则复用 review_receipt(置确认到账)，驳回/撤回置驳回。"""
+    from app.services import approval_flow
+
+    item = db.query(Receipt).filter(Receipt.id == instance.biz_id).first()
+    if not item or item.status != RECEIPT_STATUS_PENDING_REVIEW:
+        return
+    if withdrawn:
+        item.status = RECEIPT_STATUS_REJECTED
+        item.version += 1
+        return
+    actor = approval_flow.last_actor(db, instance)
+    if actor is None:
+        return
+    review_receipt(
+        db, actor, item.id,
+        ReceiptReviewRequest(remark=instance.reject_reason if not approved else None, version=item.version),
+        approve=approved,
+    )
 
 
 def list_receipts(
@@ -496,6 +544,10 @@ def review_receipt(
     db: Session, user: User, item_id: int, payload: ReceiptReviewRequest, *, approve: bool
 ) -> Receipt:
     item = _receipt(db, user, item_id, lock=True)
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "receipt", item.id) is not None:
+        raise HTTPException(status_code=409, detail="该到账已进入审批流程，请在审批中心处理")
     if item.version != payload.version:
         raise HTTPException(status_code=409, detail="收款记录已被其他操作修改，请刷新后重试")
     if item.status != RECEIPT_STATUS_PENDING_REVIEW:
@@ -559,9 +611,61 @@ def create_allocation(
     db.add(item)
     db.flush()
     receipt.version += 1
+
+    # AP-17 收款金额差异：核销额≠应收计划额时走分级审批
+    from app.services import approval_flow
+
+    plan_amount = _money(receivable.amount)
+    if amount != plan_amount and approval_flow.select_rule(db, "receipt_diff", {}) is not None:
+        diff = abs(amount - plan_amount)
+        approval_flow.start_instance(
+            db,
+            biz_type="receipt_diff",
+            biz_id=item.id,
+            initiator=user,
+            title=f"收款差异核销 {receipt.receipt_no} → {receivable.title}",
+            summary=f"核销 ¥{amount}，计划 ¥{plan_amount}，差异 ¥{diff}",
+            amount=diff,
+            department_id=receipt.department_id,
+            deep_link=_receipt_deep_link(receipt.contract_id),
+            facts={"allocation_amount": str(amount), "plan_amount": str(plan_amount), "diff": str(diff)},
+            commit=False,
+        )
+
     db.commit()
     db.refresh(item)
     return item
+
+
+def _receipt_deep_link(contract_id: int | None) -> str:
+    return f"/contracts/{contract_id}" if contract_id else "/sales?tab=contracts"
+
+
+def on_receipt_diff_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-17 终审回调：通过则生效核销，驳回/撤回置驳回。"""
+    from app.services import approval_flow
+
+    item = db.query(ReceiptAllocation).filter(ReceiptAllocation.id == instance.biz_id).first()
+    if not item or item.status != ALLOCATION_STATUS_PENDING:
+        return
+    if withdrawn:
+        item.status = ALLOCATION_STATUS_REJECTED
+        item.review_remark = "申请人撤回"
+        item.version += 1
+        return
+    actor = approval_flow.last_actor(db, instance)
+    if actor is None:
+        return
+    review_allocation(
+        db,
+        actor,
+        item.id,
+        AllocationReviewRequest(
+            remark=instance.reject_reason if not approved else None,
+            version=item.version,
+        ),
+        approve=approved,
+    )
 
 
 def list_allocations(db: Session, user: User, receipt_id: int) -> list[ReceiptAllocation]:
@@ -582,6 +686,10 @@ def review_allocation(
         raise HTTPException(status_code=409, detail="核销记录已被其他操作修改，请刷新后重试")
     if item.status != ALLOCATION_STATUS_PENDING:
         raise HTTPException(status_code=409, detail="仅待审批核销可以审批")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "receipt_diff", item.id) is not None:
+        raise HTTPException(status_code=409, detail="该核销已进入差异审批流程，请在审批中心处理")
     receipt = _receipt(db, user, item.receipt_id, lock=True)
     receivable = _receivable(db, user, item.receivable_plan_id, lock=True)
     if approve:
@@ -665,9 +773,73 @@ def create_refund(db: Session, user: User, receipt_id: int, payload: RefundCreat
     )
     db.add(item)
     receipt.version += 1
+    db.flush()
+
+    # AP-18 退款审批流：财务专员提交 → 总经理审批 → 财务负责人执行（禁止自审）
+    from app.services import approval_flow
+
+    approval_flow.start_instance(
+        db,
+        biz_type="refund",
+        biz_id=item.id,
+        initiator=user,
+        title=f"退款 {item.refund_no} · ¥{item.amount}",
+        summary=item.reason,
+        amount=_money(item.amount),
+        department_id=receipt.department_id,
+        deep_link=(f"/contracts/{receipt.contract_id}" if receipt.contract_id else "/approvals"),
+        facts={"amount": _money(item.amount)},
+        commit=False,
+    )
     db.commit()
     db.refresh(item)
     return item
+
+
+def _refund_flow_instance(db: Session, refund_id: int):
+    """取退款对应的、仍在审批中的实例。"""
+    from app.models.approval_flow import INSTANCE_PENDING, ApprovalInstance
+
+    return (
+        db.query(ApprovalInstance)
+        .filter(
+            ApprovalInstance.biz_type == "refund",
+            ApprovalInstance.biz_id == refund_id,
+            ApprovalInstance.status == INSTANCE_PENDING,
+        )
+        .order_by(ApprovalInstance.id.desc())
+        .first()
+    )
+
+
+def on_refund_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """审批流终审回调：把结果落到退款单（不在此提交，由引擎调用方统一提交）。"""
+    refund = db.query(Refund).filter(Refund.id == instance.biz_id).first()
+    if not refund or refund.status != REFUND_STATUS_PENDING:
+        return
+    if withdrawn:
+        refund.status = REFUND_STATUS_CANCELLED
+        refund.review_remark = "发起人撤回退款申请"
+    elif approved:
+        refund.status = REFUND_STATUS_CONFIRMED
+        # 执行人 = 最后一个通过节点的处理人（财务负责人）
+        executor = next(
+            (
+                t.acted_by
+                for t in sorted(instance.tasks, key=lambda x: x.seq, reverse=True)
+                if t.acted_by
+            ),
+            None,
+        )
+        refund.confirmed_by = executor
+        refund.confirmed_at = _now()
+    else:
+        refund.status = REFUND_STATUS_REJECTED
+        refund.review_remark = instance.reject_reason or "审批驳回"
+    refund.version += 1
+    receipt = db.query(Receipt).filter(Receipt.id == refund.receipt_id).first()
+    if receipt:
+        receipt.version += 1
 
 
 def list_refunds(db: Session, user: User, receipt_id: int) -> list[Refund]:
@@ -683,19 +855,24 @@ def list_refunds(db: Session, user: User, receipt_id: int) -> list[Refund]:
 def review_refund(
     db: Session, user: User, item_id: int, payload: RefundReviewRequest, *, approve: bool
 ) -> Refund:
+    """按 AP-18 走三级审批流推进当前节点（禁止自审、逐级串行）。
+
+    兼容旧接口：退款单当前激活节点若是本人角色且非本人发起，则推进一步；
+    终审通过后才由回调把退款置为「已确认」。
+    """
     item = _refund(db, user, item_id, lock=True)
     if item.version != payload.version:
         raise HTTPException(status_code=409, detail="退款记录已被其他操作修改，请刷新后重试")
     if item.status != REFUND_STATUS_PENDING:
         raise HTTPException(status_code=409, detail="仅待审批退款可以处理")
-    receipt = _receipt(db, user, item.receipt_id, lock=True)
-    item.status = REFUND_STATUS_CONFIRMED if approve else REFUND_STATUS_REJECTED
-    item.confirmed_by = user.id
-    item.confirmed_at = _now()
-    item.review_remark = payload.remark
-    item.version += 1
-    receipt.version += 1
-    db.commit()
+    instance = _refund_flow_instance(db, item.id)
+    if instance is None:
+        raise HTTPException(status_code=409, detail="该退款未在审批流程中，请在审批中心处理")
+    comment = (payload.remark or "").strip() or ("同意退款" if approve else "驳回退款")
+
+    from app.services import approval_flow
+
+    approval_flow.act(db, user, instance, approve=approve, comment=comment)
     db.refresh(item)
     return item
 

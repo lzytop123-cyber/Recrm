@@ -141,6 +141,7 @@ class SystemDictionaryOut(BaseModel):
 class DelegationCreate(BaseModel):
     grantee_id: int
     scope: str = Field(default="all", max_length=120)
+    biz_types: Optional[list[str]] = None  # 可代理的流程 biz_type 列表，空/None=全部（高风险仍按 N-03 拦截）
     reason: Optional[str] = None
     starts_at: datetime
     ends_at: Optional[datetime] = None
@@ -148,6 +149,7 @@ class DelegationCreate(BaseModel):
 
 class DelegationUpdate(BaseModel):
     scope: Optional[str] = Field(None, max_length=120)
+    biz_types: Optional[list[str]] = None
     reason: Optional[str] = None
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
@@ -160,6 +162,7 @@ class DelegationOut(BaseModel):
     granter_id: int
     grantee_id: int
     scope: str
+    biz_types: Optional[list[str]] = None
     reason: Optional[str] = None
     starts_at: datetime
     ends_at: Optional[datetime] = None

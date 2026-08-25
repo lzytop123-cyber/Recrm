@@ -234,6 +234,24 @@ def create_schedule(db: Session, user: User, payload: ScheduleCreate) -> Schedul
         feishu_sync_status=FEISHU_SYNC_PENDING,
     )
     db.add(item)
+    db.flush()
+
+    # AP-14 排期确认：执行人本人确认
+    from app.services import approval_flow
+
+    if approval_flow.select_rule(db, "schedule", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="schedule",
+            biz_id=item.id,
+            initiator=user,
+            title=f"排期确认 {item.title}",
+            summary=f"{employee.real_name or employee.username} · {_planned_hours(item)}h",
+            department_id=item.department_id,
+            deep_link=f"/schedules/{item.id}",
+            assignees={"owner_id": employee.id},
+            commit=False,
+        )
     db.commit()
     db.refresh(item)
     return enrich_schedule(db, item)
@@ -353,17 +371,7 @@ def get_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
     return enrich_schedule(db, item)
 
 
-def confirm_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
-    item = db.query(Schedule).filter(Schedule.id == schedule_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="排期不存在")
-    assert_can_view(user, item)
-    # 本人可确认档期；管理者也可确认
-    if item.employee_id != user.id and not can_manage(user):
-        raise HTTPException(status_code=403, detail="仅资源本人或管理者可确认")
-    if item.status != SCHEDULE_STATUS_PENDING:
-        raise HTTPException(status_code=400, detail="仅待确认排期可确认")
-
+def _apply_confirm_schedule(db: Session, item: Schedule, actor: User) -> None:
     conflicts = _find_conflicts(
         db,
         employee_id=item.employee_id,
@@ -375,11 +383,54 @@ def confirm_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
     if hard:
         titles = "、".join(c.title for c in hard[:3])
         raise HTTPException(status_code=400, detail=f"存在时间冲突，无法确认：{titles}")
-
     item.status = SCHEDULE_STATUS_CONFIRMED
-    item.confirmed_by = user.id
+    item.confirmed_by = actor.id
     item.confirmed_at = _now()
     item.feishu_sync_status = FEISHU_SYNC_PENDING
+
+
+def on_schedule_flow_result(db: Session, instance, *, approved: bool, withdrawn: bool = False) -> None:
+    """AP-14 终审回调：通过则确认排期。"""
+    from app.services import approval_flow
+
+    item = db.query(Schedule).filter(Schedule.id == instance.biz_id).first()
+    if not item or item.status != SCHEDULE_STATUS_PENDING:
+        return
+    if not approved:
+        return
+    actor = approval_flow.last_actor(db, instance)
+    if actor is None:
+        return
+    try:
+        _apply_confirm_schedule(db, item, actor)
+    except HTTPException:
+        pass
+
+
+def confirm_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
+    item = db.query(Schedule).filter(Schedule.id == schedule_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="排期不存在")
+    assert_can_view(user, item)
+    # 本人可确认档期；管理者也可确认
+    if item.employee_id != user.id and not can_manage(user):
+        raise HTTPException(status_code=403, detail="仅资源本人或管理者可确认")
+    if item.status != SCHEDULE_STATUS_PENDING:
+        raise HTTPException(status_code=400, detail="仅待确认排期可确认")
+    from app.services import approval_flow
+
+    flow_status = approval_flow.latest_instance_status(db, "schedule", item.id)
+    if flow_status in ("pending", "blocked"):
+        detail = (
+            "排期确认已挂起（无可用审批人），请联系管理员"
+            if flow_status == "blocked"
+            else "排期确认审批中，请在审批中心处理"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+    if approval_flow.find_open_instance(db, "schedule", item.id) is not None:
+        raise HTTPException(status_code=409, detail="排期确认审批中，请在审批中心处理")
+
+    _apply_confirm_schedule(db, item, user)
     db.commit()
     db.refresh(item)
     return enrich_schedule(db, item)

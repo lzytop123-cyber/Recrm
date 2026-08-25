@@ -280,6 +280,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
     items: list[ApprovalItemOut] = []
 
     if _can_approve_contract(user):
+        from app.services import approval_flow
+
+        _contract_engine_ids = approval_flow.instance_biz_ids(db, "contract")
         rows = (
             db.query(Contract)
             .filter(Contract.status == CONTRACT_STATUS_PENDING_APPROVAL)
@@ -288,6 +291,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for c in rows:
+            if c.id in _contract_engine_ids:
+                continue  # 已进入审批引擎，由实例条目代表，避免重复
             items.append(
                 _item(
                     id=f"contract:{c.id}",
@@ -315,6 +320,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if can_manage_assets(user):
+        from app.services import approval_flow
+
+        _borrow_engine_ids = approval_flow.instance_biz_ids(db, "asset_borrow")
         rows = (
             db.query(AssetBorrowRequest)
             .filter(AssetBorrowRequest.status == BORROW_PENDING)
@@ -323,6 +331,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for b in rows:
+            if b.id in _borrow_engine_ids:
+                continue  # 已进入审批引擎，由实例条目代表
             items.append(
                 _asset_borrow_item(
                     db,
@@ -335,6 +345,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if can_approve_timesheet(user):
+        from app.services import approval_flow as _af_ts
+
+        _ts_engine_ids = _af_ts.instance_biz_ids(db, "timesheet")
         rows = (
             db.query(Timesheet)
             .filter(Timesheet.status == TIMESHEET_STATUS_SUBMITTED)
@@ -343,6 +356,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for t in rows:
+            if t.id in _ts_engine_ids:
+                continue
             items.append(
                 _item(
                     id=f"timesheet:{t.id}",
@@ -370,6 +385,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if can_approve_acceptance(user):
+        from app.services import approval_flow as _af_acc
+
+        _acc_engine_ids = _af_acc.instance_biz_ids(db, "project_acceptance")
         rows = (
             db.query(Project)
             .filter(
@@ -381,6 +399,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for p in rows:
+            if p.id in _acc_engine_ids:
+                continue
             items.append(
                 _item(
                     id=f"project_acceptance:{p.id}",
@@ -409,6 +429,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if can_review_finance_check(user):
+        from app.services import approval_flow as _af_fin
+
+        _fin_engine_ids = _af_fin.instance_biz_ids(db, "project_settlement")
         rows = (
             db.query(Project)
             .filter(Project.finance_check_status == FINANCE_CHECK_PENDING)
@@ -417,6 +440,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for p in rows:
+            if p.id in _fin_engine_ids:
+                continue
             _, amount, paid, complete = _project_contract_settlement(db, p)
             outstanding = amount - paid
             if outstanding < 0:
@@ -452,6 +477,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if can_review_payment_defer(user):
+        from app.services import approval_flow as _af_defer
+
+        _defer_engine_ids = _af_defer.instance_biz_ids(db, "project_no_contract")
         rows = (
             db.query(Project)
             .filter(
@@ -464,6 +492,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for p in rows:
+            if p.id in _defer_engine_ids:
+                continue  # 已进入审批引擎，由实例条目代表
             _, amount, paid, _complete = _project_contract_settlement(db, p)
             defer_source = "无合同立项" if not p.contract_id else "无到款立项"
             items.append(
@@ -504,6 +534,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             )
 
     if _can_review_receipt(user):
+        from app.services import approval_flow as _af_rc
+
+        _receipt_engine_ids = _af_rc.instance_biz_ids(db, "receipt")
         rows = (
             db.query(Receipt)
             .filter(Receipt.status == RECEIPT_STATUS_PENDING_REVIEW)
@@ -512,6 +545,8 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .all()
         )
         for r in rows:
+            if r.id in _receipt_engine_ids:
+                continue  # 已进入审批引擎，由实例条目代表
             items.append(
                 _item(
                     id=f"receipt:{r.id}",
@@ -544,7 +579,10 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
             .limit(100)
             .all()
         )
+        _diff_engine_ids = _af_rc.instance_biz_ids(db, "receipt_diff")
         for a, r, plan in alloc_rows:
+            if a.id in _diff_engine_ids:
+                continue
             items.append(
                 _item(
                     id=f"allocation:{a.id}",
@@ -613,6 +651,9 @@ def _collect_pending_for_actor(db: Session, user: User) -> list[ApprovalItemOut]
                 )
             )
 
+    from app.services import approval_flow
+
+    items.extend(approval_flow.pending_items_for(db, user))
     items.sort(key=lambda x: x.submitted_at or datetime.min, reverse=True)
     return _attach_published_rules(db, items)
 
@@ -655,6 +696,9 @@ def _attach_published_rules(db: Session, items: list[ApprovalItemOut]) -> list[A
 def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
     items: list[ApprovalItemOut] = []
 
+    from app.services import approval_flow
+
+    _contract_engine_ids = approval_flow.instance_biz_ids(db, "contract")
     rows = (
         db.query(Contract)
         .filter(
@@ -666,6 +710,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for c in rows:
+        if c.id in _contract_engine_ids:
+            continue  # 已进入审批引擎，由实例条目代表
         items.append(
             _item(
                 id=f"contract:{c.id}",
@@ -689,6 +735,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_borrow_init
+
+    _borrow_engine_ids = _af_borrow_init.instance_biz_ids(db, "asset_borrow")
     rows = (
         db.query(AssetBorrowRequest)
         .filter(
@@ -700,6 +749,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for b in rows:
+        if b.id in _borrow_engine_ids:
+            continue
         items.append(
             _asset_borrow_item(
                 db,
@@ -712,6 +763,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_ts_init
+
+    _ts_engine_ids = _af_ts_init.instance_biz_ids(db, "timesheet")
     rows = (
         db.query(Timesheet)
         .filter(
@@ -723,6 +777,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for t in rows:
+        if t.id in _ts_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"timesheet:{t.id}",
@@ -746,6 +802,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_defer_init
+
+    _defer_engine_ids = _af_defer_init.instance_biz_ids(db, "project_no_contract")
     rows = (
         db.query(Project)
         .filter(
@@ -758,6 +817,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _defer_engine_ids:
+            continue
         defer_source = "无合同立项" if not p.contract_id else "无到款立项"
         items.append(
             _item(
@@ -784,6 +845,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_acc_init
+
+    _acc_engine_ids = _af_acc_init.instance_biz_ids(db, "project_acceptance")
     rows = (
         db.query(Project)
         .filter(
@@ -795,6 +859,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _acc_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"project_acceptance:{p.id}",
@@ -818,6 +884,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_fin_init
+
+    _fin_engine_ids = _af_fin_init.instance_biz_ids(db, "project_settlement")
     rows = (
         db.query(Project)
         .filter(
@@ -829,6 +898,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _fin_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"project_finance:{p.id}",
@@ -852,6 +923,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_rc_init
+
+    _receipt_engine_ids = _af_rc_init.instance_biz_ids(db, "receipt")
     rows = (
         db.query(Receipt)
         .filter(
@@ -863,6 +937,8 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for r in rows:
+        if r.id in _receipt_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"receipt:{r.id}",
@@ -898,7 +974,12 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
         .limit(50)
         .all()
     )
+    from app.services import approval_flow as _af_diff_init
+
+    _diff_engine_ids = _af_diff_init.instance_biz_ids(db, "receipt_diff")
     for a, r, plan in alloc_rows:
+        if a.id in _diff_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"allocation:{a.id}",
@@ -964,6 +1045,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow
+
+    items.extend(approval_flow.initiated_items_for(db, user))
     items.sort(key=lambda x: x.submitted_at or datetime.min, reverse=True)
     return items
 
@@ -971,6 +1055,9 @@ def _collect_initiated(db: Session, user: User) -> list[ApprovalItemOut]:
 def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
     items: list[ApprovalItemOut] = []
 
+    from app.services import approval_flow
+
+    _contract_engine_ids = approval_flow.instance_biz_ids(db, "contract")
     rows = (
         db.query(Contract)
         .filter(Contract.approved_by == user.id)
@@ -979,6 +1066,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for c in rows:
+        if c.id in _contract_engine_ids:
+            continue  # 已进入审批引擎，由实例条目代表
         items.append(
             _item(
                 id=f"contract:{c.id}:done",
@@ -1002,6 +1091,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_borrow_proc
+
+    _borrow_engine_ids = _af_borrow_proc.instance_biz_ids(db, "asset_borrow")
     rows = (
         db.query(AssetBorrowRequest)
         .filter(AssetBorrowRequest.approved_by == user.id)
@@ -1010,6 +1102,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for b in rows:
+        if b.id in _borrow_engine_ids:
+            continue
         items.append(
             _asset_borrow_item(
                 db,
@@ -1022,6 +1116,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_ts_proc
+
+    _ts_engine_ids = _af_ts_proc.instance_biz_ids(db, "timesheet")
     rows = (
         db.query(Timesheet)
         .filter(Timesheet.approver_id == user.id)
@@ -1030,6 +1127,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for t in rows:
+        if t.id in _ts_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"timesheet:{t.id}:done",
@@ -1053,6 +1152,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_defer_proc
+
+    _defer_engine_ids = _af_defer_proc.instance_biz_ids(db, "project_no_contract")
     rows = (
         db.query(Project)
         .filter(
@@ -1066,6 +1168,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _defer_engine_ids:
+            continue
         label = (
             "已通过" if p.payment_defer_status == PAYMENT_DEFER_APPROVED else "已驳回"
         )
@@ -1098,6 +1202,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_acc_proc
+
+    _acc_engine_ids = _af_acc_proc.instance_biz_ids(db, "project_acceptance")
     rows = (
         db.query(Project)
         .filter(
@@ -1111,6 +1218,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _acc_engine_ids:
+            continue
         label = (
             "已通过"
             if p.acceptance_approval_status == ACCEPTANCE_APPROVAL_APPROVED
@@ -1139,6 +1248,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_fin_proc
+
+    _fin_engine_ids = _af_fin_proc.instance_biz_ids(db, "project_settlement")
     rows = (
         db.query(Project)
         .filter(
@@ -1152,6 +1264,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for p in rows:
+        if p.id in _fin_engine_ids:
+            continue
         label = (
             "已通过" if p.finance_check_status == FINANCE_CHECK_APPROVED else "已驳回"
         )
@@ -1178,6 +1292,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow as _af_rc_proc
+
+    _receipt_engine_ids = _af_rc_proc.instance_biz_ids(db, "receipt")
     rows = (
         db.query(Receipt)
         .filter(Receipt.confirmed_by == user.id)
@@ -1186,6 +1303,8 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
         .all()
     )
     for r in rows:
+        if r.id in _receipt_engine_ids:
+            continue
         items.append(
             _item(
                 id=f"receipt:{r.id}:done",
@@ -1248,6 +1367,9 @@ def _collect_processed(db: Session, user: User) -> list[ApprovalItemOut]:
             )
         )
 
+    from app.services import approval_flow
+
+    items.extend(approval_flow.processed_items_for(db, user))
     items.sort(key=lambda x: x.submitted_at or datetime.min, reverse=True)
     return items
 
@@ -1445,7 +1567,13 @@ def get_approval(db: Session, user: User, approval_id: str) -> ApprovalDetailOut
     item = _find_approval_item(db, user, approval_id)
     if not item:
         raise HTTPException(status_code=404, detail="审批单不存在")
-    timeline = _build_timeline(item)
+    from app.services import approval_flow
+
+    if item.type == approval_flow.ITEM_PREFIX:
+        instance = approval_flow.get_instance_by_item_id(db, approval_id)
+        timeline = approval_flow.instance_timeline(instance, db)
+    else:
+        timeline = _build_timeline(item)
     rule_version = item.meta.get("rule_version") if isinstance(item.meta, dict) else None
     if rule_version is not None:
         try:
@@ -1635,6 +1763,39 @@ def _dispatch_approve_reject(
     raise HTTPException(status_code=400, detail=f"不支持的审批类型: {biz_type}")
 
 
+def _act_instance(
+    db: Session,
+    user: User,
+    approval_id: str,
+    instance_id: int,
+    action: str,
+    payload: ApprovalActRequest,
+) -> ApprovalActResult:
+    """审批流实例的动作路由（通过/驳回/撤回/催办）。"""
+    from app.services import approval_flow
+
+    instance = approval_flow.get_instance(db, instance_id)
+    comment = (payload.comment or payload.reason or "").strip() or None
+
+    if action in ("approve", "reject"):
+        approval_flow.act(db, user, instance, approve=(action == "approve"), comment=comment)
+        return ApprovalActResult(
+            ok=True,
+            message="已通过" if action == "approve" else "已驳回",
+            approval_id=approval_id,
+            action=action,
+        )
+    if action == "withdraw":
+        approval_flow.withdraw(db, user, instance)
+        return ApprovalActResult(ok=True, message="已撤回", approval_id=approval_id, action=action)
+    if action == "remind":
+        return _stub_act(db, user, approval_id, action, "催办提醒已记录", payload)
+    raise HTTPException(
+        status_code=400,
+        detail="审批流单据暂不支持该动作；驳回后请由发起人重新发起",
+    )
+
+
 def act_approval(
     db: Session,
     user: User,
@@ -1653,6 +1814,11 @@ def act_approval(
         raise HTTPException(status_code=404, detail="审批单不存在")
 
     biz_type, entity_id = _parse_approval_id(approval_id)
+
+    from app.services import approval_flow
+
+    if biz_type == approval_flow.ITEM_PREFIX:
+        return _act_instance(db, user, approval_id, entity_id, action, payload)
 
     if action in ("approve", "reject"):
         _dispatch_approve_reject(

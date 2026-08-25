@@ -17,8 +17,12 @@
         >
           提交审批
         </el-button>
+        <ApprovalCenterHint
+          v-if="item.status === 'submitted' && item.approval_in_center"
+          label="工时审批进行中"
+        />
         <el-button
-          v-if="item.status === 'submitted'"
+          v-if="item.status === 'submitted' && !item.approval_in_center"
           v-perm="'timesheet:approve'"
           type="success"
           @click="onApprove"
@@ -26,7 +30,7 @@
           审批通过
         </el-button>
         <el-button
-          v-if="item.status === 'submitted'"
+          v-if="item.status === 'submitted' && !item.approval_in_center"
           v-perm="'timesheet:approve'"
           type="danger"
           plain
@@ -125,6 +129,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import ApprovalCenterHint from '@/components/approval/ApprovalCenterHint.vue'
 import {
   TIMESHEET_STATUS_LABEL,
   TIMESHEET_TYPE_OPTIONS,
