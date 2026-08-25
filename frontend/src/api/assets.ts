@@ -73,6 +73,8 @@ export interface BorrowRequest {
   applicant_name?: string | null
   assets: BorrowItem[]
   asset_count: number
+  approval_in_center?: boolean
+  open_approval_id?: string | null
 }
 
 export interface InventorySession {

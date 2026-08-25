@@ -69,6 +69,13 @@ export function fetchApprovalDetail(approvalId: string) {
   return request.get<ApprovalDetail>(`/approvals/${encodeURIComponent(approvalId)}`)
 }
 
+/** 业务实体 → 进行中审批单 id */
+export function resolveOpenApproval(bizType: string, bizId: number) {
+  return request.get<{ id: string; biz_type: string }>('/approvals/resolve', {
+    params: { biz_type: bizType, biz_id: bizId },
+  })
+}
+
 export function approveApproval(approvalId: string, payload?: { comment?: string }) {
   return request.post(`/approvals/${encodeURIComponent(approvalId)}/approve`, payload || {})
 }

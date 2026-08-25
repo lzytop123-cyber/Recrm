@@ -51,6 +51,7 @@ class TimesheetOut(BaseModel):
     project_name: Optional[str] = None
     approver_name: Optional[str] = None
     approval_in_center: bool = False
+    open_approval_id: Optional[str] = None
 
 
 class TimesheetListOut(BaseModel):

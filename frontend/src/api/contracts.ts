@@ -55,6 +55,7 @@ export interface Contract {
   revision?: number
   modification_pending?: boolean
   approval_in_center?: boolean
+  open_approval_id?: string | null
 }
 
 /** 合同证明最多张数 */

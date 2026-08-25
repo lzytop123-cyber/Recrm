@@ -1075,6 +1075,54 @@ def pending_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
     return items
 
 
+def cc_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
+    """抄送给我的：规则 cc 角色与当前用户角色相交的实例（含进行中与已完结）。"""
+    role_codes = _user_role_codes(user)
+    is_admin = _is_flow_superuser(user)
+    if not role_codes and not is_admin:
+        return []
+    rows = (
+        db.query(ApprovalInstance)
+        .filter(
+            ApprovalInstance.cc_json.isnot(None),
+            ApprovalInstance.cc_json != "",
+            ApprovalInstance.cc_json != "[]",
+            ApprovalInstance.status != INSTANCE_WITHDRAWN,
+        )
+        .order_by(ApprovalInstance.id.desc())
+        .limit(300)
+        .all()
+    )
+    out: list[ApprovalItemOut] = []
+    for inst in rows:
+        cc_raw = _loads(inst.cc_json)
+        if not isinstance(cc_raw, list) or not cc_raw:
+            continue
+        cc_set = {str(c) for c in cc_raw if c}
+        if not cc_set:
+            continue
+        if not is_admin and not (role_codes & cc_set):
+            continue
+        out.append(_instance_to_item(db, inst, can_act=False))
+    return out
+
+
+def open_item_id(instance: ApprovalInstance) -> str:
+    return f"{ITEM_PREFIX}:{instance.id}"
+
+
+def find_open_item_id(
+    db: Session, biz_type: str, biz_id: int, *, biz_types: Optional[Iterable[str]] = None
+) -> Optional[str]:
+    """按业务实体查找进行中实例的审批中心 id；contract 族可传多 biz_type。"""
+    types = list(biz_types) if biz_types else [biz_type]
+    for bt in types:
+        inst = find_open_instance(db, bt, biz_id)
+        if inst is not None:
+            return open_item_id(inst)
+    return None
+
+
 def initiated_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
     rows = (
         db.query(ApprovalInstance)

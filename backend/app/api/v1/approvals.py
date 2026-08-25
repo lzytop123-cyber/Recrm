@@ -27,6 +27,18 @@ def stats(
     return approval_service.approval_stats(db, current_user)
 
 
+@router.get("/resolve", summary="按业务实体解析进行中审批单")
+def resolve_open(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["approval:center"]))],
+    biz_type: Annotated[str, Query(min_length=1)],
+    biz_id: Annotated[int, Query(ge=1)],
+) -> dict[str, str]:
+    return approval_service.resolve_open_approval(
+        db, current_user, biz_type=biz_type, biz_id=biz_id
+    )
+
+
 @router.get("/cc", response_model=ApprovalListOut, summary="抄送我的（别名）")
 def list_cc(
     db: Annotated[Session, Depends(get_db)],

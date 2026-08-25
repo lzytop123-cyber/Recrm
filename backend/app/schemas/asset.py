@@ -106,6 +106,8 @@ class BorrowOut(BaseModel):
     applicant_name: Optional[str] = None
     assets: List[BorrowItemOut] = []
     asset_count: int = 0
+    approval_in_center: bool = False
+    open_approval_id: Optional[str] = None
 
 
 class InventorySessionOut(BaseModel):

@@ -327,6 +327,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { notifyError } from '@/utils/notify'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   fetchDepartments,
@@ -440,7 +441,7 @@ async function loadAttendance(refresh = false) {
     attendance.value = data
     if (emp.value) emp.value.today_status = data.today_status
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '考勤加载失败')
+    notifyError(e, '考勤加载失败')
   } finally {
     attendLoading.value = false
   }

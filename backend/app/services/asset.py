@@ -130,6 +130,11 @@ def enrich_borrow(db: Session, row: AssetBorrowRequest) -> AssetBorrowRequest:
         )
     row.assets = assets  # type: ignore[attr-defined]
     row.asset_count = len(assets)  # type: ignore[attr-defined]
+    from app.services import approval_flow
+
+    open_id = approval_flow.find_open_item_id(db, "asset_borrow", row.id)
+    row.approval_in_center = open_id is not None  # type: ignore[attr-defined]
+    row.open_approval_id = open_id  # type: ignore[attr-defined]
     return row
 
 

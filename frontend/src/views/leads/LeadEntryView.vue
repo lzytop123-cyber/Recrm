@@ -169,6 +169,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { notifyError } from '@/utils/notify'
 import {
   LEAD_STATUS_LABEL,
   checkLeadDuplicates,
@@ -432,7 +433,7 @@ async function onCreate() {
         /* cancel */
       }
     } else {
-      ElMessage.error(err.response?.data?.detail || '提交失败')
+      notifyError(err, '提交失败')
     }
   } finally {
     saving.value = false

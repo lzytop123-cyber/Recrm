@@ -20,6 +20,9 @@
         <ApprovalCenterHint
           v-if="item.status === 'submitted' && item.approval_in_center"
           label="工时审批进行中"
+          :approval-id="item.open_approval_id"
+          biz-type="timesheet"
+          :biz-id="item.id"
         />
         <el-button
           v-if="item.status === 'submitted' && !item.approval_in_center"

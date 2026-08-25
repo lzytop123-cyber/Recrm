@@ -27,6 +27,7 @@ export interface Timesheet {
   project_name?: string | null
   approver_name?: string | null
   approval_in_center?: boolean
+  open_approval_id?: string | null
 }
 
 export interface TimesheetStats {

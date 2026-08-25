@@ -484,7 +484,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   approveApproval,
@@ -492,6 +492,7 @@ import {
   fetchApprovalStats,
   fetchApprovals,
   rejectApproval,
+  resolveOpenApproval,
   withdrawApproval,
   type ApprovalDetail,
   type ApprovalItem,
@@ -507,6 +508,7 @@ import { parseAttachmentList } from '@/utils/attachments'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 
 const router = useRouter()
+const route = useRoute()
 const isCompact = useMatchMedia('(max-width: 768px)')
 
 const tabs = [
@@ -968,7 +970,38 @@ function switchTab(key: string) {
   reload()
 }
 
-onMounted(reload)
+async function consumeDeepLink() {
+  const tabQ = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (tabQ && tabs.some((t) => t.key === tabQ)) {
+    activeTab.value = tabQ
+  }
+
+  let approvalId = typeof route.query.id === 'string' ? route.query.id : ''
+  const biz = typeof route.query.biz === 'string' ? route.query.biz : ''
+  const bizIdRaw = typeof route.query.bizId === 'string' ? route.query.bizId : ''
+  const bizId = Number(bizIdRaw)
+
+  await reload()
+
+  if (!approvalId && biz && Number.isFinite(bizId) && bizId > 0) {
+    try {
+      const { data } = await resolveOpenApproval(biz, bizId)
+      approvalId = data.id
+    } catch {
+      ElMessage.warning('未找到对应的进行中审批单')
+    }
+  }
+
+  if (approvalId) {
+    const hit = items.value.find((x) => x.id === approvalId)
+    await openItem(hit || ({ id: approvalId } as ApprovalItem))
+    const nextQuery: Record<string, string> = {}
+    if (tabQ && tabs.some((t) => t.key === tabQ)) nextQuery.tab = tabQ
+    await router.replace({ path: '/approvals', query: nextQuery })
+  }
+}
+
+onMounted(consumeDeepLink)
 </script>
 
 <style scoped>

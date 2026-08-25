@@ -55,6 +55,7 @@ request.interceptors.response.use(
       }
 
       clearToken()
+      error.__toastShown = true
       if (router.currentRoute.value.path === '/login') {
         // 登录页上的 401（如密码错误）需要直接提示，不能静默
         ElMessage.error(message || '用户名或密码错误')
@@ -63,6 +64,7 @@ request.interceptors.response.use(
         router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }
     } else {
+      error.__toastShown = true
       ElMessage.error(message)
     }
     return Promise.reject(error)

@@ -459,7 +459,15 @@
           </div>
         </div>
         <div class="drawer-actions">
-          <template v-if="borrowDrawer.status === 'pending' && canManage">
+          <template v-if="borrowDrawer.status === 'pending' && borrowDrawer.approval_in_center">
+            <ApprovalCenterHint
+              label="领用审批进行中"
+              :approval-id="borrowDrawer.open_approval_id"
+              biz-type="asset_borrow"
+              :biz-id="borrowDrawer.id"
+            />
+          </template>
+          <template v-else-if="borrowDrawer.status === 'pending' && canManage">
             <el-button type="danger" :loading="acting" @click="onReject">驳回</el-button>
             <el-button type="primary" :loading="acting" @click="onApprove">批准</el-button>
           </template>
@@ -676,6 +684,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { notifyError } from '@/utils/notify'
+import ApprovalCenterHint from '@/components/approval/ApprovalCenterHint.vue'
 import {
   ASSET_CATEGORY_OPTIONS,
   ASSET_STATUS_LABEL,
@@ -902,7 +912,7 @@ async function reload() {
     canManage.value = data.can_manage
     if (!data.can_manage) viewMode.value = 'employee'
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '加载失败')
+    notifyError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -1033,7 +1043,7 @@ async function submitAssetForm() {
     await reload()
     tab.value = 'ledger'
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || (assetForm.mode === 'edit' ? '保存失败' : '入库失败'))
+    notifyError(e, assetForm.mode === 'edit' ? '保存失败' : '入库失败')
   } finally {
     acting.value = false
   }
@@ -1193,7 +1203,7 @@ async function submitCreateBorrow() {
     }
     await reload()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '提交失败')
+    notifyError(e, '提交失败')
   } finally {
     acting.value = false
   }
@@ -1208,7 +1218,7 @@ async function onApprove() {
     borrowDrawerVisible.value = false
     await reload()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '批准失败')
+    notifyError(e, '批准失败')
   } finally {
     acting.value = false
   }
@@ -1227,7 +1237,7 @@ async function onReject() {
     borrowDrawerVisible.value = false
     await reload()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || '驳回失败')
+    if (e !== 'cancel') notifyError(e, '驳回失败')
   } finally {
     acting.value = false
   }
@@ -1242,7 +1252,7 @@ async function onCheckout() {
     borrowDrawerVisible.value = false
     await reload()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '领用失败')
+    notifyError(e, '领用失败')
   } finally {
     acting.value = false
   }
@@ -1257,7 +1267,7 @@ async function onReturn() {
     borrowDrawerVisible.value = false
     await reload()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '归还失败')
+    notifyError(e, '归还失败')
   } finally {
     acting.value = false
   }

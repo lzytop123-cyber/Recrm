@@ -100,6 +100,7 @@ class ContractOut(BaseModel):
     revision: int = 1
     modification_pending: bool = False
     approval_in_center: bool = False
+    open_approval_id: Optional[str] = None
     proof_filename: Optional[str] = None
     proof_path: Optional[str] = None
     created_at: datetime

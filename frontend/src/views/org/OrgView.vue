@@ -410,6 +410,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type ElTree } from 'element-plus'
+import { notifyError } from '@/utils/notify'
 import { useMatchMedia } from '@/composables/useMatchMedia'
 import {
   createDepartment,
@@ -775,7 +776,7 @@ async function submitPasswordReset() {
     pwdVisible.value = false
     ElMessage.success('密码已更新')
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '修改密码失败')
+    notifyError(e, '修改密码失败')
   } finally {
     pwdSaving.value = false
   }
@@ -842,7 +843,7 @@ async function onSyncFeishu() {
     )
     await Promise.all([loadDepts(), loadEmployees(), loadStats(), loadManagerOptions()])
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '同步失败')
+    notifyError(e, '同步失败')
   } finally {
     syncing.value = false
   }
@@ -858,7 +859,7 @@ async function onSyncAttendance() {
     }
     await Promise.all([loadEmployees(), loadStats()])
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '考勤同步失败')
+    notifyError(e, '考勤同步失败')
   } finally {
     syncingAttend.value = false
   }

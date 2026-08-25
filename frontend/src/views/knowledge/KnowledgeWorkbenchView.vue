@@ -206,6 +206,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { notifyError } from '@/utils/notify'
 import {
   SOURCE_TYPE_OPTIONS,
   askKnowledge,
@@ -276,7 +277,7 @@ async function reload() {
       activeSpaceId.value = spaces.value[0].id
     }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '加载失败')
+    notifyError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -295,7 +296,7 @@ async function onAsk() {
     const { data } = await askKnowledge({ question: q, space_id: spaceId })
     answer.value = data
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '提问失败')
+    notifyError(e, '提问失败')
   } finally {
     asking.value = false
   }
@@ -339,7 +340,7 @@ async function submitSource() {
     await reload()
     authVisible.value = true
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '保存失败')
+    notifyError(e, '保存失败')
   } finally {
     acting.value = false
   }
@@ -352,7 +353,7 @@ async function onAuthorize(s: KnowledgeSource) {
     ElMessage.success('已授权并标记为可同步')
     await reload()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '授权失败')
+    notifyError(e, '授权失败')
   } finally {
     acting.value = false
   }

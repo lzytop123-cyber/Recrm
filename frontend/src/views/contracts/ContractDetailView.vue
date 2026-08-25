@@ -16,6 +16,9 @@
         <ApprovalCenterHint
           v-if="contract.approval_in_center"
           :label="approvalCenterLabel"
+          :approval-id="contract.open_approval_id"
+          biz-type="contract"
+          :biz-id="contract.id"
         />
         <el-button
           v-if="contract.status === 'pending_approval' && canWithdraw"

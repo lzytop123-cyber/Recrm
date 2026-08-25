@@ -51,9 +51,9 @@ def enrich_timesheet(db: Session, ts: Timesheet) -> Timesheet:
         ts.project_name = None  # type: ignore[attr-defined]
     from app.services import approval_flow
 
-    ts.approval_in_center = (  # type: ignore[attr-defined]
-        approval_flow.find_open_instance(db, "timesheet", ts.id) is not None
-    )
+    open_id = approval_flow.find_open_item_id(db, "timesheet", ts.id)
+    ts.approval_in_center = open_id is not None  # type: ignore[attr-defined]
+    ts.open_approval_id = open_id  # type: ignore[attr-defined]
     return ts
 
 

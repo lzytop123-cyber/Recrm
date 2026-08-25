@@ -95,7 +95,7 @@
               v-if="row.status === 'submitted' && row.approval_in_center"
               link
               type="primary"
-              @click.stop="router.push('/approvals')"
+              @click.stop="goApprovalCenter(row)"
             >
               审批中心
             </el-button>
@@ -346,6 +346,16 @@ async function quickApprove(row: Timesheet) {
   } catch {
     /* cancel / no permission */
   }
+}
+
+function goApprovalCenter(row: Timesheet) {
+  const query: Record<string, string> = {}
+  if (row.open_approval_id) query.id = row.open_approval_id
+  else {
+    query.biz = 'timesheet'
+    query.bizId = String(row.id)
+  }
+  router.push({ path: '/approvals', query })
 }
 
 onMounted(() => {

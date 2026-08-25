@@ -717,6 +717,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { notifyError } from '@/utils/notify'
 import {
   createOkr,
   fetchOkrDetail,
@@ -947,7 +948,7 @@ async function reload() {
       await loadPerformance()
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || '加载失败')
+    notifyError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -993,7 +994,7 @@ async function onResetCycle() {
     assessFilter.value = 'pending'
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '重置失败')
+    notifyError(e, '重置失败')
   } finally {
     acting.value = false
   }
@@ -1013,7 +1014,7 @@ async function openGoalDrawer(row: Okr) {
     goalDetail.value = data
     goalDrawerVisible.value = true
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '加载目标失败')
+    notifyError(e, '加载目标失败')
   }
 }
 
@@ -1049,7 +1050,7 @@ async function submitCreateGoal() {
     ElMessage.success('目标已创建')
     await loadObjectives()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '创建失败')
+    notifyError(e, '创建失败')
   } finally {
     acting.value = false
   }
@@ -1078,7 +1079,7 @@ async function submitSelfRate() {
     assessDrawerVisible.value = false
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '提交失败')
+    notifyError(e, '提交失败')
   } finally {
     acting.value = false
   }
@@ -1102,7 +1103,7 @@ async function submitManagerRate() {
     assessDrawerVisible.value = false
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '提交失败')
+    notifyError(e, '提交失败')
   } finally {
     acting.value = false
   }
@@ -1125,7 +1126,7 @@ async function submitCreateAppeal() {
     tab.value = 'calibration'
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '提交失败')
+    notifyError(e, '提交失败')
   } finally {
     acting.value = false
   }
@@ -1154,7 +1155,7 @@ async function submitAppeal(approve: boolean) {
     appealDrawerVisible.value = false
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '处理失败')
+    notifyError(e, '处理失败')
   } finally {
     acting.value = false
   }
@@ -1170,7 +1171,7 @@ async function onCalibrationAction() {
       ElMessage.success('校准批次已建立')
       await loadPerformance()
     } catch (e: any) {
-      if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || e?.message || '发起失败')
+      if (e !== 'cancel') notifyError(e, '发起失败')
     } finally {
       acting.value = false
     }
@@ -1187,7 +1188,7 @@ async function onCalibrationAction() {
     tab.value = 'payroll'
     await loadPerformance()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || e?.message || '锁定失败')
+    if (e !== 'cancel') notifyError(e, '锁定失败')
   } finally {
     acting.value = false
   }
@@ -1209,7 +1210,7 @@ async function onPayrollAction() {
     }
     await loadPerformance()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '操作失败')
+    notifyError(e, '操作失败')
   } finally {
     acting.value = false
   }

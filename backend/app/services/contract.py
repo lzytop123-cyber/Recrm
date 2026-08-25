@@ -271,10 +271,19 @@ def enrich_contract(db: Session, contract: Contract) -> Contract:
     enrich_modification_flags(contract)
     from app.services import approval_flow
 
-    contract.approval_in_center = any(  # type: ignore[attr-defined]
-        approval_flow.find_open_instance(db, bt, contract.id) is not None
-        for bt in ("contract", "contract_activate", "contract_modify", "contract_terminate")
+    open_id = approval_flow.find_open_item_id(
+        db,
+        "contract",
+        contract.id,
+        biz_types=(
+            "contract",
+            "contract_activate",
+            "contract_modify",
+            "contract_terminate",
+        ),
     )
+    contract.approval_in_center = open_id is not None  # type: ignore[attr-defined]
+    contract.open_approval_id = open_id  # type: ignore[attr-defined]
     contract.proof_url = (  # type: ignore[attr-defined]
         f"/uploads/{contract.proof_path}" if contract.proof_path else None
     )
