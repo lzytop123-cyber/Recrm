@@ -410,6 +410,27 @@ def on_schedule_flow_result(db: Session, instance, *, approved: bool, withdrawn:
         pass
 
 
+def _schedule_flow_hint(db: Session, item: Schedule, user: User):
+    """AP-14 排期确认上下文：返回 (open_instance, my_assignee_task, hint)。"""
+    from app.models.approval_flow import INSTANCE_BLOCKED, NODE_ASSIGNEE, TASK_ACTIVE
+    from app.services import approval_flow
+
+    inst = approval_flow.find_open_instance(db, "schedule", item.id)
+    if inst is None:
+        return None, None, None
+    if inst.status == INSTANCE_BLOCKED:
+        return inst, None, "排期确认已挂起（无可用审批人），请联系管理员"
+    active = [t for t in inst.tasks if t.status == TASK_ACTIVE and t.seq == inst.current_seq]
+    mine = next(
+        (t for t in active if t.node_type == NODE_ASSIGNEE and t.assignee_id == user.id),
+        None,
+    )
+    if mine is not None:
+        return inst, mine, "等你确认排期"
+    node_names = "、".join(t.name for t in active) or "审批"
+    return inst, None, f"排期确认审批中：{node_names}"
+
+
 def confirm_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
     item = db.query(Schedule).filter(Schedule.id == schedule_id).first()
     if not item:
@@ -422,16 +443,18 @@ def confirm_schedule(db: Session, user: User, schedule_id: int) -> Schedule:
         raise HTTPException(status_code=400, detail="仅待确认排期可确认")
     from app.services import approval_flow
 
-    flow_status = approval_flow.latest_instance_status(db, "schedule", item.id)
-    if flow_status in ("pending", "blocked"):
-        detail = (
-            "排期确认已挂起（无可用审批人），请联系管理员"
-            if flow_status == "blocked"
-            else "排期确认审批中，请在审批中心处理"
-        )
-        raise HTTPException(status_code=400, detail=detail)
-    if approval_flow.find_open_instance(db, "schedule", item.id) is not None:
-        raise HTTPException(status_code=409, detail="排期确认审批中，请在审批中心处理")
+    inst, mine, hint = _schedule_flow_hint(db, item, user)
+    if inst is not None:
+        if mine is not None:
+            # AP-14 本人确认档期：把弹窗点击等价成 assignee 节点的通过
+            approval_flow.act(db, user, inst, approve=True, comment="确认本人档期")
+            db.refresh(item)
+            return enrich_schedule(db, item)
+        if can_manage(user):
+            # 管理者代确认：撤销进行中的实例后走原生确认
+            approval_flow.cancel_instance(db, inst, reason="管理者代确认档期", commit=False)
+        else:
+            raise HTTPException(status_code=409, detail=hint or "排期确认审批中，请等待审批")
 
     _apply_confirm_schedule(db, item, user)
     db.commit()
