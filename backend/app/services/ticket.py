@@ -329,7 +329,7 @@ def _can_assign(user: User, ticket: Ticket) -> bool:
     return _is_admin(user) or ticket.creator_id == user.id or _is_undertaking_dept_lead(user, ticket)
 
 
-def _can_accept(user: User, ticket: Ticket) -> bool:
+def _base_can_accept(user: User, ticket: Ticket) -> bool:
     if _is_admin(user):
         return True
     if ticket.assignee_id == user.id:
@@ -343,6 +343,49 @@ def _can_accept(user: User, ticket: Ticket) -> bool:
     if session is not None and user.id in _candidate_user_ids(session, ticket.id):
         return True
     return _is_undertaking_dept_lead(user, ticket)
+
+
+def _ticket_flow_hint(db: Session, ticket: Ticket, user: User):
+    """AP-12 接单审批上下文：返回 (open_instance, my_assignee_task, hint)。
+
+    - open_instance: 当前工单是否有进行中的接单审批实例
+    - my_assignee_task: 若当前节点为"本人确认接单"且待办人是 user，返回该任务；否则 None
+    - hint: 供覆盖 next_actor_hint / 拒绝时的提示文案；无实例时为 None
+    """
+    from app.models.approval_flow import INSTANCE_BLOCKED, NODE_ASSIGNEE, TASK_ACTIVE
+    from app.services import approval_flow
+
+    inst = approval_flow.find_open_instance(db, "ticket", ticket.id)
+    if inst is None:
+        return None, None, None
+    if inst.status == INSTANCE_BLOCKED:
+        return inst, None, "接单审批已挂起（无可用审批人），请联系管理员"
+    active = [t for t in inst.tasks if t.status == TASK_ACTIVE and t.seq == inst.current_seq]
+    mine = next(
+        (t for t in active if t.node_type == NODE_ASSIGNEE and t.assignee_id == user.id),
+        None,
+    )
+    if mine is not None:
+        return inst, mine, "等你确认接单"
+    node_names = "、".join(t.name for t in active) or "审批"
+    return inst, None, f"接单审批中：{node_names}"
+
+
+def _can_accept(user: User, ticket: Ticket) -> bool:
+    if not _base_can_accept(user, ticket):
+        return False
+    from sqlalchemy.orm import object_session
+
+    session = object_session(ticket)
+    if session is None:
+        return True
+    inst, mine, _ = _ticket_flow_hint(session, ticket, user)
+    if inst is None:
+        return True
+    # 系统管理员始终可代接（应急路径）
+    if _is_admin(user):
+        return True
+    return mine is not None
 
 
 def _can_process(user: User, ticket: Ticket) -> bool:
@@ -398,6 +441,14 @@ def _attach_action_flags(user: User, ticket: Ticket) -> None:
     ticket.can_return = _can_confirm(user, ticket) and ticket.status == TICKET_STATUS_PENDING_CONFIRM  # type: ignore[attr-defined]
     ticket.can_reopen = _can_reopen(ticket) and _can_confirm(user, ticket)  # type: ignore[attr-defined]
     ticket.next_actor_hint = _next_actor_hint(ticket)  # type: ignore[attr-defined]
+    if ticket.status in {TICKET_STATUS_PENDING_ASSIGN, TICKET_STATUS_PENDING_ACCEPT}:
+        from sqlalchemy.orm import object_session
+
+        session = object_session(ticket)
+        if session is not None:
+            inst, _mine, hint = _ticket_flow_hint(session, ticket, user)
+            if inst is not None and hint:
+                ticket.next_actor_hint = hint  # type: ignore[attr-defined]
 
 
 def _replace_candidates(db: Session, ticket: Ticket, user_ids: list[int]) -> None:
@@ -794,16 +845,18 @@ def accept_ticket(db: Session, user: User, ticket_id: int) -> Ticket:
         raise HTTPException(status_code=400, detail="仅待分派/待接收工单可接单")
     from app.services import approval_flow
 
-    flow_status = approval_flow.latest_instance_status(db, "ticket", ticket.id)
-    if flow_status in ("pending", "blocked"):
-        detail = (
-            "接单审批已挂起（无可用审批人），请联系管理员"
-            if flow_status == "blocked"
-            else "接单审批中，请在审批中心处理后再接单"
-        )
-        raise HTTPException(status_code=400, detail=detail)
-    if approval_flow.find_open_instance(db, "ticket", ticket.id) is not None:
-        raise HTTPException(status_code=409, detail="接单审批中，请在审批中心处理")
+    inst, mine, hint = _ticket_flow_hint(db, ticket, user)
+    if inst is not None:
+        if mine is not None:
+            # AP-12 本人确认接单：把弹窗点击等价成 assignee 节点的通过
+            approval_flow.act(db, user, inst, approve=True, comment="确认接单")
+            db.refresh(ticket)
+            return enrich_detail(db, ticket, user=user)
+        if _is_admin(user):
+            # 管理员应急代接：撤销进行中的实例，再走后续原生落库
+            approval_flow.cancel_instance(db, inst, reason="系统管理员应急代接", commit=False)
+        else:
+            raise HTTPException(status_code=409, detail=hint or "接单审批中，请等待审批")
     if not _can_accept(user, ticket):
         raise HTTPException(
             status_code=403,
