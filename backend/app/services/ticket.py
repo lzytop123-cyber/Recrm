@@ -397,9 +397,47 @@ def _can_transfer(user: User, ticket: Ticket) -> bool:
     return _is_admin(user) or ticket.assignee_id == user.id or _is_undertaking_dept_lead(user, ticket)
 
 
+def _base_can_confirm(user: User, ticket: Ticket) -> bool:
+    return _is_admin(user) or ticket.creator_id == user.id
+
+
+def _cross_accept_flow_hint(db: Session, ticket: Ticket, user: User):
+    """AP-13 跨部门工单验收上下文：返回 (open_instance, my_assignee_task, hint)。"""
+    from app.models.approval_flow import INSTANCE_BLOCKED, NODE_ASSIGNEE, TASK_ACTIVE
+    from app.services import approval_flow
+
+    inst = approval_flow.find_open_instance(db, "ticket_cross_accept", ticket.id)
+    if inst is None:
+        return None, None, None
+    if inst.status == INSTANCE_BLOCKED:
+        return inst, None, "跨部门验收已挂起（无可用审批人），请联系管理员"
+    active = [t for t in inst.tasks if t.status == TASK_ACTIVE and t.seq == inst.current_seq]
+    mine = next(
+        (t for t in active if t.node_type == NODE_ASSIGNEE and t.assignee_id == user.id),
+        None,
+    )
+    if mine is not None:
+        return inst, mine, "等你验收"
+    node_names = "、".join(t.name for t in active) or "审批"
+    return inst, None, f"跨部门验收审批中：{node_names}"
+
+
 def _can_confirm(user: User, ticket: Ticket) -> bool:
     """验收/退回/关闭：仅发起人或系统管理员（应急）。"""
-    return _is_admin(user) or ticket.creator_id == user.id
+    if not _base_can_confirm(user, ticket):
+        return False
+    from sqlalchemy.orm import object_session
+
+    session = object_session(ticket)
+    if session is None:
+        return True
+    # 只有跨部门工单会起 AP-13 实例；其他情况无影响
+    inst, mine, _ = _cross_accept_flow_hint(session, ticket, user)
+    if inst is None:
+        return True
+    if _is_admin(user):
+        return True
+    return mine is not None
 
 
 def _next_actor_hint(ticket: Ticket) -> str:
@@ -441,12 +479,16 @@ def _attach_action_flags(user: User, ticket: Ticket) -> None:
     ticket.can_return = _can_confirm(user, ticket) and ticket.status == TICKET_STATUS_PENDING_CONFIRM  # type: ignore[attr-defined]
     ticket.can_reopen = _can_reopen(ticket) and _can_confirm(user, ticket)  # type: ignore[attr-defined]
     ticket.next_actor_hint = _next_actor_hint(ticket)  # type: ignore[attr-defined]
-    if ticket.status in {TICKET_STATUS_PENDING_ASSIGN, TICKET_STATUS_PENDING_ACCEPT}:
-        from sqlalchemy.orm import object_session
+    from sqlalchemy.orm import object_session
 
-        session = object_session(ticket)
-        if session is not None:
+    session = object_session(ticket)
+    if session is not None:
+        if ticket.status in {TICKET_STATUS_PENDING_ASSIGN, TICKET_STATUS_PENDING_ACCEPT}:
             inst, _mine, hint = _ticket_flow_hint(session, ticket, user)
+            if inst is not None and hint:
+                ticket.next_actor_hint = hint  # type: ignore[attr-defined]
+        elif ticket.status == TICKET_STATUS_PENDING_CONFIRM:
+            inst, _mine, hint = _cross_accept_flow_hint(session, ticket, user)
             if inst is not None and hint:
                 ticket.next_actor_hint = hint  # type: ignore[attr-defined]
 
@@ -1003,6 +1045,12 @@ def return_ticket(
         raise HTTPException(status_code=403, detail="仅发起人可退回处理（系统管理员可应急代办）")
     if ticket.status != TICKET_STATUS_PENDING_CONFIRM:
         raise HTTPException(status_code=400, detail="仅待确认工单可退回")
+    # 退回时若跨部门验收实例还挂着，一并撤销，避免下一轮 complete 后起单被卡
+    from app.services import approval_flow
+
+    open_inst = approval_flow.find_open_instance(db, "ticket_cross_accept", ticket.id)
+    if open_inst is not None:
+        approval_flow.cancel_instance(db, open_inst, reason="发起人退回处理", commit=False)
     _resume_sla(ticket)
     ticket.status = TICKET_STATUS_PROCESSING
     ticket.completed_at = None
@@ -1029,19 +1077,23 @@ def confirm_ticket(
         raise HTTPException(status_code=400, detail="仅待确认工单可确认")
     from app.services import approval_flow
 
+    applied_by_flow = False
     if _is_cross_dept_ticket(db, ticket):
-        flow_status = approval_flow.latest_instance_status(db, "ticket_cross_accept", ticket.id)
-        if flow_status in ("pending", "blocked"):
-            detail = (
-                "跨部门验收已挂起（无可用审批人），请联系管理员"
-                if flow_status == "blocked"
-                else "跨部门验收审批中，请在审批中心处理"
-            )
-            raise HTTPException(status_code=400, detail=detail)
-        if approval_flow.find_open_instance(db, "ticket_cross_accept", ticket.id) is not None:
-            raise HTTPException(status_code=409, detail="跨部门验收审批中，请在审批中心处理")
+        inst, mine, hint = _cross_accept_flow_hint(db, ticket, user)
+        if inst is not None:
+            if mine is not None:
+                # AP-13 发起人本人验收：把「验收并关闭」的点击等价成 assignee 节点的通过
+                approval_flow.act(db, user, inst, approve=True, comment="确认完成")
+                # 回调 on_ticket_cross_accept_result 已 _resume_sla + status=COMPLETED + record
+                db.refresh(ticket)
+                applied_by_flow = True
+            elif _is_admin(user):
+                approval_flow.cancel_instance(db, inst, reason="系统管理员应急代验收", commit=False)
+            else:
+                raise HTTPException(status_code=409, detail=hint or "跨部门验收审批中，请等待审批")
 
-    _resume_sla(ticket)
+    if not applied_by_flow:
+        _resume_sla(ticket)
     close = True
     if payload:
         ticket.satisfaction = payload.satisfaction
@@ -1055,8 +1107,9 @@ def confirm_ticket(
             f"满意度 {payload.satisfaction}/5"
             + (f"：{ticket.satisfaction_comment}" if ticket.satisfaction_comment else ""),
         )
-    ticket.status = TICKET_STATUS_COMPLETED
-    _add_record(db, ticket, user, "confirm", "确认完成")
+    if not applied_by_flow:
+        ticket.status = TICKET_STATUS_COMPLETED
+        _add_record(db, ticket, user, "confirm", "确认完成")
     if close:
         ticket.status = TICKET_STATUS_CLOSED
         ticket.closed_at = _now()
