@@ -145,38 +145,32 @@
     </el-card>
 
     <el-card v-if="item" class="records-card">
-      <template #header>处理记录</template>
+      <template #header>操作日志</template>
       <div class="comment-box" v-if="item.status !== 'closed'">
         <el-input v-model="comment" type="textarea" :rows="2" placeholder="添加评论..." />
         <el-button type="primary" :loading="commenting" :disabled="!comment.trim()" @click="onComment">
           发送
         </el-button>
       </div>
-      <el-timeline v-if="item.records?.length">
+      <el-timeline v-if="mergedRecords.length">
         <el-timeline-item
-          v-for="r in [...(item.records || [])].reverse()"
-          :key="r.id"
+          v-for="r in mergedRecords"
+          :key="r.key"
           :timestamp="formatTime(r.created_at)"
           placement="top"
         >
           <div class="record-item">
-            <strong>{{ r.user_name || `用户#${r.user_id}` }}</strong>
-            <el-tag size="small" type="info" style="margin-left: 6px">
-              {{ TICKET_ACTION_LABEL[r.action] || r.action }}
+            <strong>{{ r.actor_name }}</strong>
+            <el-tag size="small" :type="r.tag_type" style="margin-left: 6px">
+              {{ r.tag_label }}
             </el-tag>
-            <div v-if="r.content" class="record-content">{{ r.content }}</div>
+            <span v-if="r.source_hint" class="source-hint">{{ r.source_hint }}</span>
+            <div v-if="r.detail" class="record-content">{{ r.detail }}</div>
           </div>
         </el-timeline-item>
       </el-timeline>
       <el-empty v-else description="暂无记录" :image-size="60" />
     </el-card>
-
-    <FlowActivityCard
-      v-if="item?.id"
-      :biz-type="['ticket', 'ticket_cross_accept']"
-      :biz-id="item.id"
-      hide-when-empty
-    />
 
     <el-dialog
       v-model="assignVisible"
@@ -338,7 +332,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
-import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
+import { fetchFlowActivity, type FlowActivityItem } from '@/api/approvals'
 import {
   TICKET_ACTION_LABEL,
   TICKET_PRIORITY_OPTIONS,
@@ -377,8 +371,54 @@ const loading = ref(false)
 const saving = ref(false)
 const commenting = ref(false)
 const item = ref<Ticket | null>(null)
+const flowActivities = ref<FlowActivityItem[]>([])
 const comment = ref('')
 const assignees = ref<AssigneeOption[]>([])
+
+type TimelineEntry = {
+  key: string
+  created_at: string
+  actor_name: string
+  tag_type: 'success' | 'danger' | 'warning' | 'info' | ''
+  tag_label: string
+  source_hint?: string
+  detail?: string | null
+}
+
+function flowTagType(action: string): TimelineEntry['tag_type'] {
+  if (action.endsWith('approve') || action.endsWith('countersign')) return 'success'
+  if (action.endsWith('reject')) return 'danger'
+  if (action.endsWith('withdraw') || action.endsWith('admin_act')) return 'warning'
+  return 'info'
+}
+
+const mergedRecords = computed<TimelineEntry[]>(() => {
+  const entries: TimelineEntry[] = []
+  for (const r of (item.value?.records || [])) {
+    entries.push({
+      key: `rec:${r.id}`,
+      created_at: r.created_at,
+      actor_name: r.user_name || `用户#${r.user_id}`,
+      tag_type: 'info',
+      tag_label: TICKET_ACTION_LABEL[r.action] || r.action,
+      detail: r.content || null,
+    })
+  }
+  for (const f of flowActivities.value) {
+    entries.push({
+      key: `flow:${f.id}`,
+      created_at: f.created_at,
+      actor_name: f.actor_name || '系统',
+      tag_type: flowTagType(f.action),
+      tag_label: f.action_label,
+      source_hint: f.rule_code ? `审批流 · ${f.rule_code}` : '审批流',
+      detail: f.detail || null,
+    })
+  }
+  return entries.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+})
 
 const assignVisible = ref(false)
 const transferVisible = ref(false)
@@ -451,7 +491,17 @@ async function loadDetail() {
   } finally {
     loading.value = false
   }
-  await loadTicketSchedules()
+  await Promise.all([loadTicketSchedules(), loadFlowActivities()])
+}
+
+async function loadFlowActivities() {
+  if (!ticketId.value) return
+  try {
+    const { data } = await fetchFlowActivity(['ticket', 'ticket_cross_accept'], ticketId.value)
+    flowActivities.value = data.items || []
+  } catch {
+    flowActivities.value = []
+  }
 }
 
 async function loadTicketSchedules() {
@@ -748,6 +798,11 @@ onMounted(loadDetail)
 }
 .record-item {
   line-height: 1.5;
+}
+.source-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .record-content {
   margin-top: 4px;

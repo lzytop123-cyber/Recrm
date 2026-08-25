@@ -8,14 +8,14 @@ const props = withDefaults(
     /** 单个 biz_type 或多个（同一实体多种审批流，如合同 [contract, contract_terminate, ...]） */
     bizType: string | string[]
     bizId?: number | null
-    /** 卡片标题（默认"审批操作日志"） */
+    /** 卡片标题（默认"操作日志"，与工单页 records 合并卡一致） */
     title?: string
     /** 无数据时是否折叠隐藏（默认 false，仍显示"暂无"占位） */
     hideWhenEmpty?: boolean
   }>(),
   {
     bizId: null,
-    title: '审批操作日志',
+    title: '操作日志',
     hideWhenEmpty: false,
   },
 )
@@ -69,7 +69,7 @@ defineExpose({ reload: load })
       <el-empty
         v-if="!loading && !items.length"
         :image-size="64"
-        description="暂无审批操作日志"
+        description="暂无操作日志"
       />
       <el-timeline v-else>
         <el-timeline-item
@@ -78,15 +78,14 @@ defineExpose({ reload: load })
           :timestamp="fmtTime(it.created_at)"
           placement="top"
         >
-          <div class="row-head">
-            <el-tag :type="actionTagType(it.action)" size="small" effect="light">
+          <div class="record-item">
+            <strong>{{ it.actor_name || '系统' }}</strong>
+            <el-tag :type="actionTagType(it.action)" size="small" style="margin-left: 6px">
               {{ it.action_label }}
             </el-tag>
-            <span class="actor">{{ it.actor_name || '系统' }}</span>
-            <span v-if="it.rule_code" class="rule">{{ it.rule_code }}</span>
-            <span v-if="it.instance_code" class="code">{{ it.instance_code }}</span>
+            <span v-if="it.rule_code" class="source-hint">审批流 · {{ it.rule_code }}</span>
+            <div v-if="it.detail" class="record-content">{{ it.detail }}</div>
           </div>
-          <div v-if="it.detail" class="row-detail">{{ it.detail }}</div>
         </el-timeline-item>
       </el-timeline>
     </div>
@@ -94,25 +93,17 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
-.row-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 13px;
+.record-item {
+  line-height: 1.5;
 }
-.actor {
-  font-weight: 600;
-}
-.rule,
-.code {
+.source-hint {
+  margin-left: 8px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.row-detail {
+.record-content {
   margin-top: 4px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
+  color: #606266;
   white-space: pre-wrap;
   word-break: break-word;
 }
