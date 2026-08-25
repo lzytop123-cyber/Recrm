@@ -152,6 +152,7 @@ export function fetchSchedules(params: {
   employee_id?: number
   project_id?: number
   project_task_id?: number
+  ticket_id?: number
   date_from?: string
   date_to?: string
   scope?: string

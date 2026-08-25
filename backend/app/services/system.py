@@ -11,10 +11,16 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.rbac import normalize_module_scopes
 from app.models.associations import user_roles
 from app.models.audit_log import AuditLog
+from app.models.menu_visibility import MenuVisibility
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.system import RoleCreate, RoleUpdate
+from app.schemas.system import MenuVisibilityBulkUpdate, RoleCreate, RoleUpdate
+from app.services.menu import (
+    MENU_CATALOG,
+    PHASE2_HIDDEN_MENU_PATHS,
+    TICKET_MENU_ROLE_CODES,
+)
 
 PROTECTED_ROLE_CODES = {"admin"}
 
@@ -176,6 +182,84 @@ def list_audit_logs(
         .all()
     )
     return total, items
+
+
+_MENU_NOTES: dict[str, str] = {
+    "/tickets": "销售角色默认隐藏；勾选可强制显示。",
+    "/lead-entry": "非销售链路的岗位默认可见（销售全链路岗默认隐藏）。",
+    "/sales": "销售全链路岗默认可见；仅录入岗默认隐藏。",
+}
+
+
+def list_menu_visibility(db: Session) -> dict:
+    """返回菜单目录、角色列表、当前 override 列表。"""
+    roles = db.query(Role).order_by(Role.id.asc()).all()
+    role_codes = {r.code for r in roles}
+
+    menus: list[dict] = []
+    for item in MENU_CATALOG:
+        path = item["path"]
+        if path in PHASE2_HIDDEN_MENU_PATHS:
+            continue
+        hidden: list[str] = []
+        if path == "/tickets":
+            hidden = [c for c in role_codes if c == "sales"]
+        menus.append(
+            {
+                "path": path,
+                "title": item["title"],
+                "permission": item.get("permission"),
+                "default_visible_for_roles": [],
+                "hidden_by_default_for_roles": hidden,
+                "note": _MENU_NOTES.get(path),
+            }
+        )
+
+    rows = db.query(MenuVisibility).all()
+    overrides = [
+        {"role_code": r.role_code, "menu_path": r.menu_path, "visible": bool(r.visible)}
+        for r in rows
+    ]
+    return {
+        "menus": menus,
+        "roles": [
+            {"id": r.id, "code": r.code, "name": r.name} for r in roles
+        ],
+        "overrides": overrides,
+    }
+
+
+def replace_menu_visibility(db: Session, payload: MenuVisibilityBulkUpdate) -> dict:
+    """整表替换。前端提交完整的 override 集合，服务端按 (role_code, menu_path) 幂等 upsert，
+    未包含的组合会被删除。"""
+    valid_paths = {item["path"] for item in MENU_CATALOG} - PHASE2_HIDDEN_MENU_PATHS
+    valid_roles = {r.code for r in db.query(Role).all()}
+
+    seen: set[tuple[str, str]] = set()
+    normalized: list[MenuVisibility] = []
+    for item in payload.overrides:
+        if item.menu_path not in valid_paths:
+            raise HTTPException(status_code=400, detail=f"未知菜单路径: {item.menu_path}")
+        if item.role_code not in valid_roles:
+            raise HTTPException(status_code=400, detail=f"未知角色: {item.role_code}")
+        key = (item.role_code, item.menu_path)
+        if key in seen:
+            raise HTTPException(status_code=400, detail=f"重复覆盖: {key}")
+        seen.add(key)
+        normalized.append(
+            MenuVisibility(
+                role_code=item.role_code,
+                menu_path=item.menu_path,
+                visible=bool(item.visible),
+            )
+        )
+
+    db.query(MenuVisibility).delete(synchronize_session=False)
+    db.flush()
+    for row in normalized:
+        db.add(row)
+    db.commit()
+    return list_menu_visibility(db)
 
 
 def system_stats(db: Session) -> dict:

@@ -117,7 +117,7 @@ def register(
 
     user = _load_user_with_rbac(db, user.username)
     assert user is not None
-    return build_user_info(user)
+    return build_user_info(user, db)
 
 
 @router.post("/login", response_model=LoginResponse, summary="用户登录（JSON）")
@@ -146,7 +146,7 @@ def login_json(
     token = create_access_token(subject=user.id)
     _write_audit(db, user=user, action="login", ip=ip)
     db.commit()
-    return LoginResponse(access_token=token, user=build_user_info(user))
+    return LoginResponse(access_token=token, user=build_user_info(user, db))
 
 
 @router.post("/token", response_model=TokenResponse, summary="OAuth2 表单登录（Swagger 用）")
@@ -219,18 +219,20 @@ async def feishu_callback(
         detail=f"open_id={identity.open_id}",
     )
     db.commit()
+    info = build_user_info(user, db)
     return FeishuLoginResponse(
         access_token=token,
-        user=build_user_info(user),
-        redirect=build_user_info(user).home_path if redirect in {"/dashboard", "/"} else redirect,
+        user=info,
+        redirect=info.home_path if redirect in {"/dashboard", "/"} else redirect,
     )
 
 @router.get("/me", response_model=UserInfoResponse, summary="当前登录用户信息与菜单")
 def read_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> UserInfoResponse:
     """携带 Bearer Token 再次鉴权。"""
-    return build_user_info(current_user)
+    return build_user_info(current_user, db)
 
 
 @router.post("/logout", summary="退出登录")

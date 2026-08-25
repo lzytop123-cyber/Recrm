@@ -131,6 +131,35 @@ export function deleteSystemRole(id: number) {
   return request.delete(`/system/roles/${id}`)
 }
 
+export interface MenuCatalogItem {
+  path: string
+  title: string
+  permission?: string | null
+  default_visible_for_roles: string[]
+  hidden_by_default_for_roles: string[]
+  note?: string | null
+}
+
+export interface MenuVisibilityOverride {
+  role_code: string
+  menu_path: string
+  visible: boolean
+}
+
+export interface MenuVisibilityView {
+  menus: MenuCatalogItem[]
+  roles: { id: number; code: string; name: string }[]
+  overrides: MenuVisibilityOverride[]
+}
+
+export function fetchMenuVisibility() {
+  return request.get<MenuVisibilityView>('/system/menu-visibility')
+}
+
+export function updateMenuVisibility(overrides: MenuVisibilityOverride[]) {
+  return request.put<MenuVisibilityView>('/system/menu-visibility', { overrides })
+}
+
 export function fetchAuditLogs(params: {
   module?: string
   action?: string

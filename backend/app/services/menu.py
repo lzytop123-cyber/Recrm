@@ -1,7 +1,10 @@
 """菜单与权限码映射：登录后返回给前端渲染左侧菜单。"""
-from typing import List, Set
+from typing import Dict, List, Optional, Set
+
+from sqlalchemy.orm import Session
 
 from app.core.rbac import collect_permission_codes, collect_data_scopes, widest_data_scope
+from app.models.menu_visibility import MenuVisibility
 from app.models.user import User
 from app.schemas.auth import MenuItem, RoleBrief, UserInfoResponse
 
@@ -40,7 +43,7 @@ PHASE2_HIDDEN_MENU_PATHS: Set[str] = {
     "/okrs",
 }
 
-# 这些角色有 ticket:view 时显示「协作工单」侧栏
+# 这些角色有 ticket:view 时仍显示「协作工单」侧栏；纯销售有码可接单但不进全量菜单
 TICKET_MENU_ROLE_CODES: Set[str] = {
     "admin",
     "chairman",
@@ -52,15 +55,15 @@ TICKET_MENU_ROLE_CODES: Set[str] = {
     "dept_head",
     "hr",
     "staff",
-    "sales",
 }
 
 
 def _hide_tickets_menu(user: User) -> bool:
+    """销售默认可接单（ticket:view + 待办），但不显示协作工单侧栏。"""
     role_codes = {r.code for r in user.roles}
     if role_codes & TICKET_MENU_ROLE_CODES:
         return False
-    return False
+    return "sales" in role_codes
 
 
 def is_lead_entry_only(user: User) -> bool:
@@ -77,16 +80,57 @@ def is_lead_entry_only(user: User) -> bool:
     return not (perms & {"customer:view", "opportunity:view", "lead:manage", "*"})
 
 
-def build_menus_for_user(user: User) -> List[MenuItem]:
+def _load_visibility_overrides(
+    db: Optional[Session], role_codes: Set[str]
+) -> Dict[str, bool]:
+    """
+    返回 {menu_path: visible}。同一菜单若被多个角色覆盖，可见性取 OR：任一角色 True 即显示。
+    未命中的路径不出现在结果里，走默认逻辑。
+    表尚未建立时静默降级为空覆盖，避免阻塞登录。
+    """
+    if db is None or not role_codes:
+        return {}
+    try:
+        rows = (
+            db.query(MenuVisibility)
+            .filter(MenuVisibility.role_code.in_(role_codes))
+            .all()
+        )
+    except Exception:
+        # 表未建 / DB 未就绪 → 退回默认菜单，不影响登录
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {}
+    merged: Dict[str, bool] = {}
+    for row in rows:
+        prev = merged.get(row.menu_path)
+        merged[row.menu_path] = bool(row.visible) if prev is None else (prev or bool(row.visible))
+    return merged
+
+
+def build_menus_for_user(user: User, db: Optional[Session] = None) -> List[MenuItem]:
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
     owned = collect_permission_codes(user)
     entry_only = is_lead_entry_only(user)
+    overrides = _load_visibility_overrides(db, role_codes)
     menus: List[MenuItem] = []
     for item in MENU_CATALOG:
         path = item["path"]
         if path in PHASE2_HIDDEN_MENU_PATHS:
             continue
+        perm = item.get("permission")
+        if not (perm is None or is_admin or perm in owned):
+            continue
+
+        # 后台覆盖优先：命中即以覆盖为准，跳过默认隐藏规则
+        if path in overrides:
+            if overrides[path]:
+                menus.append(MenuItem(**item))
+            continue
+
         if path == "/tickets" and _hide_tickets_menu(user):
             continue
         # 仅录入岗：显示线索录入，不显示完整销售中心
@@ -96,13 +140,17 @@ def build_menus_for_user(user: User) -> List[MenuItem]:
         else:
             if path == "/lead-entry":
                 continue
-        perm = item.get("permission")
-        if perm is None or is_admin or perm in owned:
-            menus.append(MenuItem(**item))
+        menus.append(MenuItem(**item))
     return menus
 
 
-def _resolve_home_path(user: User, *, entry_only: bool, permissions: List[str]) -> str:
+def _resolve_home_path(
+    user: User,
+    *,
+    entry_only: bool,
+    permissions: List[str],
+    db: Optional[Session] = None,
+) -> str:
     """首页：有经营总览权限优先；仅录入岗回线索录入；否则取首个可见菜单。"""
     perm_set = set(permissions)
     is_admin = any(r.code == "admin" for r in user.roles)
@@ -110,13 +158,13 @@ def _resolve_home_path(user: User, *, entry_only: bool, permissions: List[str]) 
         return "/dashboard"
     if entry_only:
         return "/lead-entry"
-    menus = build_menus_for_user(user)
+    menus = build_menus_for_user(user, db)
     if menus:
         return menus[0].path
     return "/lead-entry"
 
 
-def build_user_info(user: User) -> UserInfoResponse:
+def build_user_info(user: User, db: Optional[Session] = None) -> UserInfoResponse:
     permissions = sorted(collect_permission_codes(user))
     scopes = collect_data_scopes(user)
     data_scope = widest_data_scope(scopes) if scopes else "personal"
@@ -139,7 +187,7 @@ def build_user_info(user: User) -> UserInfoResponse:
         roles=[RoleBrief.model_validate(r) for r in user.roles],
         permissions=permissions,
         data_scope=data_scope,
-        menus=build_menus_for_user(user),
+        menus=build_menus_for_user(user, db),
         lead_entry_only=entry_only,
-        home_path=_resolve_home_path(user, entry_only=entry_only, permissions=permissions),
+        home_path=_resolve_home_path(user, entry_only=entry_only, permissions=permissions, db=db),
     )

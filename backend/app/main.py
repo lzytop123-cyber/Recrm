@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import api_router
 from app.config import get_settings
+from app.database import Base, engine
+import app.models  # noqa: F401  # 触发所有模型注册到 Base.metadata
 
 settings = get_settings()
 
@@ -30,6 +32,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def _ensure_schema() -> None:
+    """checkfirst 只补建缺失表，不影响现有数据，绕过 Alembic 在 SQLite 上的问题。"""
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+    except Exception as exc:  # noqa: BLE001
+        # 不让建表失败阻止应用起来
+        print(f"[startup] create_all skipped: {exc}")
+
 
 app.include_router(api_router)
 

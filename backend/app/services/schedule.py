@@ -313,6 +313,7 @@ def list_schedules(
     employee_id: Optional[int] = None,
     project_id: Optional[int] = None,
     project_task_id: Optional[int] = None,
+    ticket_id: Optional[int] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     scope_filter: Optional[str] = None,
@@ -348,6 +349,8 @@ def list_schedules(
         q = q.filter(Schedule.project_id == project_id)
     if project_task_id:
         q = q.filter(Schedule.project_task_id == project_task_id)
+    if ticket_id:
+        q = q.filter(Schedule.ticket_id == ticket_id)
     if date_from:
         q = q.filter(Schedule.end_time >= _as_utc(date_from))
     if date_to:

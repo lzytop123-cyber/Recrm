@@ -101,6 +101,49 @@
       </el-descriptions>
     </el-card>
 
+    <el-card v-if="item" class="schedule-card">
+      <template #header>
+        <div class="card-header">
+          <span>关联排期</span>
+          <el-button
+            v-if="canManageSchedule"
+            size="small"
+            type="primary"
+            @click="openScheduleCreate"
+          >
+            添加排期
+          </el-button>
+        </div>
+      </template>
+      <el-table
+        v-if="ticketSchedules.length"
+        :data="ticketSchedules"
+        stripe
+        v-loading="scheduleLoading"
+      >
+        <el-table-column label="排期" min-width="160">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="$router.push(`/schedules?id=${row.id}`)">
+              #{{ row.id }} · {{ row.title }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="被排期人" prop="employee_name" width="120" />
+        <el-table-column label="开始" width="150">
+          <template #default="{ row }">{{ formatTime(row.start_time) }}</template>
+        </el-table-column>
+        <el-table-column label="结束" width="150">
+          <template #default="{ row }">{{ formatTime(row.end_time) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag size="small">{{ SCHEDULE_STATUS_LABEL[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无关联排期" :image-size="60" />
+    </el-card>
+
     <el-card v-if="item" class="records-card">
       <template #header>处理记录</template>
       <div class="comment-box" v-if="item.status !== 'closed'">
@@ -210,11 +253,81 @@
         <el-button type="primary" :loading="saving" @click="onConfirmClose">验收并关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="scheduleVisible"
+      title="为工单添加排期"
+      width="560px"
+      destroy-on-close
+      :fullscreen="isCompact"
+    >
+      <el-form
+        :label-width="isCompact ? 'auto' : '90px'"
+        :label-position="isCompact ? 'top' : 'right'"
+      >
+        <el-form-item label="排期标题" required>
+          <el-input v-model="scheduleForm.title" placeholder="默认取工单标题" />
+        </el-form-item>
+        <el-form-item label="被排期人" required>
+          <el-select v-model="scheduleForm.employee_id" filterable style="width: 100%">
+            <el-option
+              v-for="u in scheduleResources"
+              :key="u.id"
+              :label="u.department_name ? `${u.name} · ${u.department_name}` : u.name"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="资源类型">
+          <el-select v-model="scheduleForm.resource_type" style="width: 100%">
+            <el-option
+              v-for="o in SCHEDULE_RESOURCE_OPTIONS"
+              :key="o.value"
+              :label="o.label"
+              :value="o.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="排期分类">
+          <el-select v-model="scheduleForm.schedule_type" clearable style="width: 100%">
+            <el-option
+              v-for="o in SCHEDULE_TYPE_OPTIONS"
+              :key="o.value"
+              :label="o.label"
+              :value="o.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="时间段" required>
+          <el-date-picker
+            v-model="scheduleRange"
+            type="datetimerange"
+            style="width: 100%"
+            range-separator="~"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+          />
+        </el-form-item>
+        <el-form-item label="地点">
+          <el-input v-model="scheduleForm.location" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="scheduleForm.content" type="textarea" :rows="2" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="scheduleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="scheduleSaving" @click="onCreateSchedule">
+          创建排期
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
@@ -237,6 +350,17 @@ import {
   type AssigneeOption,
   type Ticket,
 } from '@/api/tickets'
+import {
+  SCHEDULE_RESOURCE_OPTIONS,
+  SCHEDULE_STATUS_LABEL,
+  SCHEDULE_TYPE_OPTIONS,
+  createSchedule,
+  fetchResourceOptions,
+  fetchSchedules,
+  type ResourceOption,
+  type Schedule,
+} from '@/api/schedules'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const isCompact = useMatchMedia('(max-width: 768px)')
@@ -258,6 +382,28 @@ const satisfaction = ref(5)
 const satisfactionComment = ref('')
 
 const ticketId = computed(() => Number(route.params.id))
+
+const userStore = useUserStore()
+const canManageSchedule = computed(() =>
+  ['pending_assign', 'pending_accept', 'processing', 'pending_confirm', 'completed'].includes(
+    item.value?.status || '',
+  ) && (userStore.hasPermission('schedule:view') || userStore.hasPermission('*')),
+)
+
+const ticketSchedules = ref<Schedule[]>([])
+const scheduleLoading = ref(false)
+const scheduleVisible = ref(false)
+const scheduleSaving = ref(false)
+const scheduleResources = ref<ResourceOption[]>([])
+const scheduleRange = ref<[string, string] | null>(null)
+const scheduleForm = reactive({
+  title: '',
+  employee_id: undefined as number | undefined,
+  resource_type: 'other',
+  schedule_type: '' as string,
+  location: '',
+  content: '',
+})
 
 function typeLabel(code: string) {
   return TICKET_TYPE_OPTIONS.find((x) => x.value === code)?.label || code
@@ -296,6 +442,82 @@ async function loadDetail() {
     item.value = data
   } finally {
     loading.value = false
+  }
+  await loadTicketSchedules()
+}
+
+async function loadTicketSchedules() {
+  if (!ticketId.value) return
+  scheduleLoading.value = true
+  try {
+    const { data } = await fetchSchedules({
+      ticket_id: ticketId.value,
+      page: 1,
+      page_size: 50,
+    })
+    ticketSchedules.value = data.items || []
+  } catch {
+    ticketSchedules.value = []
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+async function ensureScheduleResources() {
+  if (scheduleResources.value.length) return
+  try {
+    const { data } = await fetchResourceOptions()
+    scheduleResources.value = data
+  } catch {
+    scheduleResources.value = []
+  }
+}
+
+async function openScheduleCreate() {
+  await ensureScheduleResources()
+  scheduleForm.title = item.value?.title || ''
+  scheduleForm.employee_id = item.value?.assignee_id || undefined
+  scheduleForm.resource_type = 'other'
+  scheduleForm.schedule_type = ''
+  scheduleForm.location = ''
+  scheduleForm.content = ''
+  scheduleRange.value = null
+  scheduleVisible.value = true
+}
+
+async function onCreateSchedule() {
+  if (!scheduleForm.title.trim()) {
+    ElMessage.warning('请填写排期标题')
+    return
+  }
+  if (!scheduleForm.employee_id) {
+    ElMessage.warning('请选择被排期人')
+    return
+  }
+  if (!scheduleRange.value || !scheduleRange.value[0] || !scheduleRange.value[1]) {
+    ElMessage.warning('请选择时间段')
+    return
+  }
+  scheduleSaving.value = true
+  try {
+    await createSchedule({
+      title: scheduleForm.title.trim(),
+      resource_type: scheduleForm.resource_type,
+      schedule_type: scheduleForm.schedule_type || undefined,
+      employee_id: scheduleForm.employee_id,
+      ticket_id: ticketId.value,
+      project_id: item.value?.project_id || undefined,
+      project_task_id: item.value?.task_id || undefined,
+      start_time: scheduleRange.value[0],
+      end_time: scheduleRange.value[1],
+      location: scheduleForm.location || undefined,
+      content: scheduleForm.content || undefined,
+    })
+    ElMessage.success('已创建排期')
+    scheduleVisible.value = false
+    await loadTicketSchedules()
+  } finally {
+    scheduleSaving.value = false
   }
 }
 
@@ -472,6 +694,14 @@ onMounted(loadDetail)
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.schedule-card {
+  margin-top: 12px;
 }
 .card-header {
   display: flex;

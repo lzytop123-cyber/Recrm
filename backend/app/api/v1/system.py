@@ -19,6 +19,8 @@ from app.schemas.system import (
     ExportDownloadOut,
     ExportJobCreate,
     ExportJobOut,
+    MenuVisibilityBulkUpdate,
+    MenuVisibilityView,
     PermissionOut,
     RoleCreate,
     RoleOut,
@@ -127,6 +129,25 @@ def delete_role(
     _ = current_user
     system_service.delete_role(db, role_id)
     return {"ok": True}
+
+
+@router.get("/menu-visibility", response_model=MenuVisibilityView, summary="菜单可见性配置")
+def get_menu_visibility(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(VIEW_SYSTEM)],
+) -> MenuVisibilityView:
+    _ = current_user
+    return MenuVisibilityView(**system_service.list_menu_visibility(db))
+
+
+@router.put("/menu-visibility", response_model=MenuVisibilityView, summary="批量更新菜单可见性")
+def put_menu_visibility(
+    payload: MenuVisibilityBulkUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(MANAGE_SYSTEM)],
+) -> MenuVisibilityView:
+    _ = current_user
+    return MenuVisibilityView(**system_service.replace_menu_visibility(db, payload))
 
 
 @router.get("/audit-logs", response_model=AuditLogListOut, summary="审计日志")

@@ -74,6 +74,31 @@ class SystemStatsOut(BaseModel):
     users: int
 
 
+class MenuCatalogItem(BaseModel):
+    path: str
+    title: str
+    permission: Optional[str] = None
+    default_visible_for_roles: List[str] = Field(default_factory=list)
+    hidden_by_default_for_roles: List[str] = Field(default_factory=list)
+    note: Optional[str] = None
+
+
+class MenuVisibilityOverride(BaseModel):
+    role_code: str
+    menu_path: str
+    visible: bool
+
+
+class MenuVisibilityView(BaseModel):
+    menus: List[MenuCatalogItem]
+    roles: List[dict]
+    overrides: List[MenuVisibilityOverride]
+
+
+class MenuVisibilityBulkUpdate(BaseModel):
+    overrides: List[MenuVisibilityOverride]
+
+
 class NotificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

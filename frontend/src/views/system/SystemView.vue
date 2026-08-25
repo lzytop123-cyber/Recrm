@@ -83,6 +83,73 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="菜单可见性" name="menus">
+          <div class="tab-pane-body">
+            <div class="toolbar">
+              <span class="hint">
+                勾选=显示,取消=隐藏,未勾选也未取消=沿用默认。修改后销售/员工需重新登录生效。
+              </span>
+              <div class="filters">
+                <el-button v-if="canManageSystem" :disabled="!menuVisibilityDirty" @click="resetMenuVisibility">
+                  重置
+                </el-button>
+                <el-button
+                  v-if="canManageSystem"
+                  type="primary"
+                  :loading="menuVisibilitySaving"
+                  :disabled="!menuVisibilityDirty"
+                  @click="saveMenuVisibility"
+                >
+                  保存
+                </el-button>
+              </div>
+            </div>
+            <div class="crm-table-wrap menu-visibility-wrap">
+              <el-table :data="menuVisibility.menus" v-loading="menuVisibilityLoading" stripe height="100%">
+                <el-table-column label="菜单" width="180" fixed>
+                  <template #default="{ row }">
+                    <div class="menu-name">
+                      <strong>{{ row.title }}</strong>
+                      <span class="hint code">{{ row.path }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="需要权限" width="140">
+                  <template #default="{ row }">
+                    <span class="hint">{{ row.permission || '登录即可' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span class="hint">{{ row.note || '按权限码显示' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-for="role in menuVisibility.roles"
+                  :key="role.code"
+                  :label="role.name"
+                  align="center"
+                  width="110"
+                >
+                  <template #default="{ row }">
+                    <el-select
+                      :model-value="getVisibilityState(role.code, row.path)"
+                      :disabled="!canManageSystem || role.code === 'admin'"
+                      size="small"
+                      style="width: 96px"
+                      @update:model-value="(v: string) => setVisibilityState(role.code, row.path, v)"
+                    >
+                      <el-option label="跟随默认" value="default" />
+                      <el-option label="显示" value="show" />
+                      <el-option label="隐藏" value="hide" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane label="审计日志" name="audits">
           <div class="tab-pane-body">
             <div class="toolbar">
@@ -238,11 +305,15 @@ import {
   createSystemRole,
   deleteSystemRole,
   fetchAuditLogs,
+  fetchMenuVisibility,
   fetchPermissions,
   fetchSystemRoles,
   fetchSystemStats,
+  updateMenuVisibility,
   updateSystemRole,
   type AuditLog,
+  type MenuVisibilityOverride,
+  type MenuVisibilityView,
   type PermissionItem,
   type SystemRole,
   type SystemStats,
@@ -491,8 +562,90 @@ async function onDeleteRole(row: SystemRole) {
   }
 }
 
+const menuVisibility = ref<MenuVisibilityView>({ menus: [], roles: [], overrides: [] })
+const menuVisibilityLoading = ref(false)
+const menuVisibilitySaving = ref(false)
+// key = `${role_code}::${menu_path}`, value = 'default' | 'show' | 'hide'
+const menuVisibilityDraft = reactive<Record<string, 'default' | 'show' | 'hide'>>({})
+const initialVisibilityState = ref<Record<string, 'default' | 'show' | 'hide'>>({})
+
+const menuVisibilityDirty = computed(() => {
+  const initial = initialVisibilityState.value
+  const draftKeys = Object.keys(menuVisibilityDraft)
+  const initialKeys = Object.keys(initial)
+  const allKeys = new Set([...draftKeys, ...initialKeys])
+  for (const key of allKeys) {
+    const a = menuVisibilityDraft[key] ?? 'default'
+    const b = initial[key] ?? 'default'
+    if (a !== b) return true
+  }
+  return false
+})
+
+function overrideKey(roleCode: string, menuPath: string) {
+  return `${roleCode}::${menuPath}`
+}
+
+function rebuildVisibilityDraft(view: MenuVisibilityView) {
+  const map: Record<string, 'default' | 'show' | 'hide'> = {}
+  for (const role of view.roles) {
+    for (const menu of view.menus) {
+      map[overrideKey(role.code, menu.path)] = 'default'
+    }
+  }
+  for (const o of view.overrides) {
+    map[overrideKey(o.role_code, o.menu_path)] = o.visible ? 'show' : 'hide'
+  }
+  initialVisibilityState.value = { ...map }
+  for (const key of Object.keys(menuVisibilityDraft)) delete menuVisibilityDraft[key]
+  Object.assign(menuVisibilityDraft, map)
+}
+
+function getVisibilityState(roleCode: string, menuPath: string) {
+  return menuVisibilityDraft[overrideKey(roleCode, menuPath)] ?? 'default'
+}
+
+function setVisibilityState(roleCode: string, menuPath: string, value: string) {
+  menuVisibilityDraft[overrideKey(roleCode, menuPath)] =
+    value === 'show' || value === 'hide' ? value : 'default'
+}
+
+async function loadMenuVisibility() {
+  menuVisibilityLoading.value = true
+  try {
+    const { data } = await fetchMenuVisibility()
+    menuVisibility.value = data
+    rebuildVisibilityDraft(data)
+  } finally {
+    menuVisibilityLoading.value = false
+  }
+}
+
+function resetMenuVisibility() {
+  rebuildVisibilityDraft(menuVisibility.value)
+}
+
+async function saveMenuVisibility() {
+  const overrides: MenuVisibilityOverride[] = []
+  for (const [key, state] of Object.entries(menuVisibilityDraft)) {
+    if (state === 'default') continue
+    const [role_code, menu_path] = key.split('::')
+    overrides.push({ role_code, menu_path, visible: state === 'show' })
+  }
+  menuVisibilitySaving.value = true
+  try {
+    const { data } = await updateMenuVisibility(overrides)
+    menuVisibility.value = data
+    rebuildVisibilityDraft(data)
+    ElMessage.success('已保存，相关账号重新登录后生效')
+  } finally {
+    menuVisibilitySaving.value = false
+  }
+}
+
 watch(tab, (v) => {
   if (v === 'audits' && !audits.value.length) loadAudits()
+  if (v === 'menus' && !menuVisibility.value.menus.length) loadMenuVisibility()
 })
 
 onMounted(async () => {
@@ -585,6 +738,21 @@ onMounted(async () => {
   color: var(--crm-ink-soft, #909399);
   font-size: 13px;
   line-height: 1.4;
+}
+
+.menu-visibility-wrap {
+  min-height: 320px;
+}
+
+.menu-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-name .code {
+  font-family: var(--el-font-family-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
 }
 
 .filters {

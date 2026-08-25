@@ -32,6 +32,7 @@ from app.models.asset import (
     ShootingScheduleMember,
 )
 from app.models.knowledge import KnowledgeArticle, KnowledgeSource, KnowledgeSpace
+from app.models.menu_visibility import MenuVisibility
 from app.models.platform import (
     Delegation,
     ExportJob,
@@ -101,6 +102,7 @@ __all__ = [
     "KnowledgeSpace",
     "KnowledgeSource",
     "KnowledgeArticle",
+    "MenuVisibility",
     "Timesheet",
     "Ticket",
     "TicketAssigneeCandidate",
