@@ -40,7 +40,7 @@ PHASE2_HIDDEN_MENU_PATHS: Set[str] = {
     "/okrs",
 }
 
-# 这些角色有 ticket:view 时仍显示「协作工单」侧栏；纯销售有码可接单但不进全量菜单
+# 这些角色有 ticket:view 时显示「协作工单」侧栏
 TICKET_MENU_ROLE_CODES: Set[str] = {
     "admin",
     "chairman",
@@ -52,15 +52,15 @@ TICKET_MENU_ROLE_CODES: Set[str] = {
     "dept_head",
     "hr",
     "staff",
+    "sales",
 }
 
 
 def _hide_tickets_menu(user: User) -> bool:
-    """销售默认可接单（ticket:view + 待办），但不显示协作工单侧栏。"""
     role_codes = {r.code for r in user.roles}
     if role_codes & TICKET_MENU_ROLE_CODES:
         return False
-    return "sales" in role_codes
+    return False
 
 
 def is_lead_entry_only(user: User) -> bool:

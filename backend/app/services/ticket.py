@@ -1129,22 +1129,12 @@ def scan_sla(db: Session, actor: User) -> dict:
         ratio = _sla_used_ratio(ticket) or 0.0
         overdue = _is_overdue(ticket)
 
+        # SLA 时限提醒只更新状态，不再写入流转时间线（避免刷屏 & 无意义的"某某 SLA 提醒"）
         if ratio >= 0.5 and ticket.sla_remind_level < 1:
             ticket.sla_remind_level = 1
-            target = _user_name(db, ticket.assignee_id) or "待分派处理人"
-            _add_record(db, ticket, actor, "remind_50", f"已用时限达 50%，已提醒 {target}")
             reminded_50 += 1
         if ratio >= 0.8 and ticket.sla_remind_level < 2:
             ticket.sla_remind_level = 2
-            mgr = _find_dept_manager(db, ticket.department_id)
-            mgr_name = _user_name(db, mgr.id) if mgr else "承接部门负责人"
-            _add_record(
-                db,
-                ticket,
-                actor,
-                "remind_80",
-                f"已用时限达 80%，已提醒处理人及 {mgr_name}",
-            )
             reminded_80 += 1
 
         if overdue and ticket.escalated_level < 1:
