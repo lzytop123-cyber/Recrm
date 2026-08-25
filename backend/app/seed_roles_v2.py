@@ -155,19 +155,28 @@ def seed_roles_v2(db: Session, perm_map: dict) -> None:
     for name, code, data_scope, perm_codes in ROLES_V2:
         role = db.query(Role).filter(Role.code == code).first()
         if not role:
-            role = db.query(Role).filter(Role.name == name, Role.code.in_(DEPRECATED_ROLE_CODES | {code})).first()
+            # 同名即认领（兼容自定义编码角色：董事长/001、总经理/002 等），
+            # 避免 name 唯一约束冲突；编码自动升级为 v2 标准码（审批流依赖）。
+            role = db.query(Role).filter(Role.name == name).first()
         if not role:
             role = Role(name=name, code=code, data_scope=data_scope, description=name)
             db.add(role)
             db.flush()
             print(f"[seed] 创建角色 v2: {name} ({code})")
         else:
+            code_changed = role.code != code and role.code != "admin"
             role.name = name
-            role.code = code
-            role.data_scope = data_scope
+            if code_changed:
+                role.code = code
+            # 已有角色保留其数据范围（尊重线上自定义配置），仅新角色用默认值
+            if not role.data_scope:
+                role.data_scope = data_scope
             if not role.description:
                 role.description = name
-            print(f"[seed] 更新角色 v2: {name} ({code})")
+            print(
+                f"[seed] 更新角色 v2: {name} ({code})"
+                + (" [编码已升级]" if code_changed else "")
+            )
         if perm_codes == ["*"]:
             role.permissions = list(perm_map.values())
         else:
