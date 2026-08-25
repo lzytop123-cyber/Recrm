@@ -1027,6 +1027,77 @@ def has_approved_instance(db: Session, biz_type: str, biz_id: int) -> bool:
     )
 
 
+_FLOW_ACTION_LABEL: dict[str, str] = {
+    "submit": "发起审批",
+    "approve": "审批通过",
+    "reject": "审批驳回",
+    "countersign": "会签通过",
+    "withdraw": "发起人撤回",
+    "admin_act": "管理员代审",
+}
+
+
+def _flow_action_label(action: str) -> str:
+    # AuditLog.action 形如 "approval_flow_approve"
+    key = action[len("approval_flow_") :] if action.startswith("approval_flow_") else action
+    return _FLOW_ACTION_LABEL.get(key, key)
+
+
+def list_flow_activity(
+    db: Session, biz_types: Iterable[str], biz_id: int
+) -> list[dict]:
+    """业务实体维度的审批操作日志：把该实体（同 biz_id + 传入的一批 biz_type）所有实例的 AuditLog 汇总，按时间倒序。
+
+    传多个 biz_type 是为了一张业务单据可能同时挂多种审批流（如合同的 contract / contract_activate /
+    contract_terminate / contract_modify，都用 contract.id 做 biz_id）。含历史撤回/驳回过的实例。
+    返回 dict 列表，供 API 层转成 FlowActivityItem。
+    """
+    biz_type_list = [b for b in (biz_types or []) if b]
+    if not biz_type_list:
+        return []
+    instances = (
+        db.query(ApprovalInstance)
+        .filter(ApprovalInstance.biz_type.in_(biz_type_list), ApprovalInstance.biz_id == biz_id)
+        .order_by(ApprovalInstance.id.asc())
+        .all()
+    )
+    if not instances:
+        return []
+    id_to_inst = {inst.id: inst for inst in instances}
+    rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.target_type == "approval_instance",
+            AuditLog.target_id.in_([str(iid) for iid in id_to_inst.keys()]),
+        )
+        .order_by(AuditLog.id.desc())
+        .all()
+    )
+    user_ids = {r.user_id for r in rows if r.user_id is not None}
+    real_names: dict[int, str] = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            real_names[u.id] = u.real_name or u.username
+    out: list[dict] = []
+    for r in rows:
+        inst = id_to_inst.get(int(r.target_id)) if r.target_id and r.target_id.isdigit() else None
+        out.append(
+            {
+                "id": r.id,
+                "instance_id": inst.id if inst else 0,
+                "instance_code": inst.code if inst else None,
+                "rule_code": inst.rule_code if inst else None,
+                "action": r.action,
+                "action_label": _flow_action_label(r.action),
+                "actor_id": r.user_id,
+                "actor_name": real_names.get(r.user_id) if r.user_id is not None else r.username,
+                "detail": r.detail,
+                "created_at": r.created_at,
+            }
+        )
+    return out
+
+
 def instance_biz_ids(db: Session, biz_type: str) -> set[int]:
     """该业务类型下已进入审批引擎的业务实体 id 集合（用于旧聚合去重）。"""
     rows = (

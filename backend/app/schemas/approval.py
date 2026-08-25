@@ -74,3 +74,24 @@ class ApprovalActResult(BaseModel):
     message: str = ""
     approval_id: str
     action: str
+
+
+class FlowActivityItem(BaseModel):
+    """业务实体维度的审批操作日志条目（AuditLog 投影）。"""
+
+    id: int
+    instance_id: int
+    instance_code: Optional[str] = None
+    rule_code: Optional[str] = None
+    action: str
+    action_label: str
+    actor_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    detail: Optional[str] = None
+    created_at: datetime
+
+
+class FlowActivityOut(BaseModel):
+    biz_type: str
+    biz_id: int
+    items: list[FlowActivityItem] = Field(default_factory=list)

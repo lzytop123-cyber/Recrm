@@ -171,6 +171,13 @@
       <el-empty v-else description="暂无记录" :image-size="60" />
     </el-card>
 
+    <FlowActivityCard
+      v-if="item?.id"
+      :biz-type="['ticket', 'ticket_cross_accept']"
+      :biz-id="item.id"
+      hide-when-empty
+    />
+
     <el-dialog
       v-model="assignVisible"
       title="分派工单"
@@ -331,6 +338,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
+import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
 import {
   TICKET_ACTION_LABEL,
   TICKET_PRIORITY_OPTIONS,

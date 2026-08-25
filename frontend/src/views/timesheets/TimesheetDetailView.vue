@@ -79,6 +79,13 @@
       </el-descriptions>
     </el-card>
 
+    <FlowActivityCard
+      v-if="item?.id"
+      biz-type="timesheet"
+      :biz-id="item.id"
+      hide-when-empty
+    />
+
     <el-dialog v-model="editVisible" title="编辑工时" width="560px" destroy-on-close>
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="日期">
@@ -133,6 +140,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ApprovalCenterHint from '@/components/approval/ApprovalCenterHint.vue'
+import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
 import {
   TIMESHEET_STATUS_LABEL,
   TIMESHEET_TYPE_OPTIONS,

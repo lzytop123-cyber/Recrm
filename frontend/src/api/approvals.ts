@@ -90,3 +90,26 @@ export function rejectApproval(
 export function withdrawApproval(approvalId: string) {
   return request.post(`/approvals/${encodeURIComponent(approvalId)}/withdraw`, {})
 }
+
+/** 业务实体维度的审批操作日志（合同/工单/项目/排期详情页嵌用） */
+export interface FlowActivityItem {
+  id: number
+  instance_id: number
+  instance_code?: string | null
+  rule_code?: string | null
+  action: string
+  action_label: string
+  actor_id?: number | null
+  actor_name?: string | null
+  detail?: string | null
+  created_at: string
+}
+
+export function fetchFlowActivity(bizType: string | string[], bizId: number) {
+  // 后端接受逗号分隔；避免 axios 默认给数组加 `[]` 后缀（FastAPI 不认）
+  const joined = Array.isArray(bizType) ? bizType.join(',') : bizType
+  return request.get<{ biz_type: string; biz_id: number; items: FlowActivityItem[] }>(
+    '/approvals/flow/activity',
+    { params: { biz_type: joined, biz_id: bizId } },
+  )
+}

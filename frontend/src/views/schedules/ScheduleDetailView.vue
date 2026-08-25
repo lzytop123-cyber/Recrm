@@ -88,6 +88,13 @@
         </el-table>
       </div>
     </el-card>
+
+    <FlowActivityCard
+      v-if="item?.id"
+      biz-type="schedule"
+      :biz-id="item.id"
+      hide-when-empty
+    />
   </div>
 </template>
 
@@ -96,6 +103,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
+import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
 import { useUserStore } from '@/stores/user'
 import {
   SCHEDULE_RESOURCE_OPTIONS,

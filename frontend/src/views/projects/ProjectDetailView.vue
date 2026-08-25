@@ -371,6 +371,20 @@
           </el-table-column>
         </el-table>
       </el-card>
+
+      <FlowActivityCard
+        v-if="project?.id"
+        :biz-type="[
+          'project_no_contract',
+          'project_initiation',
+          'project_handover',
+          'project_acceptance',
+          'project_settlement',
+          'project_terminate',
+        ]"
+        :biz-id="project.id"
+        hide-when-empty
+      />
     </template>
 
     <el-dialog
@@ -470,6 +484,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMatchMedia } from '@/composables/useMatchMedia'
+import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
 import {
   ACCEPTANCE_RESULT_LABEL,
   MILESTONE_STATUS_LABEL,

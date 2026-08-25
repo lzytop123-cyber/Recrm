@@ -233,6 +233,13 @@
         </div>
       </el-card>
 
+      <FlowActivityCard
+        v-if="contract.id"
+        :biz-type="['contract', 'contract_activate', 'contract_terminate', 'contract_modify']"
+        :biz-id="contract.id"
+        hide-when-empty
+      />
+
       <el-card v-if="contract.remark || contract.terminate_reason" class="stack-gap">
         <template #header>备注与说明</template>
         <div class="detail-grid">
@@ -495,6 +502,7 @@ import { useMatchMedia } from '@/composables/useMatchMedia'
 import SalesJourneyBar from '@/components/sales/SalesJourneyBar.vue'
 import AttachmentPreview from '@/components/common/AttachmentPreview.vue'
 import ApprovalCenterHint from '@/components/approval/ApprovalCenterHint.vue'
+import FlowActivityCard from '@/components/approval/FlowActivityCard.vue'
 import {
   CONTRACT_PROOF_MAX,
   CONTRACT_STATUS_LABEL,
