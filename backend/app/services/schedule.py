@@ -245,7 +245,7 @@ def create_schedule(db: Session, user: User, payload: ScheduleCreate) -> Schedul
             biz_type="schedule",
             biz_id=item.id,
             initiator=user,
-            title=f"排期确认 {item.title}",
+            title=approval_flow.approval_title("排期确认", item.title),
             summary=f"{employee.real_name or employee.username} · {_planned_hours(item)}h",
             department_id=item.department_id,
             deep_link=f"/schedules/{item.id}",

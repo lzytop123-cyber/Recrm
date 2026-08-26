@@ -101,6 +101,67 @@ def biz_category(biz_type: str) -> str:
     return BIZ_CATEGORY.get(biz_type, "审批流程")
 
 
+def approval_title(label: str, detail: str) -> str:
+    """审批中心事项标题：类型 · 中文描述（单号单独展示，不写入标题）。"""
+    detail = (detail or "").strip()
+    return f"{label} · {detail}" if detail else label
+
+
+def _display_title(db: Session, instance: ApprovalInstance) -> str:
+    """列表展示用标题：优先从业务实体取中文描述，兼容历史带编码标题。"""
+    bid = instance.biz_id
+    if not bid:
+        return instance.title or ""
+    bt = instance.biz_type or ""
+    try:
+        if bt == "asset_borrow":
+            from app.models.asset import AssetBorrowRequest
+
+            br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == bid).first()
+            if br and br.purpose:
+                return approval_title("资产领用", br.purpose)
+        elif bt == "asset_return":
+            from app.models.asset import AssetBorrowRequest
+
+            br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == bid).first()
+            if br and br.purpose:
+                return approval_title("资产归还确认", br.purpose)
+        elif bt in {"ticket", "ticket_cross_accept"}:
+            from app.models.ticket import Ticket
+
+            ticket = db.query(Ticket).filter(Ticket.id == bid).first()
+            if ticket and ticket.title:
+                label = "工单接单" if bt == "ticket" else "跨部门工单验收"
+                return approval_title(label, ticket.title)
+        elif bt == "schedule":
+            from app.models.schedule import Schedule
+
+            item = db.query(Schedule).filter(Schedule.id == bid).first()
+            if item and item.title:
+                return approval_title("排期确认", item.title)
+        elif bt.startswith("project"):
+            from app.models.project import Project
+
+            project = db.query(Project).filter(Project.id == bid).first()
+            if project and project.name:
+                labels = {
+                    "project_no_contract": (
+                        "无到款立项" if project.contract_id else "无合同立项"
+                    ),
+                    "project_initiation": "项目立项",
+                    "project_handover": "项目交接确认",
+                    "project_acceptance": "项目验收",
+                    "project_settlement": "结项归档核验",
+                    "project_terminate": "终止项目",
+                }
+                label = labels.get(bt)
+                if label:
+                    return approval_title(label, project.name)
+    except Exception:
+        pass
+    return instance.title or ""
+
+
 # ---------------------------------------------------------------------------
 # 规则解析与命中
 # ---------------------------------------------------------------------------
@@ -985,7 +1046,7 @@ def _instance_to_item(
         category=biz_category(instance.biz_type),
         source=instance.rule_code or "审批流程",
         source_id=instance.code,
-        title=instance.title,
+        title=_display_title(db, instance),
         applicant_name=instance.initiator_name or "—",
         department_name="—",
         submitted_at=instance.created_at,
