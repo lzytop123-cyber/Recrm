@@ -291,7 +291,7 @@ APPROVAL_RULES = [
         "timeout_hours": 72, "conditions": None,
         "nodes": {"nodes": [
             {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
-            {"name": "行政部负责人终审(出库)", "type": "execute", "roles": ["admin_office", "ops"]},
+            {"name": "行政部负责人终审(出库)", "type": "execute", "roles": ["004"]},
         ], "cc": []},
         "remark": "AP-19：不分级；行政部负责人终审并执行出库登记领用人/时间。",
     },
@@ -299,7 +299,7 @@ APPROVAL_RULES = [
         "code": "AP-20", "name": "资产归还确认", "biz_type": "asset_return",
         "timeout_hours": 48, "conditions": None,
         "nodes": {"nodes": [
-            {"name": "行政确认归还", "type": "execute", "roles": ["admin_office", "ops"]},
+            {"name": "行政确认归还", "type": "execute", "roles": ["004"]},
         ], "cc": []},
         "remark": "AP-20：行政确认归还与资产状态、情况说明(无需分级审批)；归还后自动清空持有人。",
     },
