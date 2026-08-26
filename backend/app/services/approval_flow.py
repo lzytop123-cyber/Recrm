@@ -107,6 +107,26 @@ def approval_title(label: str, detail: str) -> str:
     return f"{label} · {detail}" if detail else label
 
 
+def borrow_asset_title(db: Session, label: str, request_id: int, fallback_detail: str = "") -> str:
+    """资产借用类审批标题：优先展示设备名称（苹果5、VivoS18Pro…），无设备时回退用途说明。"""
+    from app.models.asset import AssetBorrowItem, FixedAsset
+
+    rows = (
+        db.query(FixedAsset.name)
+        .join(AssetBorrowItem, AssetBorrowItem.asset_id == FixedAsset.id)
+        .filter(AssetBorrowItem.request_id == request_id)
+        .order_by(AssetBorrowItem.id)
+        .all()
+    )
+    names = [r[0] for r in rows if r[0]]
+    if names:
+        shown = "、".join(names[:3])
+        if len(names) > 3:
+            shown += f" 等{len(names)}件"
+        return approval_title(label, shown)
+    return approval_title(label, (fallback_detail or "").strip())
+
+
 def _display_title(db: Session, instance: ApprovalInstance) -> str:
     """列表展示用标题：优先从业务实体取中文描述，兼容历史带编码标题。"""
     bid = instance.biz_id
@@ -118,14 +138,14 @@ def _display_title(db: Session, instance: ApprovalInstance) -> str:
             from app.models.asset import AssetBorrowRequest
 
             br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == bid).first()
-            if br and br.purpose:
-                return approval_title("资产领用", br.purpose)
+            if br:
+                return borrow_asset_title(db, "资产领用", br.id, br.purpose or "")
         elif bt == "asset_return":
             from app.models.asset import AssetBorrowRequest
 
             br = db.query(AssetBorrowRequest).filter(AssetBorrowRequest.id == bid).first()
-            if br and br.purpose:
-                return approval_title("资产归还确认", br.purpose)
+            if br:
+                return borrow_asset_title(db, "资产归还确认", br.id, br.purpose or "")
         elif bt in {"ticket", "ticket_cross_accept"}:
             from app.models.ticket import Ticket
 
