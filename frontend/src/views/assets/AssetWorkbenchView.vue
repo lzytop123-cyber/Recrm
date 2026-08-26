@@ -471,10 +471,10 @@
             <el-button type="danger" :loading="acting" @click="onReject">驳回</el-button>
             <el-button type="primary" :loading="acting" @click="onApprove">批准</el-button>
           </template>
-          <template v-else-if="borrowDrawer.status === 'approved'">
+          <template v-else-if="borrowDrawer.status === 'approved' && (borrowDrawer.applicant_id === userStore.user?.id || canManage)">
             <el-button type="primary" :loading="acting" @click="onCheckout">确认领用</el-button>
           </template>
-          <template v-else-if="['in_use', 'pending_return'].includes(borrowDrawer.status)">
+          <template v-else-if="['in_use', 'pending_return'].includes(borrowDrawer.status) && (borrowDrawer.applicant_id === userStore.user?.id || canManage)">
             <el-button type="primary" :loading="acting" @click="onReturn">确认归还</el-button>
           </template>
         </div>
