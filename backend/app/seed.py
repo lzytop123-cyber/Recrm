@@ -209,9 +209,10 @@ APPROVAL_RULES = [
         "code": "AP-06", "name": "无合同立项特批", "biz_type": "project_no_contract",
         "timeout_hours": 72, "conditions": None,
         "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
             {"name": "总经理审批", "type": "assignee", "assignee_id": 78},
         ], "cc": ["chairman"]},
-        "remark": "AP-06：无合同/未到账先立项；指定总经理刘鹏吉审批；抄送董事长(张东霞)。",
+        "remark": "AP-06：无合同/未到账先立项；部门负责人→总经理(刘鹏吉)；抄送董事长(张东霞)。",
     },
     {
         "code": "AP-07", "name": "项目立项审批", "biz_type": "project_initiation",
