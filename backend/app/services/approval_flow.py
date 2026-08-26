@@ -398,6 +398,21 @@ def _user_can_act_task(db: Session, user: User, task: ApprovalTask, instance: Ap
     return False
 
 
+def _dept_ancestor_ids(db: Session, dept_id: Optional[int]) -> set[int]:
+    """部门及全部上级部门 id 集合（申请人部门 + 向上到根的链条）。"""
+    from app.models.department import Department
+
+    ids: set[int] = set()
+    cur = dept_id
+    while cur:
+        ids.add(cur)
+        row = db.query(Department.id, Department.parent_id).filter(Department.id == cur).first()
+        if not row:
+            break
+        cur = row[1]
+    return ids
+
+
 def _resolve_task_candidates(
     db: Session, instance: ApprovalInstance, task: ApprovalTask
 ) -> tuple[set[int], str]:
@@ -428,6 +443,13 @@ def _resolve_task_candidates(
             return su, "ok"
         return set(), "blocked"
     eligible = all_ids.copy()
+    # 部门负责人节点：只匹配申请人部门（含上级部门链）内的 dept_head，避免跨部门误派
+    if "dept_head" in roles and instance.department_id:
+        allowed = _dept_ancestor_ids(db, instance.department_id)
+        dept_map = dict(
+            db.query(User.id, User.department_id).filter(User.id.in_(eligible)).all()
+        )
+        eligible = {uid for uid in eligible if dept_map.get(uid) in allowed}
     if instance.initiator_id is not None:
         eligible.discard(instance.initiator_id)
     if eligible:
