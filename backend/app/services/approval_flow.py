@@ -968,12 +968,16 @@ def _instance_facts(db: Session, instance: ApprovalInstance) -> list[ApprovalFac
 
 
 def _instance_to_item(
-    db: Session, instance: ApprovalInstance, *, can_act: bool, allow_withdraw: bool = False
+    db: Session, instance: ApprovalInstance, *, can_act: bool, allow_withdraw: bool = False, is_superuser: bool = False
 ) -> ApprovalItemOut:
     if can_act:
         actions = ["approve", "reject", "open"]
+        if is_superuser:
+            actions.append("remind")
     elif allow_withdraw and instance.status in (INSTANCE_PENDING, INSTANCE_BLOCKED):
         actions = ["open", "withdraw", "remind"]
+    elif is_superuser and instance.status in (INSTANCE_PENDING, INSTANCE_BLOCKED):
+        actions = ["open", "remind"]
     else:
         actions = ["open"]
     summary = instance.summary or ""
@@ -1156,14 +1160,15 @@ def _load_open_for_superuser(db: Session, *, limit: int = 300) -> list[ApprovalI
 def pending_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
     """当前用户可处理的审批实例（管理员可见全部进行中/挂起且可代审）。"""
     items: list[ApprovalItemOut] = []
-    rows = _load_open_for_superuser(db) if _is_flow_superuser(user) else _load_pending(db)
+    is_su = _is_flow_superuser(user)
+    rows = _load_open_for_superuser(db) if is_su else _load_pending(db)
     for inst in rows:
         active = [t for t in _tasks_at(inst, inst.current_seq) if t.status == TASK_ACTIVE]
-        if _is_flow_superuser(user) and inst.status == INSTANCE_BLOCKED and not active:
-            items.append(_instance_to_item(db, inst, can_act=True))
+        if is_su and inst.status == INSTANCE_BLOCKED and not active:
+            items.append(_instance_to_item(db, inst, can_act=True, is_superuser=is_su))
             continue
         if any(_user_can_act_task(db, user, t, inst) for t in active):
-            items.append(_instance_to_item(db, inst, can_act=True))
+            items.append(_instance_to_item(db, inst, can_act=True, is_superuser=is_su))
     return items
 
 
@@ -1195,7 +1200,7 @@ def cc_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
             continue
         if not is_admin and not (role_codes & cc_set):
             continue
-        out.append(_instance_to_item(db, inst, can_act=False))
+        out.append(_instance_to_item(db, inst, can_act=False, is_superuser=is_admin))
     return out
 
 
@@ -1238,6 +1243,7 @@ def initiated_items_for(db: Session, user: User) -> list[ApprovalItemOut]:
                 inst,
                 can_act=can_act,
                 allow_withdraw=True,
+                is_superuser=_is_flow_superuser(user),
             )
         )
     return out
