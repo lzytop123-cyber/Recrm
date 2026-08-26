@@ -151,7 +151,7 @@ APPROVAL_RULES = [
                     "type": "countersign",
                     "groups": [
                         {"label": "财务", "roles": ["finance"]},
-                        {"label": "行政主管", "roles": ["admin_office", "ops"]},
+                        {"label": "行政主管", "roles": ["004"]},
                     ],
                 }
             ],
