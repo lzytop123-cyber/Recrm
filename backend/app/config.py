@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     feishu_auto_provision: bool = False
     # 通讯录同步起始部门 open_department_id；查根部门 0 要求权限范围为「全部成员」
     feishu_contact_root_department_id: str = "0"
+    # 审批待办/催办飞书私聊；需开放平台开通「以应用身份发消息」等 IM 权限
+    feishu_notify_enabled: bool = True
+    # 前端公网/内网入口，拼审批中心深链（如 http://crm.example.com）
+    app_public_url: str = "http://127.0.0.1:5173"
 
     # DeepSeek 云 API（OpenAI 兼容）；LLM_API_KEY 为空则知识库走检索拼接回退
     llm_api_key: str = ""
@@ -63,6 +67,10 @@ class Settings(BaseSettings):
     @property
     def feishu_enabled(self) -> bool:
         return bool(self.feishu_app_id and self.feishu_app_secret and self.feishu_redirect_uri)
+
+    @property
+    def feishu_notify_ready(self) -> bool:
+        return self.feishu_enabled and self.feishu_notify_enabled
 
     @property
     def llm_enabled(self) -> bool:

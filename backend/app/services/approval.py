@@ -728,7 +728,11 @@ def _act_instance(
         approval_flow.withdraw(db, user, instance)
         return ApprovalActResult(ok=True, message="已撤回", approval_id=approval_id, action=action)
     if action == "remind":
-        return _stub_act(db, user, approval_id, action, "催办提醒已记录", payload)
+        from app.services import feishu_notify
+
+        sent = feishu_notify.remind_approvers(db, user, instance)
+        msg = f"已催办（飞书通知 {sent} 人）" if sent else "催办已记录（审批人未绑定飞书或未开启通知）"
+        return ApprovalActResult(ok=True, message=msg, approval_id=approval_id, action=action)
     raise HTTPException(
         status_code=400,
         detail="审批流单据暂不支持该动作；驳回后请由发起人重新发起",

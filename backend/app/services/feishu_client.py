@@ -1,6 +1,7 @@
 """飞书开放平台 HTTP 客户端：应用身份 token 与通讯录只读接口。"""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -200,6 +201,19 @@ class FeishuClient:
             },
         )
         return list((data.get("data") or {}).get("user_task_results") or [])
+
+    async def send_text_message(self, *, receive_open_id: str, text: str) -> dict[str, Any]:
+        """以应用身份向用户发文本私聊（需 IM 发消息权限）。"""
+        content = json.dumps({"text": text}, ensure_ascii=False)
+        return await self._post(
+            "/open-apis/im/v1/messages",
+            params={"receive_id_type": "open_id"},
+            json={
+                "receive_id": receive_open_id,
+                "msg_type": "text",
+                "content": content,
+            },
+        )
 
 
 def get_feishu_client(settings: Settings | None = None) -> FeishuClient:

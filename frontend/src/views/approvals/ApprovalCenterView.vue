@@ -103,6 +103,14 @@
             >
               撤回
             </el-button>
+            <el-button
+              v-if="row.actions.includes('remind')"
+              link
+              :loading="actingId === row.id"
+              @click="remindItem(row)"
+            >
+              催办
+            </el-button>
           </div>
         </article>
         <div v-if="!items.length" class="approval-card-empty">暂无审批事项</div>
@@ -160,6 +168,14 @@
                 @click="withdrawItem(row)"
               >
                 撤回
+              </el-button>
+              <el-button
+                v-if="row.actions.includes('remind')"
+                link
+                :loading="actingId === row.id"
+                @click="remindItem(row)"
+              >
+                催办
               </el-button>
             </template>
           </el-table-column>
@@ -474,6 +490,14 @@
             >
               撤回申请
             </el-button>
+            <el-button
+              v-if="detail?.actions.includes('remind')"
+              plain
+              :loading="actingId === detail.id"
+              @click="remindItem(detail)"
+            >
+              催办
+            </el-button>
           </div>
         </template>
         <el-empty v-else-if="!detailLoading" description="暂无详情" />
@@ -492,6 +516,7 @@ import {
   fetchApprovalStats,
   fetchApprovals,
   rejectApproval,
+  remindApproval,
   resolveOpenApproval,
   withdrawApproval,
   type ApprovalDetail,
@@ -932,6 +957,22 @@ async function withdrawItem(row: ApprovalItem) {
     await reload()
   } catch {
     /* cancel */
+  } finally {
+    actingId.value = null
+  }
+}
+
+async function remindItem(row: ApprovalItem) {
+  try {
+    await ElMessageBox.confirm(`向当前审批人发送催办「${row.title}」？`, '催办', {
+      confirmButtonText: '确认催办',
+      cancelButtonText: '取消',
+    })
+    actingId.value = row.id
+    const { data } = await remindApproval(row.id)
+    ElMessage.success(data?.message || '已催办')
+  } catch {
+    /* cancel / error toasted by request */
   } finally {
     actingId.value = null
   }

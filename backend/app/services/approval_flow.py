@@ -522,6 +522,17 @@ def _advance(db: Session, instance: ApprovalInstance, *, from_seq: int) -> None:
             instance.status = INSTANCE_PENDING
             instance.current_seq = seq
             instance.updated_at = _now()
+            db.flush()
+            try:
+                from app.services import feishu_notify
+
+                feishu_notify.notify_active_approvers(db, instance)
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).exception(
+                    "飞书审批待办通知失败 instance=%s", instance.id
+                )
             return
         seq += 1
     if not any(t.status == TASK_APPROVED for t in instance.tasks):
@@ -538,6 +549,16 @@ def _finalize(db: Session, instance: ApprovalInstance, *, approved: bool, reason
         instance.reject_reason = reason
     db.flush()  # 先落状态，回调里若查"进行中实例"能看到已终结，避免误触发护栏
     _dispatch_callback(db, instance, approved=approved)
+    try:
+        from app.services import feishu_notify
+
+        feishu_notify.notify_initiator_result(db, instance, approved=approved)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "飞书审批结果通知失败 instance=%s approved=%s", instance.id, approved
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -952,7 +973,7 @@ def _instance_to_item(
     if can_act:
         actions = ["approve", "reject", "open"]
     elif allow_withdraw and instance.status in (INSTANCE_PENDING, INSTANCE_BLOCKED):
-        actions = ["open", "withdraw"]
+        actions = ["open", "withdraw", "remind"]
     else:
         actions = ["open"]
     summary = instance.summary or ""

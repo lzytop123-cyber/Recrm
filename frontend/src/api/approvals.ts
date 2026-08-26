@@ -91,6 +91,10 @@ export function withdrawApproval(approvalId: string) {
   return request.post(`/approvals/${encodeURIComponent(approvalId)}/withdraw`, {})
 }
 
+export function remindApproval(approvalId: string) {
+  return request.post(`/approvals/${encodeURIComponent(approvalId)}/remind`, {})
+}
+
 /** 业务实体维度的审批操作日志（合同/工单/项目/排期详情页嵌用） */
 export interface FlowActivityItem {
   id: number
