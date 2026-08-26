@@ -377,7 +377,7 @@
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
               <el-button
-                v-if="row.status === 'pending'"
+                v-if="row.status === 'pending' && canConfirmResource"
                 link
                 type="primary"
                 @click="openResourceConfirm(row)"
@@ -3987,6 +3987,12 @@ function canManagePlanForProject(project?: Project | null) {
 }
 
 const canManagePlan = computed(() => canManagePlanForProject(planProject.value))
+
+/** 资源投入确认：仅部门负责人（或管理员）可操作 */
+const canConfirmResource = computed(() => {
+  const codes = (userStore.user?.roles ?? []).map((r) => r.code)
+  return userStore.hasPermission('*') || codes.includes('dept_head')
+})
 
 function canConfirmEvidence(row: ProjectMilestone) {
   if (!planInExecution.value || !planProject.value || !row.evidence) return false

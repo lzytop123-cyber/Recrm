@@ -386,6 +386,10 @@ def confirm_resource(
         raise HTTPException(status_code=404, detail="项目不存在")
     assert_can_view(user, project)
     assert_can_operate(user, project)
+    # 资源确认仅限部门负责人（或管理员代审）；防止销售等创建人越权确认
+    _role_codes = {r.code for r in (user.roles or [])}
+    if "admin" not in _role_codes and "dept_head" not in _role_codes:
+        raise HTTPException(status_code=403, detail="仅部门负责人可确认资源投入")
     if need.status != RESOURCE_NEED_PENDING:
         raise HTTPException(status_code=400, detail="该资源需求已处理")
 
