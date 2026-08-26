@@ -118,7 +118,6 @@ def _pending_message(instance: ApprovalInstance, *, remind: bool = False) -> str
     kind = "审批催办" if remind else "审批待办"
     lines = [
         f"【{kind}】{instance.title}",
-        f"单号：{instance.code}",
         f"发起人：{instance.initiator_name or '—'}",
     ]
     if node:
@@ -154,7 +153,6 @@ def _result_message(instance: ApprovalInstance, *, approved: bool) -> str:
     kind = "审批已通过" if approved else "审批已驳回"
     lines = [
         f"【{kind}】{instance.title}",
-        f"单号：{instance.code}",
     ]
     if not approved and instance.reject_reason:
         lines.append(f"驳回原因：{instance.reject_reason[:120]}")
