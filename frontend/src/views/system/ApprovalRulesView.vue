@@ -147,10 +147,22 @@
                     />
                   </el-select>
                 </el-form-item>
+                <el-form-item v-if="node.type === 'assignee'" label="指定人">
+                  <el-select
+                    v-model="node.assignee_id"
+                    clearable
+                    filterable
+                    placeholder="选择具体审批人（可留空，用下方指定人键动态匹配）"
+                    :disabled="!canManage"
+                    style="width: 100%"
+                  >
+                    <el-option v-for="u in userOptions" :key="u.id" :label="u.name" :value="u.id" />
+                  </el-select>
+                </el-form-item>
                 <el-form-item v-if="node.type === 'assignee'" label="指定人键">
                   <el-input
                     v-model="node.assignee_key"
-                    placeholder="如 acceptor_id（发起时传入 facts）"
+                    placeholder="如 acceptor_id（发起时传入 facts；与上方指定人二选一）"
                     :disabled="!canManage"
                   />
                 </el-form-item>
@@ -231,6 +243,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { fetchDirectoryPeople } from '@/api/directory'
 import { fetchSystemRoles, type SystemRole } from '@/api/system'
 import {
   createApprovalRule,
@@ -285,6 +298,7 @@ interface EditorNode {
   roles: string[]
   groups: CountersignGroup[]
   assignee_key: string
+  assignee_id: number | null
 }
 
 const loading = ref(false)
@@ -294,6 +308,16 @@ const activeId = ref<number | null>(null)
 const statusFilter = ref<string | undefined>('published')
 const form = ref<Partial<ApprovalRule> | null>(null)
 const roleOptions = ref<SystemRole[]>([])
+const userOptions = ref<{ id: number; name: string }[]>([])
+
+async function loadUsers() {
+  try {
+    const people = await fetchDirectoryPeople()
+    userOptions.value = people.map((p) => ({ id: p.id, name: p.real_name || p.username || `用户${p.id}` }))
+  } catch {
+    /* 目录不可用时静默，指定人下拉为空 */
+  }
+}
 
 const editor = reactive({
   noCondition: true,
@@ -311,6 +335,7 @@ function emptyNode(): EditorNode {
     roles: ['dept_head'],
     groups: [{ label: '', roles: [] }],
     assignee_key: '',
+    assignee_id: null,
   }
 }
 
@@ -343,6 +368,7 @@ function parseNodesJson(raw?: string | null): { nodes: EditorNode[]; cc: string[
             }))
           : [{ label: '', roles: [] }],
         assignee_key: String(n.assignee_key || ''),
+        assignee_id: n.assignee_id != null ? Number(n.assignee_id) : null,
       }
     })
     const cc = Array.isArray(cfg?.cc) ? cfg.cc.map(String) : []
@@ -402,6 +428,7 @@ function serializeNodes(): string {
         name: n.name.trim(),
         type: n.type,
         assignee_key: n.assignee_key.trim(),
+        ...(n.assignee_id ? { assignee_id: n.assignee_id } : {}),
       }
     }
     return {
@@ -613,6 +640,7 @@ async function remove() {
 
 onMounted(async () => {
   await loadRoles()
+  await loadUsers()
   await loadList()
 })
 </script>
