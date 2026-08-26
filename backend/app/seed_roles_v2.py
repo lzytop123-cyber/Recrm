@@ -100,7 +100,7 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
         "ticket:view", "schedule:view", "knowledge:view",
     ]),
     ("运营", "ops", "department", [
-        "dashboard:view", "approval:center",
+        "dashboard:view",
         "lead:view", "customer:view", "project:view",
         "ticket:view", "timesheet:view", "schedule:view",
         "asset:view", "asset:manage",
