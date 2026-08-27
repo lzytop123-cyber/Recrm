@@ -344,15 +344,8 @@ def assert_business_type(db: Session, value: str, *, enabled_only: bool = True) 
 LEAD_SOURCE_DICT_CODE = "lead_source"
 
 DEFAULT_LEAD_SOURCE_ITEMS: list[dict] = [
-    {"value": "manual", "label": "手动录入", "enabled": True, "sort": 10},
-    {"value": "import", "label": "批量导入", "enabled": True, "sort": 20},
-    {"value": "external", "label": "外部筛选", "enabled": True, "sort": 30},
-    {"value": "website", "label": "官网", "enabled": True, "sort": 40},
-    {"value": "ad", "label": "广告投放", "enabled": True, "sort": 50},
-    {"value": "event", "label": "展会/活动", "enabled": True, "sort": 60},
-    {"value": "referral", "label": "转介绍", "enabled": True, "sort": 70},
-    {"value": "im", "label": "飞书/企微", "enabled": True, "sort": 80},
-    {"value": "other", "label": "其他", "enabled": True, "sort": 90},
+    {"value": "company", "label": "公司", "enabled": True, "sort": 10},
+    {"value": "personal", "label": "个人开发", "enabled": True, "sort": 20},
 ]
 
 

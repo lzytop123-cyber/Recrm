@@ -32,15 +32,8 @@ export const DEFAULT_BUSINESS_TYPE_OPTIONS: DictionaryItem[] = [
 ]
 
 export const DEFAULT_LEAD_SOURCE_OPTIONS: DictionaryItem[] = [
-  { value: 'manual', label: '手动录入', enabled: true, sort: 10 },
-  { value: 'import', label: '批量导入', enabled: true, sort: 20 },
-  { value: 'external', label: '外部筛选', enabled: true, sort: 30 },
-  { value: 'website', label: '官网', enabled: true, sort: 40 },
-  { value: 'ad', label: '广告投放', enabled: true, sort: 50 },
-  { value: 'event', label: '展会/活动', enabled: true, sort: 60 },
-  { value: 'referral', label: '转介绍', enabled: true, sort: 70 },
-  { value: 'im', label: '飞书/企微', enabled: true, sort: 80 },
-  { value: 'other', label: '其他', enabled: true, sort: 90 },
+  { value: 'company', label: '公司', enabled: true, sort: 10 },
+  { value: 'personal', label: '个人开发', enabled: true, sort: 20 },
 ]
 
 let cachedAll: DictionaryItem[] | null = null

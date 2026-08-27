@@ -279,7 +279,7 @@ def create_lead(db: Session, user: User, payload: LeadCreate, *, force: bool = F
         phone=payload.phone.strip(),
         email=payload.email,
         region=payload.region,
-        source=payload.source or "manual",
+        source=payload.source or "company",
         source_detail=payload.source_detail,
         need_desc=payload.need_desc,
         budget=payload.budget,
@@ -307,7 +307,7 @@ def create_lead(db: Session, user: User, payload: LeadCreate, *, force: bool = F
     db.add(lead)
     db.flush()
     source_label = platform_service.lead_source_label_map(db).get(
-        lead.source, lead.source or "手动录入"
+        lead.source, lead.source or "公司"
     )
     detail = f"录入线索 {lead.name}；录入来源={source_label}"
     if lead.source_detail:
@@ -1415,7 +1415,7 @@ def confirm_lead_import(
                 business_type=bt_code,
                 need_desc=row.need_desc,
                 remark=row.remark,
-                source=row.source or "import",
+                source=row.source or "company",
                 source_detail=f"批量导入第{row.row_no}行",
                 self_follow=payload.self_follow,
             )

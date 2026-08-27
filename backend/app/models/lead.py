@@ -30,6 +30,9 @@ LEAD_STATUSES = {
 
 # 来源类型（文档 2.1，骨架期用枚举值）
 LEAD_SOURCES = {
+    "company": "公司",
+    "personal": "个人开发",
+    # 以下为历史枚举，保留用于旧数据展示兜底
     "manual": "手动录入",
     "import": "批量导入",
     "api": "API接入",
