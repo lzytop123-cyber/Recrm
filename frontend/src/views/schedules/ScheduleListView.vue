@@ -7,7 +7,7 @@
         <p>一张表看档期：点空白格新建，点色块处理；同人同色；已取消不占格子；同人时间重叠才算冲突。</p>
       </div>
       <div class="sales-head-actions">
-        <el-button type="primary" @click="openCreate()">＋ 新建排期</el-button>
+        <el-button v-if="canCreate" type="primary" @click="openCreate()">＋ 新建排期</el-button>
       </div>
     </header>
 
@@ -582,6 +582,8 @@ const roleFilters: { key: RoleFilter; label: string }[] = [
 const route = useRoute()
 const userStore = useUserStore()
 const isAdmin = computed(() => (userStore.user?.roles ?? []).some((r) => r.code === 'admin'))
+/** 新建排期：需 schedule:manage 权限（后台角色权限可配置） */
+const canCreate = computed(() => userStore.hasPermission('schedule:manage') || userStore.hasPermission('*'))
 const isCompact = useMatchMedia('(max-width: 768px)')
 const loading = ref(false)
 const saving = ref(false)
@@ -1221,6 +1223,10 @@ function onLinkModeChange(mode: LinkMode | string | number | boolean | undefined
 }
 
 function openCreateFromSlot(date: Date, hour: number) {
+  if (!canCreate.value) {
+    ElMessage.warning('您没有新建排期的权限，请联系运营或管理员')
+    return
+  }
   void openCreate(undefined, { date, hour })
 }
 

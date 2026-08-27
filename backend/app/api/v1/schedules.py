@@ -138,7 +138,7 @@ def list_schedules(
 def create_schedule(
     payload: ScheduleCreate,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(PermissionChecker(["schedule:view"]))],
+    current_user: Annotated[User, Depends(PermissionChecker(["schedule:manage"]))],
 ) -> ScheduleOut:
     return ScheduleOut.model_validate(schedule_service.create_schedule(db, current_user, payload))
 

@@ -50,7 +50,7 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
         "project:accept_submit", "project:accept_approve",
         "project:finance_submit", "project:complete",
         "okr:view", "timesheet:view", "timesheet:approve",
-        "ticket:view", "schedule:view", "asset:view", "asset:manage",
+        "ticket:view", "schedule:view", "schedule:manage", "asset:view", "asset:manage",
         "knowledge:view", "org:view",
     ]),
     ("副总经理", "vp", "company", [
@@ -58,7 +58,7 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
         "lead:view", "customer:view", "opportunity:view",
         "contract:view", "contract:approve", "payment:view",
         "project:view", "project:manage", "project:accept_approve",
-        "ticket:view", "schedule:view", "knowledge:view",
+        "ticket:view", "schedule:view", "schedule:manage", "knowledge:view",
     ]),
     ("中心负责人", "center_lead", "department", [
         "dashboard:view", "approval:center",
@@ -69,7 +69,7 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
         "project:accept_submit", "project:accept_approve",
         "project:finance_submit", "project:complete",
         "okr:view", "timesheet:view", "timesheet:approve",
-        "ticket:view", "schedule:view", "asset:view", "asset:manage",
+        "ticket:view", "schedule:view", "schedule:manage", "asset:view", "asset:manage",
         "knowledge:view", "knowledge:manage", "org:view",
     ]),
     ("部门负责人", "dept_head", "department", [
@@ -102,7 +102,7 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
     ("运营", "ops", "department", [
         "dashboard:view",
         "lead:view", "customer:view", "project:view",
-        "ticket:view", "timesheet:view", "schedule:view",
+        "ticket:view", "timesheet:view", "schedule:view", "schedule:manage",
         "asset:view", "asset:manage",
         "knowledge:view",
     ]),

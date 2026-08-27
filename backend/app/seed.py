@@ -75,6 +75,7 @@ PERMISSIONS = [
     ("工时审批", "timesheet:approve", "timesheet", "审批工时"),
     ("协作工单（使用）", "ticket:view", "ticket", "工单列表与处理；销售默认可接单但不进侧栏全量菜单"),
     ("排期会议（使用）", "schedule:view", "schedule", "排期申请与确认；选人走排期/目录接口"),
+    ("排期管理", "schedule:manage", "schedule", "新建/编辑排期；未勾选仅能查看排期表"),
     ("固定资产（入口）", "asset:view", "asset", "侧栏「固定资产」；可申请借用"),
     ("固定资产管理", "asset:manage", "asset", "入库/审批借用/盘点/处置等资产管理"),
     ("知识库查看", "knowledge:view", "knowledge", "查看知识库（暂无独立侧栏）"),
