@@ -178,9 +178,16 @@ def seed_roles_v2(db: Session, perm_map: dict) -> None:
                 + (" [编码已升级]" if code_changed else "")
             )
         if perm_codes == ["*"]:
+            # admin 角色始终全权限（新增权限自动同步）
             role.permissions = list(perm_map.values())
         else:
-            role.permissions = [perm_map[c] for c in perm_codes if c in perm_map]
+            # 已有角色只增不减：代码新增的默认权限自动补上；
+            # 后台手工调整（删除/变更）保留，避免每次部署被覆盖回默认。
+            existing = {p.code for p in role.permissions}
+            for c in perm_codes:
+                p = perm_map.get(c)
+                if p and p.code not in existing:
+                    role.permissions.append(p)
 
 
 def migrate_user_roles_to_v2(db: Session) -> None:
