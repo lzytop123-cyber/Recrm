@@ -331,26 +331,41 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column
-          v-if="canManagePool && pool === 'public'"
-          label="操作"
-          width="90"
-          fixed="right"
-        >
+        <el-table-column v-if="embedded" label="操作" :width="pool === 'public' ? 150 : 120" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="isUnassigned(row)"
+              v-if="canEditLead(row)"
               size="small"
-              @click.stop="openBatchAssign([row.id])"
+              link
+              type="primary"
+              @click.stop="openEdit(row)"
             >
-              分配
+              编辑
             </el-button>
+            <template v-if="canManagePool && pool === 'public'">
+              <el-button
+                v-if="isUnassigned(row)"
+                size="small"
+                @click.stop="openBatchAssign([row.id])"
+              >
+                分配
+              </el-button>
+              <el-button v-else size="small" @click.stop="goDetail(row)">详情</el-button>
+            </template>
             <el-button v-else size="small" @click.stop="goDetail(row)">详情</el-button>
           </template>
         </el-table-column>
-        <el-table-column v-else-if="!embedded" label="操作" width="180" fixed="right">
+        <el-table-column v-else label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="goDetail(row)">详情</el-button>
+            <el-button
+              v-if="canEditLead(row)"
+              link
+              type="primary"
+              @click.stop="openEdit(row)"
+            >
+              编辑
+            </el-button>
             <el-button
               v-if="canManagePool && isUnassigned(row)"
               link
@@ -384,12 +399,13 @@
 
     <el-dialog
       v-model="createVisible"
-      title="新增线索"
+      :title="isEditMode ? '编辑线索' : '新增线索'"
       width="720px"
       destroy-on-close
       class="lead-create-dialog"
+      @closed="editingLeadId = null"
     >
-      <p class="dialog-eyebrow">录入线索</p>
+      <p class="dialog-eyebrow">{{ isEditMode ? '修改客户与需求信息' : '录入线索' }}</p>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="lead-create-form">
         <section class="form-block">
           <h3><span>1</span>客户信息</h3>
@@ -430,7 +446,7 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="录入人">
+            <el-form-item v-if="!isEditMode" label="录入人">
               <el-input :model-value="recorderName" disabled />
             </el-form-item>
           </div>
@@ -467,8 +483,8 @@
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" :disabled="!canSubmitLead" @click="onCreate">
-          提交线索
+        <el-button type="primary" :loading="saving" :disabled="!canSubmitLead" @click="onSubmitLead">
+          {{ isEditMode ? '保存' : '提交线索' }}
         </el-button>
       </template>
     </el-dialog>
@@ -851,6 +867,7 @@ import {
   fetchLeads,
   returnLead,
   transferLead,
+  updateLead,
   type Lead,
   type LeadDetail,
   type LeadQuota,
@@ -925,6 +942,8 @@ const quota = ref<LeadQuota | null>(null)
 const selectedIds = ref<number[]>([])
 
 const createVisible = ref(false)
+const editingLeadId = ref<number | null>(null)
+const isEditMode = computed(() => editingLeadId.value != null)
 const batchVisible = ref(false)
 const batchLeadIds = ref<number[]>([])
 const batchOwnerIds = ref<number[]>([])
@@ -1068,6 +1087,10 @@ function statusTag(s: string) {
 }
 function isUnassigned(row: Lead) {
   return row.status === 'pending_assign' || row.status === 'returned'
+}
+
+function canEditLead(row: Lead) {
+  return row.status !== 'converted'
 }
 
 const pageUnassignedCount = computed(
@@ -1497,7 +1520,7 @@ function formatLogDetail(detail: string) {
   text = text.replace(/(\S+)\/(\S+):\s*/g, '$1/$2：')
   return text
 }
-function openCreate() {
+function resetLeadForm() {
   form.name = ''
   form.company_name = ''
   form.credit_code = ''
@@ -1511,7 +1534,45 @@ function openCreate() {
   dupChecked.value = false
   dupReview.value = false
   dupHard.value = false
+}
+
+function fillLeadForm(lead: Lead) {
+  form.name = lead.name || ''
+  form.company_name = lead.company_name || ''
+  form.credit_code = lead.credit_code || ''
+  form.company_domain = lead.company_domain || ''
+  form.phone = lead.phone || ''
+  form.business_type = lead.business_type || 'ai_product'
+  form.source = lead.source || 'manual'
+  form.need_desc = lead.need_desc || ''
+  form.remark = lead.remark || ''
+}
+
+function openCreate() {
+  editingLeadId.value = null
+  resetLeadForm()
   createVisible.value = true
+}
+
+async function openEdit(row: Lead) {
+  if (!canEditLead(row)) {
+    ElMessage.warning('已转化线索不可编辑')
+    return
+  }
+  editingLeadId.value = row.id
+  fillLeadForm(row)
+  dupChecking.value = false
+  dupChecked.value = false
+  dupReview.value = false
+  dupHard.value = false
+  createVisible.value = true
+  try {
+    const { data } = await fetchLeadDetail(row.id)
+    fillLeadForm(data)
+  } catch {
+    /* 列表字段足够时忽略 */
+  }
+  scheduleDupCheck()
 }
 
 function scheduleDupCheck() {
@@ -1541,9 +1602,14 @@ async function runDupCheck(version: number) {
       company_domain: form.company_domain.trim() || undefined,
     })
     if (version !== dupVersion) return
+    const selfId = editingLeadId.value
+    const byPhone = selfId ? data.by_phone.filter((x) => x.id !== selfId) : data.by_phone
+    const byCredit = selfId ? data.by_credit.filter((x) => x.id !== selfId) : data.by_credit
+    const byCompany = selfId ? data.by_company.filter((x) => x.id !== selfId) : data.by_company
+    const byDomain = selfId ? data.by_domain.filter((x) => x.id !== selfId) : data.by_domain
     dupChecked.value = true
-    dupHard.value = !!data.is_hard_duplicate
-    dupReview.value = !!data.has_duplicate && !data.is_hard_duplicate
+    dupHard.value = !!(byPhone.length || byCredit.length)
+    dupReview.value = !!(byCompany.length || byDomain.length) && !dupHard.value
   } catch {
     if (version !== dupVersion) return
     dupChecked.value = true
@@ -1554,7 +1620,7 @@ async function runDupCheck(version: number) {
   }
 }
 
-async function onCreate() {
+async function onSubmitLead() {
   const ok = await formRef.value?.validate().catch(() => false)
   if (!ok || !canSubmitLead.value) return
   saving.value = true
@@ -1569,8 +1635,23 @@ async function onCreate() {
       source: form.source,
       need_desc: form.need_desc || undefined,
       remark: form.remark || undefined,
-      self_follow: canSelfFollowOnCreate.value,
     }
+    if (isEditMode.value && editingLeadId.value) {
+      if (dupHard.value) {
+        ElMessage.error('联系电话与其他线索冲突，请修改后再保存')
+        return
+      }
+      const { data } = await updateLead(editingLeadId.value, payload)
+      ElMessage.success('线索已更新')
+      createVisible.value = false
+      editingLeadId.value = null
+      if (drawerLead.value?.id === data.id) {
+        drawerLead.value = { ...drawerLead.value, ...data }
+      }
+      await loadList()
+      return
+    }
+    const createPayload = { ...payload, self_follow: canSelfFollowOnCreate.value }
     const successMsg = canSelfFollowOnCreate.value
       ? '录入成功，已进入我的线索，可直接跟进'
       : '录入成功，已进入管理层待分配池'
@@ -1580,19 +1661,19 @@ async function onCreate() {
         '重复提示',
         { type: 'warning' },
       )
-      await createLead(payload, true)
+      await createLead(createPayload, true)
       ElMessage.success(
         canSelfFollowOnCreate.value ? '已强制录入并进入我的线索' : '已强制录入，查重结果已留痕',
       )
     } else if (dupReview.value) {
-      await createLead(payload)
+      await createLead(createPayload)
       ElMessage.success(
         canSelfFollowOnCreate.value
           ? '已提交并进入我的线索；疑似重复已写入操作记录'
           : '已提交；疑似重复已写入操作记录，未发生强制合并',
       )
     } else {
-      await createLead(payload)
+      await createLead(createPayload)
       ElMessage.success(successMsg)
     }
     createVisible.value = false
