@@ -107,7 +107,7 @@
               >
                 <strong>{{ log.username || '系统' }}</strong>
                 · {{ actionLabel(log.action) }}
-                <div class="muted">{{ log.detail }}</div>
+                <div class="muted">{{ formatLogDetail(log.detail) }}</div>
               </el-timeline-item>
             </el-timeline>
             <el-empty v-else description="暂无日志" :image-size="64" />
@@ -279,7 +279,7 @@ import { useBusinessTypes, useLeadSources } from '@/api/dictionaries'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const { businessTypeOptions } = useBusinessTypes()
+const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
 const { leadSourceLabel } = useLeadSources()
 
 const loading = ref(false)
@@ -369,6 +369,42 @@ function actionLabel(a: string) {
       edit: '编辑',
     } as Record<string, string>
   )[a] || a
+}
+
+function formatLogDetail(detail?: string | null) {
+  if (!detail) return ''
+  const fieldLabels: Record<string, string> = {
+    name: '联系人',
+    company_name: '客户主体',
+    credit_code: '统一社会信用代码',
+    company_domain: '企业域名',
+    phone: '联系电话',
+    email: '邮箱',
+    region: '客户地区',
+    source: '录入来源',
+    source_detail: '来源说明',
+    need_desc: '需求描述',
+    budget: '预算',
+    business_type: '需求方向',
+    remark: '备注',
+  }
+  const valueLabel = (field: string, raw: string) => {
+    const v = (raw || '').trim()
+    if (!v || v === 'None') return '空'
+    if (field === 'source') return leadSourceLabel(v)
+    if (field === 'business_type') return businessTypeLabel(v)
+    return v
+  }
+  return detail
+    .split('; ')
+    .map((part) => {
+      const m = part.match(/^(\w+):\s*(.*?)\s*->\s*(.*)$/)
+      if (!m) return part
+      const [, field, oldVal, newVal] = m
+      const label = fieldLabels[field] || field
+      return `${label}：${valueLabel(field, oldVal)} → ${valueLabel(field, newVal)}`
+    })
+    .join('；')
 }
 function formatTime(v?: string | null) {
   if (!v) return '-'

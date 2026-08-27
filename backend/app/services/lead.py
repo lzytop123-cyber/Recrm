@@ -322,6 +322,41 @@ def create_lead(db: Session, user: User, payload: LeadCreate, *, force: bool = F
     return enrich_lead(db, lead)
 
 
+_LEAD_EDIT_FIELD_LABELS: dict[str, str] = {
+    "name": "联系人",
+    "company_name": "客户主体",
+    "credit_code": "统一社会信用代码",
+    "company_domain": "企业域名",
+    "phone": "联系电话",
+    "email": "邮箱",
+    "region": "客户地区",
+    "source": "录入来源",
+    "source_detail": "来源说明",
+    "need_desc": "需求描述",
+    "budget": "预算",
+    "business_type": "需求方向",
+    "remark": "备注",
+}
+
+
+def _lead_edit_value_label(db: Session, field: str, value: object) -> str:
+    if value is None:
+        return "空"
+    text = str(value).strip()
+    if not text:
+        return "空"
+    if field == "source":
+        return platform_service.lead_source_label_map(db).get(text, text)
+    if field == "business_type":
+        return platform_service.business_type_label_map(db).get(text, text)
+    return text
+
+
+def _format_lead_edit_change(db: Session, field: str, old: object, new: object) -> str:
+    label = _LEAD_EDIT_FIELD_LABELS.get(field, field)
+    return f"{label}：{_lead_edit_value_label(db, field, old)} → {_lead_edit_value_label(db, field, new)}"
+
+
 def update_lead(db: Session, user: User, lead_id: int, payload: LeadUpdate) -> Lead:
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
@@ -340,7 +375,7 @@ def update_lead(db: Session, user: User, lead_id: int, payload: LeadUpdate) -> L
     for k, v in data.items():
         old = getattr(lead, k)
         if old != v:
-            changes.append(f"{k}: {old} -> {v}")
+            changes.append(_format_lead_edit_change(db, k, old, v))
             setattr(lead, k, v)
 
     if changes:
