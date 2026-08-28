@@ -165,6 +165,9 @@ async def sync_feishu_attendance(
     client: FeishuClient | None = None,
 ) -> AttendanceSyncResult:
     start, end, month_label = _parse_month(month)
+    # 飞书考勤接口不允许查未来日期（dateFrom 不能超过今天），月末窗口钳制到今天
+    if end > date.today():
+        end = date.today()
     cfg = settings or get_settings()
     own_client = client is None
     api = client or get_feishu_client(cfg)
