@@ -182,7 +182,7 @@ import { useUserStore } from '@/stores/user'
 import LeadImportDialog from '@/components/leads/LeadImportDialog.vue'
 
 const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
-const { leadSourceOptions, leadSourceLabel } = useLeadSources()
+const { leadSourceOptions, leadSourceLabel, defaultLeadSource } = useLeadSources()
 const userStore = useUserStore()
 const router = useRouter()
 /** 与后端 can_self_follow_on_create 一致：销售录入自跟进，其他岗进待分配池 */
@@ -208,7 +208,7 @@ const form = reactive({
   company_domain: '',
   phone: '',
   business_type: 'ai_product',
-  source: 'manual',
+  source: 'company',
 })
 const rules: FormRules = {
   company_name: [{ required: true, message: '请填写客户主体', trigger: 'blur' }],
@@ -330,7 +330,7 @@ function openCreate() {
   form.company_domain = ''
   form.phone = ''
   form.business_type = 'ai_product'
-  form.source = 'manual'
+  form.source = defaultLeadSource()
   dupChecking.value = false
   dupChecked.value = false
   dupReview.value = false

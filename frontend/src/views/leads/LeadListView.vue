@@ -439,7 +439,7 @@
             <el-form-item label="录入来源" prop="source">
               <el-select v-model="form.source" style="width: 100%">
                 <el-option
-                  v-for="opt in leadSourceOptions"
+                  v-for="opt in leadSourceSelectOptions"
                   :key="opt.value"
                   :label="opt.label"
                   :value="opt.value"
@@ -898,7 +898,17 @@ const canSelfFollowOnCreate = computed(() =>
 )
 
 const { businessTypeOptions, businessTypeLabel } = useBusinessTypes()
-const { leadSourceOptions, leadSourceLabel } = useLeadSources()
+const { leadSourceOptions, leadSourceLabel, defaultLeadSource } = useLeadSources()
+
+/** 下拉选项：编辑时若历史编码不在字典中，补一条中文项，避免显示英文 code */
+const leadSourceSelectOptions = computed(() => {
+  const opts = [...leadSourceOptions.value]
+  const cur = form.source
+  if (cur && !opts.some((o) => o.value === cur)) {
+    opts.unshift({ value: cur, label: leadSourceLabel(cur), enabled: true })
+  }
+  return opts
+})
 
 const loading = ref(false)
 const saving = ref(false)
@@ -959,7 +969,7 @@ const form = reactive({
   company_domain: '',
   phone: '',
   business_type: 'ai_product',
-  source: 'manual',
+  source: 'company',
   need_desc: '',
   remark: '',
 })
@@ -1559,7 +1569,7 @@ function resetLeadForm() {
   form.company_domain = ''
   form.phone = ''
   form.business_type = 'ai_product'
-  form.source = 'manual'
+  form.source = defaultLeadSource()
   form.need_desc = ''
   form.remark = ''
   dupChecking.value = false
@@ -1575,7 +1585,7 @@ function fillLeadForm(lead: Lead) {
   form.company_domain = lead.company_domain || ''
   form.phone = lead.phone || ''
   form.business_type = lead.business_type || 'ai_product'
-  form.source = lead.source || 'manual'
+  form.source = lead.source || defaultLeadSource()
   form.need_desc = lead.need_desc || ''
   form.remark = lead.remark || ''
 }

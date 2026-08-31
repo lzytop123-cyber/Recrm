@@ -137,7 +137,7 @@ def on_contract_modify_result(db: Session, instance, *, approved: bool, withdraw
     prev_revision = int(snapshot.pop("prev_revision", contract.revision) or contract.revision)
     _apply_snapshot(db, contract, snapshot)
     contract.revision = prev_revision + 1
-    contract.modification_snapshot_json = None
+    contract.modification_snapshot_json = Nonea 
     if reason:
         contract.remark = (
             (contract.remark or "") + f"\n[修改通过 v{contract.revision}] {reason}"

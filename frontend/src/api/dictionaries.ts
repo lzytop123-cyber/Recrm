@@ -36,6 +36,21 @@ export const DEFAULT_LEAD_SOURCE_OPTIONS: DictionaryItem[] = [
   { value: 'personal', label: '个人开发', enabled: true, sort: 20 },
 ]
 
+/** 历史编码 / 旧默认值的中文回退（字典未配置时仍可读） */
+const LEAD_SOURCE_LABEL_FALLBACK: Record<string, string> = {
+  company: '公司',
+  personal: '个人开发',
+  manual: '手动录入',
+  import: '批量导入',
+  external: '外部筛选',
+  website: '官网',
+  ad: '广告投放',
+  event: '展会/活动',
+  referral: '转介绍',
+  im: '飞书/企微',
+  other: '其他',
+}
+
 let cachedAll: DictionaryItem[] | null = null
 let inflight: Promise<DictionaryItem[]> | null = null
 let cachedLeadSources: DictionaryItem[] | null = null
@@ -123,9 +138,20 @@ export function enabledLeadSourceOptions(all?: DictionaryItem[] | null): Diction
 }
 
 export function leadSourceLabel(code?: string | null): string {
-  if (!code) return '手动录入'
+  if (!code) return '公司'
   const list = cachedLeadSources ?? DEFAULT_LEAD_SOURCE_OPTIONS
-  return list.find((x) => x.value === code)?.label || code
+  return (
+    list.find((x) => x.value === code)?.label ||
+    LEAD_SOURCE_LABEL_FALLBACK[code] ||
+    code
+  )
+}
+
+/** 新建线索时的默认来源：优先字典首项，否则公司 */
+export function defaultLeadSource(): string {
+  const opts = enabledLeadSourceOptions()
+  if (opts.some((x) => x.value === 'company')) return 'company'
+  return opts[0]?.value || 'company'
 }
 
 /**
@@ -189,5 +215,6 @@ export function useLeadSources() {
     leadSourceLoading: loading,
     refreshLeadSources: refresh,
     leadSourceLabel,
+    defaultLeadSource,
   }
 }
