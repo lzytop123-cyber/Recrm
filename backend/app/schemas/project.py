@@ -79,6 +79,10 @@ class ProjectPaymentDeferReviewRequest(BaseModel):
     remark: Optional[str] = None
 
 
+class ProjectPaymentDeferResubmitRequest(BaseModel):
+    payment_deferred_reason: Optional[str] = Field(None, max_length=500)
+
+
 class ProjectLeftoverCloseRequest(BaseModel):
     closed: bool = True
 

@@ -23,7 +23,6 @@ from app.models.department import Department
 from app.models.finance import RECEIPT_STATUS_CONFIRMED, Receipt
 from app.models.project import (
     ACCEPTANCE_APPROVAL_APPROVED,
-    ACCEPTANCE_APPROVAL_NONE,
     ACCEPTANCE_APPROVAL_PENDING,
     ACCEPTANCE_APPROVAL_REJECTED,
     ACCEPTANCE_RESULTS,
@@ -31,9 +30,7 @@ from app.models.project import (
     EVIDENCE_STATUS_NONE,
     EVIDENCE_STATUS_PENDING,
     EVIDENCE_STATUS_REJECTED,
-    EVIDENCE_STATUSES,
     FINANCE_CHECK_APPROVED,
-    FINANCE_CHECK_NONE,
     FINANCE_CHECK_PENDING,
     FINANCE_CHECK_REJECTED,
     MILESTONE_STATUS_DONE,
@@ -70,6 +67,7 @@ from app.schemas.project import (
     ProjectFinanceCheckReviewRequest,
     ProjectLeftoverCloseRequest,
     ProjectPaymentDeferReviewRequest,
+    ProjectPaymentDeferResubmitRequest,
     ProjectTaskCreate,
     ProjectTaskUpdate,
     ProjectTerminateRequest,
@@ -741,6 +739,62 @@ def review_payment_defer(
         project.payment_defer_reject_reason = reason
         note = f"[{kind}驳回] {reason}"
         project.remark = f"{(project.remark or '').strip()}\n{note}".strip()
+    db.commit()
+    db.refresh(project)
+    return enrich_project(db, project)
+
+
+def resubmit_payment_defer(
+    db: Session,
+    user: User,
+    project_id: int,
+    payload: ProjectPaymentDeferResubmitRequest,
+) -> Project:
+    """无合同/无到款立项驳回后：修改例外原因并重新进入审批。"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    from app.services import approval_flow
+
+    if approval_flow.find_open_instance(db, "project_no_contract", project.id) is not None:
+        raise HTTPException(status_code=409, detail="该立项特批审批中，请勿重复提交")
+    assert_can_view(user, project)
+    assert_can_operate(user, project)
+    if project.status != PROJECT_STATUS_INITIATING:
+        raise HTTPException(status_code=400, detail="仅立项中的项目可重新提交特批")
+    kind = _defer_kind_label(project)
+    if not project.payment_deferred:
+        raise HTTPException(status_code=400, detail=f"该项目未申请{kind}")
+    if project.payment_defer_status != PAYMENT_DEFER_REJECTED:
+        raise HTTPException(status_code=409, detail=f"仅已驳回的{kind}可重新提交")
+
+    reason = (payload.payment_deferred_reason or project.payment_deferred_reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail=f"请填写{kind}原因")
+
+    now = datetime.now(timezone.utc)
+    project.payment_deferred_reason = reason
+    project.payment_defer_status = PAYMENT_DEFER_PENDING
+    project.payment_defer_reject_reason = None
+    project.payment_defer_submitted_by = user.id
+    project.payment_defer_submitted_at = now
+    project.payment_defer_approved_by = None
+    project.payment_defer_approved_at = None
+    tag = f"[{kind}待审] {reason}"
+    project.remark = f"{tag}\n{(project.remark or '').strip()}".strip()
+
+    if approval_flow.select_rule(db, "project_no_contract", {}) is not None:
+        approval_flow.start_instance(
+            db,
+            biz_type="project_no_contract",
+            biz_id=project.id,
+            initiator=user,
+            title=approval_flow.approval_title(kind, project.name),
+            summary=reason,
+            department_id=project.department_id,
+            deep_link="/projects/delivery?tab=initiation",
+            commit=False,
+        )
     db.commit()
     db.refresh(project)
     return enrich_project(db, project)

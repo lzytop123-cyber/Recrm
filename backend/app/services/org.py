@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import hash_password

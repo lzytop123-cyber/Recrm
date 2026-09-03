@@ -138,6 +138,48 @@ def test_no_contract_requires_reason_and_approval(
     assert planned.json()["status"] == "planning"
 
 
+def test_resubmit_payment_defer_after_reject(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    me = _user_with_project(db_session, "noc_resub", admin=True)
+    headers = _auth_headers(client, me.username)
+
+    create = client.post(
+        "/api/v1/projects",
+        headers=headers,
+        json={
+            "name": "无合同重提",
+            "project_type": "ai_custom",
+            "scope_desc": "内部预研",
+            "payment_deferred_reason": "原因过短",
+        },
+    )
+    assert create.status_code == 200, create.text
+    pid = create.json()["id"]
+
+    project_service.review_payment_defer(
+        db_session,
+        me,
+        pid,
+        ProjectPaymentDeferReviewRequest(remark="说明不充分"),
+        approve=False,
+    )
+    rejected = client.get(f"/api/v1/projects/{pid}", headers=headers)
+    assert rejected.json()["payment_defer_status"] == "rejected"
+
+    resubmit = client.post(
+        f"/api/v1/projects/{pid}/payment-defer/resubmit",
+        headers=headers,
+        json={"payment_deferred_reason": "公司内部自用系统，无对外合同，一期测试版需先行开发"},
+    )
+    assert resubmit.status_code == 200, resubmit.text
+    body = resubmit.json()
+    assert body["payment_defer_status"] == "pending"
+    assert body["payment_defer_reject_reason"] is None
+    assert "公司内部自用" in (body["payment_deferred_reason"] or "")
+
+
 def test_initiate_with_unpaid_contract_requires_defer(
     client: TestClient,
     db_session: Session,

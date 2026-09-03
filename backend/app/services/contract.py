@@ -21,17 +21,14 @@ from app.models.contract import (
     CONTRACT_STATUS_PENDING_APPROVAL,
     CONTRACT_STATUS_SIGNED,
     CONTRACT_STATUS_TERMINATED,
-    CONTRACT_STATUSES,
     Contract,
 )
 from app.models.customer import Customer
 from app.models.finance import (
-    ALLOCATION_STATUS_ACTIVE,
     RECEIPT_STATUS_CONFIRMED,
     RECEIVABLE_STATUS_CANCELLED,
     REFUND_STATUS_CONFIRMED,
     Receipt,
-    ReceiptAllocation,
     ReceivablePlan,
     Refund,
 )
@@ -789,7 +786,3 @@ def contract_stats(db: Session, user: User) -> dict:
         "terminated": _count(status=CONTRACT_STATUS_TERMINATED),
         "mine": _count(scope_filter="mine"),
     }
-
-
-# silence unused import warning for type checkers
-_ = CONTRACT_STATUSES

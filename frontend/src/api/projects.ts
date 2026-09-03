@@ -312,6 +312,12 @@ export function reviewProjectFinanceCheck(id: number, approve: boolean, remark?:
   )
 }
 
+export function resubmitPaymentDefer(id: number, payment_deferred_reason?: string) {
+  return request.post<Project>(`/projects/${id}/payment-defer/resubmit`, {
+    payment_deferred_reason,
+  })
+}
+
 export function setProjectLeftoverClosed(id: number, closed = true) {
   return request.post<Project>(`/projects/${id}/leftover-close`, { closed })
 }

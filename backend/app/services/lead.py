@@ -47,7 +47,6 @@ from app.schemas.lead import (
     LeadImportConfirmRequest,
     LeadImportPreviewOut,
     LeadImportPreviewRow,
-    LeadImportRowIn,
     LeadLostRequest,
     LeadTransferRequest,
     LeadUpdate,

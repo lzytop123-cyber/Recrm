@@ -16,11 +16,7 @@ from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.system import MenuVisibilityBulkUpdate, RoleCreate, RoleUpdate
-from app.services.menu import (
-    MENU_CATALOG,
-    PHASE2_HIDDEN_MENU_PATHS,
-    TICKET_MENU_ROLE_CODES,
-)
+from app.services.menu import MENU_CATALOG, PHASE2_HIDDEN_MENU_PATHS
 
 PROTECTED_ROLE_CODES = {"admin"}
 

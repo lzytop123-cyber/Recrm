@@ -138,11 +138,6 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
     ]),
 ]
 
-DEPRECATED_ROLE_CODES = frozenset({
-    "board", "executive", "middle_manager", "employee", "delivery_lead",
-    "operations", "developer", "instructor", "brand", "hr_supervisor", "asset_admin",
-})
-
 # 开发/演示：给 admin 账号补齐审批链角色，避免无人审批挂起
 DEMO_ADMIN_EXTRA_ROLES = (
     "chairman", "gm", "vp", "center_lead", "dept_head",

@@ -21,6 +21,7 @@ from app.schemas.project import (
     ProjectFinanceCheckReviewRequest,
     ProjectLeftoverCloseRequest,
     ProjectPaymentDeferReviewRequest,
+    ProjectPaymentDeferResubmitRequest,
     ProjectListOut,
     ProjectOut,
     ProjectStatsOut,
@@ -394,6 +395,22 @@ def reject_payment_defer(
         project_service.review_payment_defer(
             db, current_user, project_id, payload, approve=False
         )
+    )
+
+
+@router.post(
+    "/{project_id}/payment-defer/resubmit",
+    response_model=ProjectOut,
+    summary="重新提交无合同/无到款立项审批",
+)
+def resubmit_payment_defer(
+    project_id: int,
+    payload: ProjectPaymentDeferResubmitRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectOut:
+    return ProjectOut.model_validate(
+        project_service.resubmit_payment_defer(db, current_user, project_id, payload)
     )
 
 

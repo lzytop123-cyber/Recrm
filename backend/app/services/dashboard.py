@@ -379,8 +379,6 @@ def _mom_delta(curr: Decimal, prev: Decimal) -> tuple[str, str]:
 
 
 def build_dashboard(db: Session, user: User) -> dict:
-    role_codes = {r.code for r in user.roles}
-    is_admin = "admin" in role_codes
     scope = resolve_data_scope(user, "dashboard")
     display_name = user.real_name or user.username
     now = datetime.now().astimezone()

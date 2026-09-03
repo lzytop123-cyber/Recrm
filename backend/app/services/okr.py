@@ -3,7 +3,6 @@ OKR 业务逻辑：制定、确认、更新关键结果进度、完成/终止。
 """
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Optional
 
 from fastapi import HTTPException, status
