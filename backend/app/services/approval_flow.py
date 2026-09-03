@@ -385,6 +385,11 @@ def _user_can_act_task(db: Session, user: User, task: ApprovalTask, instance: Ap
         return False  # G-08 禁止自审
     # 本人是角色候选人 → 直通
     if _user_role_codes(user) & set(_task_roles(task)):
+        # 部门负责人节点：须与申请人同部门（含上级链），防止跨部门误审
+        if "dept_head" in _task_roles(task) and instance.department_id:
+            allowed = _dept_ancestor_ids(db, instance.department_id)
+            if (user.department_id or 0) not in allowed:
+                return False
         return True
     # 委托路径：非高风险 + 委托人本是候选人 + 委托覆盖 biz_type
     if not can_delegate(instance):
