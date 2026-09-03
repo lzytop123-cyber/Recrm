@@ -316,6 +316,9 @@
               <b>{{ formatDate(row.start_date) || '待定' }}</b>
             </div>
           </div>
+          <el-button v-if="deferRejected(row)" type="warning" plain @click="openDeferResubmit(row)">
+            重新提交审批
+          </el-button>
           <el-button type="primary" @click="advanceInitiating(row)">
             {{
               !handoffReady(row)
@@ -1536,6 +1539,33 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="deferResubmitVisible"
+      title="重新提交立项审批"
+      width="520px"
+      destroy-on-close
+    >
+      <p v-if="deferResubmitTarget?.payment_defer_reject_reason" class="sub deferred-reason">
+        驳回原因：{{ deferResubmitTarget.payment_defer_reject_reason }}
+      </p>
+      <el-form label-position="top">
+        <el-form-item label="例外原因" required>
+          <el-input
+            v-model="deferResubmitReason"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="说明为何无合同/无到款仍要先立项（审批人可见）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deferResubmitVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onDeferResubmit">提交审批</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 计划节点弹窗 -->
     <el-dialog
       v-model="msVisible"
@@ -2408,6 +2438,7 @@ import {
   fetchProjectTasks,
   fetchProjects,
   fetchResourceRoleOptions,
+  resubmitPaymentDefer,
   setProjectFinanceCheck,
   setProjectLeftoverClosed,
   startProjectPlanning,
@@ -2552,6 +2583,9 @@ const taskScheduleTitle = computed(() => {
 })
 
 const initVisible = ref(false)
+const deferResubmitVisible = ref(false)
+const deferResubmitTarget = ref<Project | null>(null)
+const deferResubmitReason = ref('')
 const resourceVisible = ref(false)
 const resourceLoading = ref(false)
 const resourceNeeds = ref<ProjectResourceNeed[]>([])
@@ -3721,13 +3755,13 @@ async function advanceInitiating(row: Project) {
     const missing: string[] = []
     if (!row.contract_id) {
       if (deferPending(row)) missing.push('无合同立项审批通过（请到审批中心处理）')
-      else if (deferRejected(row)) missing.push('无合同立项已被驳回，请重新发起或补充说明')
+      else if (deferRejected(row)) missing.push('无合同立项已被驳回，请修改例外原因后重新提交审批')
       else missing.push('无合同立项审批通过')
     } else {
       if (!row.contract_active_ok) missing.push('合同已签署')
       if (!paymentOk(row)) {
         if (deferPending(row)) missing.push('无到款立项审批通过（请到审批中心处理）')
-        else if (deferRejected(row)) missing.push('到款认领（无到款立项已被驳回）')
+        else if (deferRejected(row)) missing.push('无到款立项已被驳回，请修改例外原因后重新提交审批')
         else missing.push('已确认到账（或申请无到款立项并获审批）')
       }
     }
@@ -3753,6 +3787,31 @@ async function advanceInitiating(row: Project) {
     return
   }
   goDetail(row)
+}
+
+function openDeferResubmit(row: Project) {
+  deferResubmitTarget.value = row
+  deferResubmitReason.value = row.payment_deferred_reason || ''
+  deferResubmitVisible.value = true
+}
+
+async function onDeferResubmit() {
+  if (!deferResubmitTarget.value) return
+  const reason = deferResubmitReason.value.trim()
+  if (!reason) {
+    ElMessage.warning('请填写例外原因')
+    return
+  }
+  saving.value = true
+  try {
+    await resubmitPaymentDefer(deferResubmitTarget.value.id, reason)
+    ElMessage.success('已重新提交审批，请到审批中心跟进')
+    deferResubmitVisible.value = false
+    deferResubmitTarget.value = null
+    await loadProjects()
+  } finally {
+    saving.value = false
+  }
 }
 
 async function loadResourceNeeds() {
