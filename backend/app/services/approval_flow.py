@@ -385,8 +385,8 @@ def _user_can_act_task(db: Session, user: User, task: ApprovalTask, instance: Ap
         return False  # G-08 禁止自审
     # 本人是角色候选人 → 直通
     if _user_role_codes(user) & set(_task_roles(task)):
-        # 部门负责人节点：须与申请人同部门（含上级链），防止跨部门误审
-        if "dept_head" in _task_roles(task) and instance.department_id:
+        # 部门负责人/中心负责人节点：须与申请人同部门（含上级链），防止跨部门误审
+        if DEPT_SCOPED_ROLES & set(_task_roles(task)) and instance.department_id:
             allowed = _dept_ancestor_ids(db, instance.department_id)
             if (user.department_id or 0) not in allowed:
                 return False
@@ -416,6 +416,10 @@ def _dept_ancestor_ids(db: Session, dept_id: Optional[int]) -> set[int]:
             break
         cur = row[1]
     return ids
+
+
+# 按申请人部门（含上级链）匹配的"部门级负责人"角色
+DEPT_SCOPED_ROLES = {"dept_head", "center_lead"}
 
 
 def _resolve_task_candidates(
@@ -448,8 +452,8 @@ def _resolve_task_candidates(
             return su, "ok"
         return set(), "blocked"
     eligible = all_ids.copy()
-    # 部门负责人节点：只匹配申请人部门（含上级部门链）内的 dept_head，避免跨部门误派
-    if "dept_head" in roles and instance.department_id:
+    # 部门负责人/中心负责人节点：只匹配申请人部门（含上级部门链）内的持有人，避免跨部门误派
+    if DEPT_SCOPED_ROLES & set(roles) and instance.department_id:
         allowed = _dept_ancestor_ids(db, instance.department_id)
         dept_map = dict(
             db.query(User.id, User.department_id).filter(User.id.in_(eligible)).all()
