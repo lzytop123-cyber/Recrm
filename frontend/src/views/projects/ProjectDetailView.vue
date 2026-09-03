@@ -137,6 +137,7 @@
             <span v-else>-</span>
           </el-descriptions-item>
           <el-descriptions-item label="负责人">{{ project.manager_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="project.business_owner_name && project.business_owner_name !== project.manager_name" label="业务负责人">{{ project.business_owner_name }}</el-descriptions-item>
           <el-descriptions-item label="计划开始">{{ project.start_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="计划结束">{{ project.end_date || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实际结束">{{ project.actual_end_date || '-' }}</el-descriptions-item>
