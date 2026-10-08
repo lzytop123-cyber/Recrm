@@ -793,6 +793,25 @@ def result_confirm(
     return flow.result_confirm(db, assessment_id, user, revision=payload.revision)
 
 
+class PartyConfirmIn(BaseModel):
+    revision: int
+    party: str  # manager | training | hr
+
+
+@router.post("/assessments/{assessment_id}/party-confirm", summary="入职考核三方确认（主管/培训部/HR）")
+def party_confirm(
+    assessment_id: int,
+    payload: PartyConfirmIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    from app.services import performance_assessment_flow as flow
+
+    return flow.party_confirm(
+        db, assessment_id, user, revision=payload.revision, party=payload.party
+    )
+
+
 @router.post("/assessments/{assessment_id}/runtime-appeals", summary="发起申诉")
 def create_runtime_appeal(
     assessment_id: int,

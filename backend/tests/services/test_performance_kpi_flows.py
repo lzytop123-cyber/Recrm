@@ -330,3 +330,155 @@ def test_onboarding_review_permission_is_type_aware(db_session: Session) -> None
     assert flow._can_review(asmt_scored("onboarding", 999, 888), training_lead) is True
     # HR 兜底不受影响
     assert flow._can_review(asmt_scored("onboarding", 999, training_lead.id), hr_user) is True
+
+
+def test_onboarding_m3_always_enters_training_node(db_session: Session) -> None:
+    """M3 无培训部维度时，主管提交后仍进入培训部确认节点（ack-only）。"""
+    from app.models.performance import ASSESS_MANAGER_PENDING, ASSESS_TRAINING_PENDING, PerformanceAssessment
+    from app.services import performance_assessment_flow as flow
+
+    load_drafts(db_session)
+    mgr = _user(db_session, "m3_mgr")
+    subject = _user(db_session, "m3_subject")
+    subject.manager_id = mgr.id
+    tpl = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_SALES_M3")
+        .one()
+    )
+    tpl.status = "published"
+    db_session.commit()
+    opened = performance_kpi.open_stage_case(
+        db_session, {"user_id": subject.id, "stage": "M3", "role_kind": "SALES"}
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    asmt.status = ASSESS_MANAGER_PENDING
+    asmt.current_handler_type = "manager"
+    asmt.current_handler_id = mgr.id
+    db_session.commit()
+    items = (
+        db_session.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == asmt.id)
+        .all()
+    )
+    scores = [{"item_id": i.id, "score": str(i.max_points)} for i in items]
+    out = flow.manager_submit(db_session, asmt.id, mgr, revision=asmt.revision, scores=scores)
+    assert out["status"] == ASSESS_TRAINING_PENDING
+    assert out["training_ack_only"] is True
+
+
+def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> None:
+    """三方确认齐后才完成；低于 75 写不合格并挂 HR 跟进。"""
+    from app.models.performance import (
+        ASSESS_COMPLETED,
+        ASSESS_EMPLOYEE_CONFIRM_PENDING,
+        ASSESS_HR_REVIEW_PENDING,
+        ASSESS_MANAGER_PENDING,
+        ASSESS_TRAINING_PENDING,
+        PerformanceAssessment,
+    )
+    from app.models.permission import Permission
+    from app.models.role import Role
+    from app.services import performance_assessment_flow as flow
+
+    load_drafts(db_session)
+    mgr = _user(db_session, "tri_mgr")
+    training = _user(db_session, "tri_training")
+    subject = _user(db_session, "tri_subject")
+    subject.manager_id = mgr.id
+    perm = db_session.query(Permission).filter(Permission.code == "kpi:onboarding:manage").first()
+    if perm is None:
+        perm = Permission(name="入职考核管理", code="kpi:onboarding:manage", module="kpi")
+        db_session.add(perm)
+        db_session.commit()
+    role = Role(name="培训部负责人2", code="training_lead2", data_scope="company", module_scopes={})
+    db_session.add(role)
+    db_session.commit()
+    role.permissions = [perm]
+    training.roles = [role]
+    tpl = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_FUNCTION_D5")
+        .one()
+    )
+    tpl.status = "published"
+    db_session.commit()
+
+    opened = performance_kpi.open_stage_case(
+        db_session, {"user_id": subject.id, "stage": "D5", "role_kind": "FUNCTION"}
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    items = (
+        db_session.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == asmt.id)
+        .all()
+    )
+    # 跳到主管评分并打低分（总分 60 < 75）
+    asmt.status = ASSESS_MANAGER_PENDING
+    asmt.current_handler_type = "manager"
+    asmt.current_handler_id = mgr.id
+    db_session.commit()
+    mgr_items = [i for i in items if (i.evaluator or "manager") != "training"]
+    tr_items = [i for i in items if (i.evaluator or "") == "training"]
+    # 公司25+产品25=50 培训；团队10+适配40=50 主管 → 各打 30/30 = 60
+    flow.manager_submit(
+        db_session,
+        asmt.id,
+        mgr,
+        revision=asmt.revision,
+        scores=[{"item_id": i.id, "score": "30" if i.name == "部门工作适配" else "0"} for i in mgr_items],
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.status == ASSESS_TRAINING_PENDING
+    flow.training_submit(
+        db_session,
+        asmt.id,
+        training,
+        revision=asmt.revision,
+        scores=[{"item_id": i.id, "score": "30" if i.name == "公司介绍" else "0"} for i in tr_items],
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.status == ASSESS_HR_REVIEW_PENDING
+    # HR 用培训权限以外：给 training 复核会被自审拦住，用新 HR
+    hr = _user(db_session, "tri_hr")
+    hr_role = Role(name="人力资源2", code="hr2", data_scope="company", module_scopes={})
+    db_session.add(hr_role)
+    db_session.commit()
+    hr_user_role = Role(name="人力资源正式", code="hr", data_scope="company", module_scopes={})
+    # reuse hr code if exists - assign simple: make hr with admin-like via role code hr
+    existing_hr_role = db_session.query(Role).filter(Role.code == "hr").first()
+    if existing_hr_role is None:
+        existing_hr_role = Role(name="人力资源", code="hr", data_scope="company", module_scopes={})
+        db_session.add(existing_hr_role)
+        db_session.commit()
+    hr.roles = [existing_hr_role]
+    db_session.commit()
+
+    flow.hr_review(db_session, asmt.id, hr, revision=asmt.revision, approve=True)
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
+
+    # 入职无需员工确认
+    from fastapi import HTTPException
+
+    try:
+        flow.result_confirm(db_session, asmt.id, subject, revision=asmt.revision)
+        assert False, "入职不应允许员工 result_confirm"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+
+    flow.party_confirm(db_session, asmt.id, mgr, revision=asmt.revision, party="manager")
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
+
+    flow.party_confirm(db_session, asmt.id, training, revision=asmt.revision, party="training")
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
+
+    out = flow.party_confirm(db_session, asmt.id, hr, revision=asmt.revision, party="hr")
+    assert out["status"] == ASSESS_COMPLETED
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    assert asmt.grade_label == "不合格"
+    assert asmt.status == ASSESS_COMPLETED
+    assert out["hr_followup"]["needed"] is True
+

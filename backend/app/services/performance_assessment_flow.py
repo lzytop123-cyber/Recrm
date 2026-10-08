@@ -91,16 +91,27 @@ def build_arrangement(db: Session, assessment: PerformanceAssessment) -> list[di
     tpl_text = f"{tpl_name} · V{tpl_ver}" if tpl_ver is not None else tpl_name
 
     hr_required = _hr_review_required(db, assessment)
-    review_text = f"各部门主管评分（{mgr}）"
-    if hr_required:
-        review_text = f"{review_text} / HR复核"
+    onboarding = _is_onboarding(assessment)
+    if onboarding:
+        review_text = f"各部门主管评分（{mgr}） → 培训部评分"
+        if hr_required:
+            review_text = f"{review_text} → HR复核"
+    else:
+        review_text = f"各部门主管评分（{mgr}）"
+        if hr_required:
+            review_text = f"{review_text} / HR复核"
 
     due_parts = [
         f"各部门主管评分 {_fmt_due(wf.get('manager_due_at'))}",
     ]
+    if onboarding:
+        due_parts.append("培训部评分")
     if hr_required:
         due_parts.append(f"HR复核 {_fmt_due(wf.get('hr_review_due_at'))}")
-    due_parts.append(f"员工结果确认 {_fmt_due(wf.get('confirm_due_at'))}")
+    if onboarding:
+        due_parts.append(f"三方确认 {_fmt_due(wf.get('confirm_due_at'))}")
+    else:
+        due_parts.append(f"员工结果确认 {_fmt_due(wf.get('confirm_due_at'))}")
 
     return [
         {"label": "周期", "value": period},
@@ -121,6 +132,129 @@ def _assessment(db: Session, assessment_id: int) -> PerformanceAssessment:
 
 def _workflow(assessment: PerformanceAssessment) -> dict:
     return _loads_obj(assessment.workflow_config_json)
+
+
+ONBOARD_PASS_SCORE = 75
+
+
+def _save_workflow(assessment: PerformanceAssessment, wf: dict) -> None:
+    assessment.workflow_config_json = json.dumps(wf, ensure_ascii=False)
+
+
+# 入职结果确认三方：直属主管 + 培训部 + HR（无需员工确认）
+ONBOARD_CONFIRM_PARTIES = ("manager", "training", "hr")
+
+
+def _confirmations(assessment: PerformanceAssessment) -> dict[str, Any]:
+    wf = _workflow(assessment)
+    conf = wf.get("confirmations")
+    if not isinstance(conf, dict):
+        return {"manager": None, "training": None, "hr": None}
+    return {
+        "manager": conf.get("manager"),
+        "training": conf.get("training"),
+        "hr": conf.get("hr"),
+    }
+
+
+def _ensure_confirmations(assessment: PerformanceAssessment) -> dict[str, Any]:
+    wf = _workflow(assessment)
+    conf = wf.get("confirmations")
+    if not isinstance(conf, dict):
+        wf["confirmations"] = {"manager": None, "training": None, "hr": None}
+        _save_workflow(assessment, wf)
+    else:
+        # 兼容旧数据：去掉 employee 键，补齐 hr
+        changed = False
+        if "employee" in conf:
+            conf.pop("employee", None)
+            changed = True
+        for k in ONBOARD_CONFIRM_PARTIES:
+            if k not in conf:
+                conf[k] = None
+                changed = True
+        if changed:
+            wf["confirmations"] = conf
+            _save_workflow(assessment, wf)
+    return wf
+
+
+def _onboarding_stage(assessment: PerformanceAssessment) -> str:
+    wf = _workflow(assessment)
+    onboard = wf.get("onboarding") if isinstance(wf.get("onboarding"), dict) else {}
+    return str(onboard.get("stage") or "")
+
+
+def _apply_onboarding_grade(assessment: PerformanceAssessment) -> None:
+    """入职合格线 75：写 grade_label，不合格时挂 HR 人事跟进标记（不自动改雇佣）。"""
+    score = assessment.final_score
+    if score is None and assessment.total_points is not None:
+        score = int(assessment.total_points)
+    if score is None:
+        assessment.grade_label = None
+        return
+    passed = int(score) >= ONBOARD_PASS_SCORE
+    assessment.grade_label = "合格" if passed else "不合格"
+    assessment.grade = assessment.grade_label
+    wf = _workflow(assessment)
+    stage = _onboarding_stage(assessment)
+    if passed:
+        wf.pop("hr_followup", None)
+    else:
+        consequence = "不予转正" if stage == "M3" else "不予留用"
+        wf["hr_followup"] = {
+            "needed": True,
+            "resolved": False,
+            "score": int(score),
+            "pass_score": ONBOARD_PASS_SCORE,
+            "stage": stage or None,
+            "reason": f"入职考核不合格（{stage or '阶段未知'}，得分 {int(score)} < {ONBOARD_PASS_SCORE}），建议{consequence}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    _save_workflow(assessment, wf)
+
+
+def _all_parties_confirmed(assessment: PerformanceAssessment) -> bool:
+    conf = _confirmations(assessment)
+    return all(conf.get(k) for k in ONBOARD_CONFIRM_PARTIES)
+
+
+def _record_party_confirm(
+    assessment: PerformanceAssessment, *, party: str, user: User
+) -> dict[str, Any]:
+    wf = _ensure_confirmations(assessment)
+    conf = wf.setdefault("confirmations", {})
+    conf[party] = {
+        "user_id": user.id,
+        "name": user.real_name or user.username,
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_workflow(assessment, wf)
+    return conf
+
+
+def _try_complete_onboarding(db: Session, assessment: PerformanceAssessment, user: User, *, action: str) -> bool:
+    """三方都确认后完成入职考核并写合格结论。返回是否已完成。"""
+    if not _all_parties_confirmed(assessment):
+        return False
+    from_status = assessment.status
+    assessment.status = ASSESS_COMPLETED
+    assessment.completed_at = datetime.now(timezone.utc)
+    assessment.confirmed_revision = assessment.revision
+    assessment.current_handler_type = None
+    assessment.current_handler_id = None
+    _apply_onboarding_grade(assessment)
+    _bump(assessment)
+    _log(
+        db,
+        assessment,
+        action=action,
+        actor_id=user.id,
+        from_status=from_status,
+        to_status=assessment.status,
+        note=assessment.grade_label,
+    )
+    return True
 
 
 def _hr_review_required(db: Session, assessment: PerformanceAssessment) -> bool:
@@ -241,9 +375,23 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
         actions.append("training_submit")
     if status == ASSESS_HR_REVIEW_PENDING and can_review:
         actions.extend(["hr_approve", "hr_return"])
-    if status == ASSESS_EMPLOYEE_CONFIRM_PENDING and is_employee:
-        actions.extend(["result_confirm", "appeal"])
-    if status == ASSESS_APPEAL_PENDING and is_hr:
+    if status == ASSESS_EMPLOYEE_CONFIRM_PENDING:
+        if _is_onboarding(assessment):
+            conf = _confirmations(assessment)
+            if is_manager and not conf.get("manager"):
+                actions.append("party_confirm")
+            if _can_training_score(assessment, user) and not conf.get("training"):
+                actions.append("party_confirm")
+            if _is_hr(user) and not conf.get("hr"):
+                actions.append("party_confirm")
+            # 入职结果无需员工确认；员工仅可申诉
+            if is_employee:
+                actions.append("appeal")
+        elif is_employee:
+            actions.extend(["result_confirm", "appeal"])
+    if status == ASSESS_APPEAL_PENDING and (
+        is_hr or (_is_onboarding(assessment) and _can_training_score(assessment, user))
+    ):
         actions.append("resolve_appeal")
     if is_hr and status != ASSESS_COMPLETED:
         actions.append("view_admin")
@@ -258,12 +406,22 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
 
 
 def next_step_label(assessment: PerformanceAssessment) -> str:
+    if assessment.status == ASSESS_TRAINING_PENDING and _is_onboarding(assessment):
+        # M3 无培训维度时仍走培训部确认节点
+        return "培训部评分/确认"
+    if assessment.status == ASSESS_EMPLOYEE_CONFIRM_PENDING and _is_onboarding(assessment):
+        conf = _confirmations(assessment)
+        missing = [k for k in ONBOARD_CONFIRM_PARTIES if not conf.get(k)]
+        labels = {"manager": "主管确认", "training": "培训部确认", "hr": "HR确认"}
+        if missing:
+            return "三方确认：" + "、".join(labels[m] for m in missing)
+        return "三方确认完成"
     mapping = {
         ASSESS_EMPLOYEE_PENDING: "员工填写实际并提交",
         ASSESS_MANAGER_PENDING: "各部门主管评分",
         ASSESS_TRAINING_PENDING: "培训部评分",
         ASSESS_HR_REVIEW_PENDING: "HR 复核",
-        ASSESS_EMPLOYEE_CONFIRM_PENDING: "员工结果确认",
+        ASSESS_EMPLOYEE_CONFIRM_PENDING: "结果确认",
         ASSESS_APPEAL_PENDING: "处理申诉",
         ASSESS_COMPLETED: "已完成",
     }
@@ -374,10 +532,15 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         # 双评分（入职考核）：区分两个评分人，供前端分区块展示
         "assessment_kind": assessment.assessment_kind,
         "is_onboarding": _is_onboarding(assessment),
-        "training_required": _has_training_items(db, assessment.id),
+        "training_required": _is_onboarding(assessment) or _has_training_items(db, assessment.id),
+        "training_ack_only": _is_onboarding(assessment) and not _has_training_items(db, assessment.id),
         "can_training_score": _can_training_score(assessment, user),
         "can_review": _can_review(assessment, user),
         "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
+        "grade_label": assessment.grade_label,
+        "pass_score": ONBOARD_PASS_SCORE if _is_onboarding(assessment) else None,
+        "confirmations": _confirmations(assessment) if _is_onboarding(assessment) else None,
+        "hr_followup": (_workflow(assessment).get("hr_followup") if _is_onboarding(assessment) else None),
     }
 
 
@@ -530,8 +693,8 @@ def manager_submit(
     if comment:
         assessment.manager_comment = comment
     from_status = assessment.status
-    if split and _is_onboarding(assessment):
-        # 入职考核：主管评完 → 培训部评分
+    if _is_onboarding(assessment):
+        # 入职考核：主管评完一律进培训部节点（无培训维度时为确认/签字，见 training_ack_only）
         assessment.status = ASSESS_TRAINING_PENDING
         assessment.current_handler_type = "training"
         assessment.current_handler_id = None
@@ -580,8 +743,13 @@ def training_submit(
         )
     if not _can_training_score(assessment, user):
         raise HTTPException(status_code=403, detail="需要培训部（或 HR）权限")
-    missing = _apply_item_scores(db, assessment_id, scores, only_evaluator="training")
-    if missing:
+    has_training = _has_training_items(db, assessment_id)
+    missing = (
+        _apply_item_scores(db, assessment_id, scores, only_evaluator="training")
+        if has_training
+        else []
+    )
+    if has_training and missing:
         db.rollback()
         raise HTTPException(
             status_code=422,
@@ -591,8 +759,9 @@ def training_submit(
                 "items": [{"id": i.id, "name": i.name} for i in missing],
             },
         )
-    _recalc_assessment_total(db, assessment)
-    # 记录培训部评分人，复核节点禁止自审
+    if has_training:
+        _recalc_assessment_total(db, assessment)
+    # 记录培训部评分/确认人，复核节点禁止自审
     assessment.training_scorer_id = user.id
     from_status = assessment.status
     if _hr_review_required(db, assessment):
@@ -603,6 +772,8 @@ def training_submit(
         assessment.status = ASSESS_EMPLOYEE_CONFIRM_PENDING
         assessment.current_handler_type = "employee"
         assessment.current_handler_id = assessment.user_id
+        if _is_onboarding(assessment):
+            _ensure_confirmations(assessment)
     _bump(assessment)
     _log(
         db,
@@ -644,6 +815,8 @@ def hr_review(
         assessment.status = ASSESS_EMPLOYEE_CONFIRM_PENDING
         assessment.current_handler_type = "employee"
         assessment.current_handler_id = assessment.user_id
+        if _is_onboarding(assessment):
+            _ensure_confirmations(assessment)
     else:
         assessment.status = ASSESS_MANAGER_PENDING
         assessment.current_handler_type = "manager"
@@ -663,6 +836,11 @@ def result_confirm(db: Session, assessment_id: int, user: User, *, revision: int
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "申诉未处理不能确认"})
     if assessment.status != ASSESS_EMPLOYEE_CONFIRM_PENDING:
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前状态不可确认"})
+    if _is_onboarding(assessment):
+        raise HTTPException(
+            status_code=422,
+            detail="入职考核无需员工确认，请由主管、培训部、HR 完成三方确认",
+        )
     from_status = assessment.status
     assessment.status = ASSESS_COMPLETED
     assessment.completed_at = datetime.now(timezone.utc)
@@ -671,6 +849,49 @@ def result_confirm(db: Session, assessment_id: int, user: User, *, revision: int
     assessment.current_handler_id = None
     _bump(assessment)
     _log(db, assessment, action="result_confirm", actor_id=user.id, from_status=from_status, to_status=assessment.status)
+    db.commit()
+    return detail_payload(db, assessment, user)
+
+
+def party_confirm(
+    db: Session,
+    assessment_id: int,
+    user: User,
+    *,
+    revision: int,
+    party: str,
+) -> dict:
+    """入职考核三方确认：主管 / 培训部 / HR（无需员工确认）。"""
+    assessment = _assessment(db, assessment_id)
+    _check_revision(assessment, revision)
+    if not _is_onboarding(assessment):
+        raise HTTPException(status_code=422, detail="仅入职考核支持三方确认")
+    if assessment.status != ASSESS_EMPLOYEE_CONFIRM_PENDING:
+        raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前状态不可确认"})
+    party = (party or "").strip().lower()
+    if party not in ONBOARD_CONFIRM_PARTIES:
+        raise HTTPException(status_code=422, detail="party 必须是 manager / training / hr")
+    if party == "manager":
+        if assessment.manager_id != user.id and not _is_hr(user):
+            raise HTTPException(status_code=403, detail="仅直属主管可确认")
+    elif party == "training":
+        if not _can_training_score(assessment, user):
+            raise HTTPException(status_code=403, detail="需要培训部（或 HR）权限")
+    elif not _is_hr(user):
+        raise HTTPException(status_code=403, detail="需要 HR 权限")
+    _record_party_confirm(assessment, party=party, user=user)
+    if not _try_complete_onboarding(db, assessment, user, action=f"party_confirm_{party}"):
+        from_status = assessment.status
+        _bump(assessment)
+        _log(
+            db,
+            assessment,
+            action=f"party_confirm_{party}",
+            actor_id=user.id,
+            from_status=from_status,
+            to_status=assessment.status,
+            note="三方确认进行中",
+        )
     db.commit()
     return detail_payload(db, assessment, user)
 
@@ -816,8 +1037,11 @@ def resolve_appeal(
 ) -> dict:
     assessment = _assessment(db, assessment_id)
     _check_revision(assessment, revision)
-    if not _is_hr(user):
-        raise HTTPException(status_code=403, detail="需要 HR 权限")
+    if not (
+        _is_hr(user)
+        or (_is_onboarding(assessment) and _can_training_score(assessment, user))
+    ):
+        raise HTTPException(status_code=403, detail="需要 HR 或培训部权限")
     if assessment.status != ASSESS_APPEAL_PENDING:
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前无待处理申诉"})
     appeal = (
@@ -849,6 +1073,11 @@ def resolve_appeal(
         assessment.status = ASSESS_EMPLOYEE_CONFIRM_PENDING
         assessment.current_handler_type = "employee"
         assessment.current_handler_id = assessment.user_id
+        if _is_onboarding(assessment):
+            # 申诉改分后需重新三方确认
+            wf = _ensure_confirmations(assessment)
+            wf["confirmations"] = {"manager": None, "training": None, "hr": None}
+            _save_workflow(assessment, wf)
     _bump(assessment)
     _log(db, assessment, action="resolve_appeal", actor_id=user.id, from_status=from_status, to_status=assessment.status, note=resolution)
     db.commit()

@@ -30,6 +30,25 @@ def test_thirteen_drafts_reload_does_not_duplicate(db_session: Session) -> None:
         assert (row.blocking_issues_json or "[]") == "[]"
 
 
+def test_onboard_items_are_employee_submit(db_session: Session) -> None:
+    from app.models.performance import PerformanceTemplateItem
+
+    load_drafts(db_session, family_codes=("ONBOARD_SALES_M3",))
+    row = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_SALES_M3")
+        .one()
+    )
+    items = (
+        db_session.query(PerformanceTemplateItem)
+        .filter(PerformanceTemplateItem.template_id == row.id)
+        .all()
+    )
+    assert items
+    assert all((it.metric_key or "").startswith("onboard.") for it in items)
+    assert all(it.handling_mode == "employee_submit" for it in items)
+
+
 def test_draft_items_link_indicator_definition_id(db_session: Session) -> None:
     from app.models.performance import PerformanceIndicatorDefinition, PerformanceTemplateItem
 

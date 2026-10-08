@@ -85,6 +85,9 @@ _MANAGER_METRIC_KEYS = frozenset({
 
 def _infer_handling(scoring_type: str, rule: dict | None, metric_key: str = "") -> str:
     """谁填：主管专填项 / 主观分 → manager_score；其余默认员工自填（不走系统自动抓取）。"""
+    # 入职维度：员工先按标准自述完成情况，再由主管/培训部评分（rule.type=manual_points 仍算主观分）
+    if metric_key.startswith("onboard."):
+        return "employee_submit"
     if metric_key in _MANAGER_METRIC_KEYS:
         return "manager_score"
     if scoring_type == "subjective" or (rule or {}).get("reviewer") == "manager":
@@ -216,20 +219,48 @@ def link_template_items_to_indicators(db: Session) -> int:
 
 
 def _upsert_items(db: Session, template_id: int, items: list[dict[str, Any]]) -> None:
-    db.query(PerformanceTemplateItem).filter(PerformanceTemplateItem.template_id == template_id).delete()
+    """按 metric_key 就地更新；有考核单引用时不删旧项，避免外键冲突。"""
+    from app.models.performance import PerformanceAssessmentItem
+
+    existing = {
+        (row.metric_key or ""): row
+        for row in db.query(PerformanceTemplateItem)
+        .filter(PerformanceTemplateItem.template_id == template_id)
+        .all()
+    }
     key_map = _metric_key_to_indicator_id(
         db, [raw["metric_key"] for raw in items if raw.get("metric_key")]
     )
+    seen: set[str] = set()
     for index, raw in enumerate(items):
         fields = _item_fields(raw)
         fields["indicator_definition_id"] = key_map.get(raw.get("metric_key") or "")
-        db.add(
-            PerformanceTemplateItem(
-                template_id=template_id,
-                order_no=index,
-                **fields,
+        mk = raw.get("metric_key") or ""
+        seen.add(mk)
+        row = existing.get(mk)
+        if row is not None:
+            row.order_no = index
+            for key, value in fields.items():
+                setattr(row, key, value)
+        else:
+            db.add(
+                PerformanceTemplateItem(
+                    template_id=template_id,
+                    order_no=index,
+                    **fields,
+                )
             )
+    for mk, row in existing.items():
+        if mk in seen:
+            continue
+        referenced = (
+            db.query(PerformanceAssessmentItem.id)
+            .filter(PerformanceAssessmentItem.template_item_id == row.id)
+            .first()
         )
+        if referenced:
+            continue
+        db.delete(row)
 
 
 def _resolve_scopes(db: Session, family_code: str) -> list[dict[str, Any]]:

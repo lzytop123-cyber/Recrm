@@ -126,6 +126,7 @@ class AssessmentOut(BaseModel):
     coefficient: Optional[Decimal] = None
     evidence_status: str
     status: str
+    assessment_kind: str = "monthly"
     manager_comment: Optional[str] = None
     bonus_amount: Optional[Decimal] = None
     created_at: datetime

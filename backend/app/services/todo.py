@@ -144,8 +144,13 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
             # 自己就是评分主管时（复核转 HR 的场景）不重复提醒
             add(row, "待培训部评分")
 
-    # HR 复核：与考核复核权限一致
-    can_review = "*" in codes or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage")
+    # HR / 培训部复核：入职单培训部也可看到复核待办
+    can_review = (
+        "*" in codes
+        or "kpi:template:manage" in codes
+        or _has(user, "kpi:cycle:manage")
+        or can_onboard
+    )
     if can_review:
         pending_review = (
             db.query(PerformanceAssessment)
@@ -159,7 +164,65 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
                 row.manager_id == user.id or row.training_scorer_id == user.id
             ):
                 continue
-            add(row, "待HR复核")
+            # 仅有入职权限的人：只看待入职复核
+            if can_onboard and not (
+                "*" in codes or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage")
+            ):
+                if (row.assessment_kind or "") != "onboarding":
+                    continue
+            add(row, "待复核")
+
+    # 入职三方确认：主管 / 培训部 / HR（无需员工确认）
+    import json as _json
+
+    confirm_pending = (
+        db.query(PerformanceAssessment)
+        .filter(
+            PerformanceAssessment.assessment_kind == "onboarding",
+            PerformanceAssessment.status == ASSESS_EMPLOYEE_CONFIRM_PENDING,
+        )
+        .limit(_LIMIT * 2)
+        .all()
+    )
+    is_hr_user = (
+        "*" in codes
+        or "kpi:template:manage" in codes
+        or _has(user, "kpi:cycle:manage")
+        or any((r.code or "") == "hr" for r in (getattr(user, "roles", []) or []))
+    )
+    for row in confirm_pending:
+        try:
+            wf = _json.loads(row.workflow_config_json or "{}")
+        except Exception:
+            wf = {}
+        conf = wf.get("confirmations") if isinstance(wf.get("confirmations"), dict) else {}
+        if row.manager_id == user.id and not conf.get("manager"):
+            add(row, "待我确认入职结果")
+        if can_onboard and not conf.get("training"):
+            add(row, "待培训部确认入职结果")
+        if is_hr_user and not conf.get("hr"):
+            add(row, "待HR确认入职结果")
+
+    # 入职不合格人事跟进（HR）
+    if "*" in codes or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage"):
+        failed = (
+            db.query(PerformanceAssessment)
+            .filter(
+                PerformanceAssessment.assessment_kind == "onboarding",
+                PerformanceAssessment.grade_label == "不合格",
+                PerformanceAssessment.status.in_(["completed", "archived"]),
+            )
+            .limit(_LIMIT)
+            .all()
+        )
+        for row in failed:
+            try:
+                wf = _json.loads(row.workflow_config_json or "{}")
+            except Exception:
+                wf = {}
+            follow = wf.get("hr_followup") if isinstance(wf.get("hr_followup"), dict) else {}
+            if follow.get("needed") and not follow.get("resolved"):
+                add(row, "入职不合格待人事跟进", urgency="high")
 
     return out
 

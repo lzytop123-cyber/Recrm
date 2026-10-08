@@ -382,9 +382,19 @@ def archive_assessment(db: Session, assessment_id: int, *, fraud: bool = False) 
         raise HTTPException(status_code=400, detail="存在待补数据，不能归档")
     if not row.payroll_eligible:
         row.bonus_amount = None
+        if (row.assessment_kind or "") == "onboarding" and not row.grade_label:
+            from app.services.performance_assessment_flow import _apply_onboarding_grade
+
+            _apply_onboarding_grade(row)
         row.status = "archived"
         db.commit()
-        return {"id": row.id, "status": "archived", "payroll_eligible": False, "bonus_amount": None}
+        return {
+            "id": row.id,
+            "status": "archived",
+            "payroll_eligible": False,
+            "bonus_amount": None,
+            "grade_label": row.grade_label,
+        }
     if row.performance_base_snapshot is None:
         raise HTTPException(status_code=400, detail="缺少绩效基数，不能生成工资金额")
     tpl = _template(db, row.template_id) if row.template_id else None

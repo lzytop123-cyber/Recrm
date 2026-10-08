@@ -110,6 +110,9 @@ _MANAGER_METRIC_KEYS = frozenset({
 
 def _infer_handling(scoring_type: str, metric_key: str = "") -> str:
     """主管专填 / 主观 → manager_score；数量与加减分默认员工自填（不走系统自动）。"""
+    # 入职维度：员工先自述，再由主管/培训部评分
+    if metric_key.startswith("onboard."):
+        return "employee_submit"
     if metric_key in _MANAGER_METRIC_KEYS:
         return "manager_score"
     if scoring_type == "subjective":
