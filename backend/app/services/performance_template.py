@@ -592,7 +592,9 @@ def validate_for_publish(db: Session, row: PerformanceTemplate) -> None:
         .filter(PerformanceTemplateScope.template_id == row.id)
         .count()
     )
-    if scopes < 1 and not _is_legacy_template(row):
+    # 入职考核（onboarding）按「人 + 阶段」开案，不按部门/岗位匹配，故不要求配置适用范围
+    is_onboarding = (row.assessment_kind or "").strip() == "onboarding"
+    if scopes < 1 and not _is_legacy_template(row) and not is_onboarding:
         raise HTTPException(status_code=422, detail="发布前模板必须配置适用部门/岗位范围")
     if _has_blocking_issues(row):
         raise HTTPException(
