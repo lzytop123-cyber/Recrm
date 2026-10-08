@@ -154,6 +154,11 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
             .all()
         )
         for row in pending_review:
+            # 禁止自审：自己就是评分主管 / 培训部评分人的单，不派给自己复核
+            if "*" not in codes and (
+                row.manager_id == user.id or row.training_scorer_id == user.id
+            ):
+                continue
             add(row, "待HR复核")
 
     return out

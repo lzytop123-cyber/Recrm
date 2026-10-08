@@ -123,6 +123,8 @@ class PerformanceAssessment(Base):
         Integer, ForeignKey("approval_instances.id"), nullable=True, index=True
     )
     manager_comment: Mapped[Optional[str]] = mapped_column(Text)
+    # 培训部评分人（入职考核双评分）：用于复核节点禁止自审
+    training_scorer_id: Mapped[Optional[int]] = mapped_column(Integer)
     bonus_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     assessment_kind: Mapped[str] = mapped_column(String(30), default="monthly")
     instance_key: Mapped[str] = mapped_column(String(80), default="monthly_primary", nullable=False)

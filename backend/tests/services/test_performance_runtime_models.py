@@ -47,8 +47,8 @@ def test_alembic_head_chains_from_confirmed_revision() -> None:
     heads = script.get_heads()
     assert len(heads) == 1
     head = script.get_revision(heads[0])
-    assert head.revision == "a5b6c7d8e9f0"
-    assert head.down_revision == "s1t2u3v4w5x6"
+    assert head.revision == "b6c7d8e9f0a1"
+    assert head.down_revision == "a5b6c7d8e9f0"
 
 
 def test_legacy_approved_template_still_readable(db_session: Session) -> None:

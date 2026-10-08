@@ -283,3 +283,15 @@ def test_onboarding_review_permission_is_type_aware(db_session: Session) -> None
     # HR 两种都能复核（含自审场景兜底）
     assert flow._can_review(asmt("onboarding", hr_user.id), hr_user) is True
     assert flow._can_review(asmt("monthly", hr_user.id), hr_user) is True
+
+    # 禁止自审：培训部评分人评过之后不得再自己复核（交 HR）
+    def asmt_scored(kind: str, manager_id: int | None, scorer_id: int | None):
+        return SimpleNamespace(
+            assessment_kind=kind, manager_id=manager_id, training_scorer_id=scorer_id
+        )
+
+    assert flow._can_review(asmt_scored("onboarding", 999, training_lead.id), training_lead) is False
+    # 别人评的培训部维度，培训部负责人仍可复核
+    assert flow._can_review(asmt_scored("onboarding", 999, 888), training_lead) is True
+    # HR 兜底不受影响
+    assert flow._can_review(asmt_scored("onboarding", 999, training_lead.id), hr_user) is True

@@ -163,7 +163,15 @@ def _can_review(assessment: PerformanceAssessment, user: User) -> bool:
     codes = collect_permission_codes(user)
     if not ("*" in codes or "kpi:onboarding:manage" in codes or _is_hr(user)):
         return False
+    # 禁止自审：评分主管 / 培训部评分人 都不做本单复核，交 HR 兜底（管理员可强制处理）
+    if "*" in codes:
+        return True
     if assessment.manager_id and assessment.manager_id == user.id and not _is_hr(user):
+        return False
+    if (
+        getattr(assessment, "training_scorer_id", None)
+        and assessment.training_scorer_id == user.id
+    ):
         return False
     return True
 
@@ -368,6 +376,7 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         "is_onboarding": _is_onboarding(assessment),
         "training_required": _has_training_items(db, assessment.id),
         "can_training_score": _can_training_score(assessment, user),
+        "can_review": _can_review(assessment, user),
         "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
     }
 
@@ -583,6 +592,8 @@ def training_submit(
             },
         )
     _recalc_assessment_total(db, assessment)
+    # 记录培训部评分人，复核节点禁止自审
+    assessment.training_scorer_id = user.id
     from_status = assessment.status
     if _hr_review_required(db, assessment):
         assessment.status = ASSESS_HR_REVIEW_PENDING
@@ -618,7 +629,14 @@ def hr_review(
     assessment = _assessment(db, assessment_id)
     _check_revision(assessment, revision)
     if not _can_review(assessment, user):
-        raise HTTPException(status_code=403, detail="需要 HR 或培训部复核权限")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "该考核单的评分由你提交，不能自行复核（禁止自审），请由 HR 复核"
+                if (assessment.training_scorer_id == user.id or assessment.manager_id == user.id)
+                else "需要 HR 或培训部复核权限"
+            ),
+        )
     if assessment.status != ASSESS_HR_REVIEW_PENDING:
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前不在 HR 复核"})
     from_status = assessment.status
