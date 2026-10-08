@@ -219,6 +219,16 @@ def _all_parties_confirmed(assessment: PerformanceAssessment) -> bool:
     return all(conf.get(k) for k in ONBOARD_CONFIRM_PARTIES)
 
 
+def _can_confirm_parties(assessment: PerformanceAssessment, user: User) -> dict[str, bool]:
+    """当前登录人在「三方确认」里能签哪几方：主管 / 培训部 / HR。"""
+    conf = _confirmations(assessment)
+    return {
+        "manager": bool(assessment.manager_id == user.id and not conf.get("manager")),
+        "training": bool(_can_training_sign(assessment, user) and not conf.get("training")),
+        "hr": bool(_is_hr(user) and not conf.get("hr")),
+    }
+
+
 def _record_party_confirm(
     assessment: PerformanceAssessment, *, party: str, user: User
 ) -> dict[str, Any]:
@@ -282,6 +292,32 @@ def _is_hr(user: User) -> bool:
         or "admin" in role_codes
         or "hr" in role_codes
     )
+
+
+def _is_admin(user: User) -> bool:
+    """系统管理员：系统里没有 '*' 权限码，admin 靠角色码识别。"""
+    if "*" in collect_permission_codes(user):
+        return True
+    return any(
+        (getattr(r, "code", "") or "") == "admin"
+        for r in (getattr(user, "roles", []) or [])
+    )
+
+
+def _can_training_sign(assessment: PerformanceAssessment, user: User) -> bool:
+    """「培训部确认」的签字权：培训部负责人（kpi:onboarding:manage）或系统管理员。
+
+    注意：HR / 人力资源主管即使也有 kpi:onboarding:manage（那是入职兜底权限），
+    也**不能**代签培训部 —— 三方确认必须三方各自签，HR 代签等于没签。
+    （培训部「评分」节点仍允许 HR 兜底：那是推进流程；签字是责任归属，不能代。）
+    """
+    if not _is_onboarding(assessment):
+        return False
+    if _is_admin(user):
+        return True
+    if _is_hr(user):
+        return False
+    return "kpi:onboarding:manage" in collect_permission_codes(user)
 
 
 def _can_review(assessment: PerformanceAssessment, user: User) -> bool:
@@ -380,7 +416,7 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
             conf = _confirmations(assessment)
             if is_manager and not conf.get("manager"):
                 actions.append("party_confirm")
-            if _can_training_score(assessment, user) and not conf.get("training"):
+            if _can_training_sign(assessment, user) and not conf.get("training"):
                 actions.append("party_confirm")
             if _is_hr(user) and not conf.get("hr"):
                 actions.append("party_confirm")
@@ -540,6 +576,8 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         "grade_label": assessment.grade_label,
         "pass_score": ONBOARD_PASS_SCORE if _is_onboarding(assessment) else None,
         "confirmations": _confirmations(assessment) if _is_onboarding(assessment) else None,
+        # 本人可签的确认方（后端判定，前端只按这个渲染按钮）
+        "can_confirm_parties": _can_confirm_parties(assessment, user) if _is_onboarding(assessment) else None,
         "hr_followup": (_workflow(assessment).get("hr_followup") if _is_onboarding(assessment) else None),
     }
 
@@ -872,11 +910,11 @@ def party_confirm(
     if party not in ONBOARD_CONFIRM_PARTIES:
         raise HTTPException(status_code=422, detail="party 必须是 manager / training / hr")
     if party == "manager":
-        if assessment.manager_id != user.id and not _is_hr(user):
+        if assessment.manager_id != user.id and not _is_admin(user):
             raise HTTPException(status_code=403, detail="仅直属主管可确认")
     elif party == "training":
-        if not _can_training_score(assessment, user):
-            raise HTTPException(status_code=403, detail="需要培训部（或 HR）权限")
+        if not _can_training_sign(assessment, user):
+            raise HTTPException(status_code=403, detail="仅培训部负责人可确认入职结果")
     elif not _is_hr(user):
         raise HTTPException(status_code=403, detail="需要 HR 权限")
     _record_party_confirm(assessment, party=party, user=user)
