@@ -26,6 +26,7 @@ class TodoCounts(BaseModel):
     task: int = 0
     schedule: int = 0
     resource: int = 0
+    kpi: int = 0
 
 
 class TodoListOut(BaseModel):

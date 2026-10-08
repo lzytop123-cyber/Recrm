@@ -49,6 +49,116 @@ def _urgency_rank(u: str) -> int:
     return {"high": 0, "normal": 1, "low": 2}.get(u, 9)
 
 
+def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
+    """绩效考核待办：把当前登录人该处理的考核单列进「我的待办」。
+
+    覆盖：员工自评 / 主管评分 / 培训部评分（入职考核）/ HR 复核 / 员工结果确认 / 申诉处理。
+    """
+    from app.models.performance import (
+        ASSESS_APPEAL_PENDING,
+        ASSESS_EMPLOYEE_CONFIRM_PENDING,
+        ASSESS_EMPLOYEE_PENDING,
+        ASSESS_HR_REVIEW_PENDING,
+        ASSESS_MANAGER_PENDING,
+        ASSESS_TRAINING_PENDING,
+        PerformanceAssessment,
+    )
+
+    out: list[TodoItemOut] = []
+    seen: set[int] = set()
+
+    def add(row: PerformanceAssessment, action: str, urgency: str = "normal") -> None:
+        if row.id in seen:
+            return
+        seen.add(row.id)
+        name = row.user_id
+        try:
+            emp = db.query(User).filter(User.id == row.user_id).first()
+            if emp is not None:
+                name = emp.real_name or emp.username
+        except Exception:
+            pass
+        kind = "入职考核" if (row.assessment_kind or "") == "onboarding" else "月度考核"
+        due = row.due_at.isoformat() if getattr(row, "due_at", None) else None
+        out.append(
+            TodoItemOut(
+                id=f"kpi:{row.id}",
+                category="kpi",
+                category_label="绩效考核",
+                title=f"{name} · {kind}",
+                subtitle=f"考核单 #{row.id} · {action}",
+                status_label=action,
+                urgency=urgency,
+                path=f"/performance/kpi/assessment?id={row.id}&employee={name}",
+                due_at=due,
+            )
+        )
+
+    # 员工本人：待自评 / 待结果确认 / 申诉处理
+    mine = (
+        db.query(PerformanceAssessment)
+        .filter(
+            PerformanceAssessment.user_id == user.id,
+            PerformanceAssessment.status.in_(
+                [ASSESS_EMPLOYEE_PENDING, ASSESS_EMPLOYEE_CONFIRM_PENDING, ASSESS_APPEAL_PENDING]
+            ),
+        )
+        .limit(_LIMIT)
+        .all()
+    )
+    for row in mine:
+        action = {
+            ASSESS_EMPLOYEE_PENDING: "待我填写并提交",
+            ASSESS_EMPLOYEE_CONFIRM_PENDING: "待我确认结果",
+            ASSESS_APPEAL_PENDING: "申诉处理中",
+        }[row.status]
+        add(row, action)
+
+    # 主管：待我评分
+    as_manager = (
+        db.query(PerformanceAssessment)
+        .filter(
+            PerformanceAssessment.manager_id == user.id,
+            PerformanceAssessment.status == ASSESS_MANAGER_PENDING,
+        )
+        .limit(_LIMIT)
+        .all()
+    )
+    for row in as_manager:
+        add(row, "待我评分")
+
+    # 培训部评分（入职考核）：需要 kpi:onboarding:manage（培训部负责人）/ HR / 管理员
+    codes = collect_permission_codes(user)
+    can_onboard = "*" in codes or "kpi:onboarding:manage" in codes
+    if can_onboard:
+        pending_training = (
+            db.query(PerformanceAssessment)
+            .filter(
+                PerformanceAssessment.assessment_kind == "onboarding",
+                PerformanceAssessment.status == ASSESS_TRAINING_PENDING,
+            )
+            .limit(_LIMIT)
+            .all()
+        )
+        for row in pending_training:
+            # 自己就是评分主管时（复核转 HR 的场景）不重复提醒
+            add(row, "待培训部评分")
+
+    # HR 复核：与考核复核权限一致
+    can_review = "*" in codes or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage")
+    if can_review:
+        pending_review = (
+            db.query(PerformanceAssessment)
+            .filter(PerformanceAssessment.status == ASSESS_HR_REVIEW_PENDING)
+            .limit(_LIMIT)
+            .all()
+        )
+        for row in pending_review:
+            add(row, "待HR复核")
+
+    return out
+
+
 def list_my_todos(db: Session, user: User) -> TodoListOut:
     items: list[TodoItemOut] = []
     partial_errors: list[str] = []
@@ -254,6 +364,13 @@ def list_my_todos(db: Session, user: User) -> TodoListOut:
             logger.exception("todo source failed: schedule user_id=%s", user.id)
             partial_errors.append("schedule")
 
+    # 绩效考核待办：待我自评 / 待我评分 / 待培训部评分 / 待我确认 / 待我复核
+    try:
+        items.extend(_kpi_todos(db, user))
+    except Exception:
+        logger.exception("todo source failed: kpi user_id=%s", user.id)
+        partial_errors.append("kpi")
+
     items.sort(key=lambda x: (_urgency_rank(x.urgency), _sort_due_at(x.due_at)))
 
     counts = TodoCounts(
@@ -263,6 +380,7 @@ def list_my_todos(db: Session, user: User) -> TodoListOut:
         task=sum(1 for x in items if x.category == "task"),
         schedule=sum(1 for x in items if x.category == "schedule"),
         resource=sum(1 for x in items if x.category == "resource"),
+        kpi=sum(1 for x in items if x.category == "kpi"),
     )
     return TodoListOut(
         total=len(items),
