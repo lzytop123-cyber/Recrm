@@ -638,6 +638,26 @@ def validate_for_publish(db: Session, row: PerformanceTemplate) -> None:
                     pass  # 兼容旧 source_ref
 
 
+def item_evaluator(item: Any) -> str:
+    """指标项的评分人：manager=直属主管 / training=培训部（入职考核双评分）。
+
+    优先读 evaluator 列；列为空时回退 rule_config_json.evaluator
+    （模板指标被「导入草稿 / 从指标库添加」重建时会丢掉列，但 rule 会保留）。
+    """
+    ev = getattr(item, "evaluator", None)
+    if ev:
+        return str(ev).strip() or "manager"
+    raw = getattr(item, "rule_config_json", None)
+    if raw:
+        try:
+            cfg = json.loads(raw)
+            if isinstance(cfg, dict) and cfg.get("evaluator"):
+                return str(cfg["evaluator"]).strip() or "manager"
+        except Exception:
+            pass
+    return "manager"
+
+
 def publish_template(db: Session, template_id: int, user: User) -> PerformanceTemplate:
     from datetime import datetime, timezone
 

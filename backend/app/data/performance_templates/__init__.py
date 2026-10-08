@@ -160,6 +160,9 @@ def _item_fields(item: dict[str, Any]) -> dict[str, Any]:
         "score_rule": score_rule,
         "scoring_type": scoring_type,
         "handling_mode": handling,
+        # 双评分：评分人（manager=直属主管 / training=培训部）。
+        # 支持顶层 evaluator，也支持写在 rule 里（rule 会被持久化，重建指标时不丢）
+        "evaluator": item.get("evaluator") or (rule.get("evaluator") if isinstance(rule, dict) else None),
         "unit": unit or None,
         "target_value": str(target) if target is not None else None,
         # 表体评分细则优先；无则退回自动生成的加减分摘要

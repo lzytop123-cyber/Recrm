@@ -9,6 +9,7 @@ from app.core.security import hash_password
 from app.data.performance_templates import load_drafts
 from app.models.performance import (
     PerformanceAssessment,
+    PerformanceAssessmentItem,
     PerformanceCycle,
     PerformanceFeedbackRecord,
     PerformanceTemplate,
@@ -244,6 +245,40 @@ def test_open_stage_case_requires_manager(db_session: Session) -> None:
         )
     assert exc.value.status_code == 422
     assert exc.value.detail["code"] == "KPI_ONBOARDING_MANAGER_REQUIRED"
+
+
+def test_open_stage_case_copies_training_evaluator(db_session: Session) -> None:
+    """开案时把模板指标的评分人带进考核单。
+
+    漏带的后果：入职考核的「培训部评分」节点会被整体跳过（主管一人评完直接进 HR 复核）。
+    """
+    load_drafts(db_session)
+    mgr = _user(db_session, "onboard_eval_mgr")
+    subject = _user(db_session, "onboard_eval_subject")
+    subject.manager_id = mgr.id
+    tpl = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_SALES_M1")
+        .one()
+    )
+    tpl.status = "published"
+    db_session.commit()
+
+    opened = performance_kpi.open_stage_case(
+        db_session, {"user_id": subject.id, "stage": "M1", "role_kind": "SALES"}
+    )
+    items = (
+        db_session.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == opened["assessment_id"])
+        .all()
+    )
+    training = sorted(i.name for i in items if (i.evaluator or "") == "training")
+    assert training == sorted(["学习任务完成度", "产品知识掌握", "月度述职汇报"])
+    # M1 业务岗：培训部 60 分 / 主管 40 分
+    tr_points = sum(Decimal(str(i.max_points)) for i in items if i.evaluator == "training")
+    mg_points = sum(Decimal(str(i.max_points)) for i in items if i.evaluator != "training")
+    assert tr_points == Decimal("60")
+    assert mg_points == Decimal("40")
 
 
 def test_onboarding_review_permission_is_type_aware(db_session: Session) -> None:

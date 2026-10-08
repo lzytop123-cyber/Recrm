@@ -668,6 +668,16 @@ FAMILIES = [
 _ONBOARD_STAGE_CN = {"D5": "第5天·融入期", "M1": "第1个月·成长期", "M3": "第3个月·产出期"}
 _ONBOARD_ROLE_CN = {"SALES": "业务岗", "FUNCTION": "职能岗"}
 
+# 双评分：这几个维度由「培训部」评分，其余维度由「直属主管」评分
+# （公司介绍/产品介绍/产品知识/学习任务/述职汇报 = 培训部能判的；工作实操与业绩 = 主管判）
+_ONBOARD_TRAINING_KEYS = {
+    "company_intro",
+    "product_intro",
+    "product_knowledge",
+    "learning_task",
+    "monthly_report",
+}
+
 # (metric_key 后缀, 维度名, 分值/权重, 考核内容与合格/不合格标准)
 _ONBOARD_DIMENSIONS: dict[tuple[str, str], list[tuple[str, str, str, str]]] = {
     ("SALES", "D5"): [
@@ -762,7 +772,12 @@ for _role in ("SALES", "FUNCTION"):
                     "name": _name,
                     "max_points": _points,
                     "hint": _hint,
-                    "rule": {"type": "manual_points"},
+                    # 双评分：培训类维度归培训部，其余归直属主管。
+                    # 写进 rule 里，模板指标被重新导入/重建时也不会丢。
+                    "rule": {
+                        "type": "manual_points",
+                        **({"evaluator": "training"} if _key in _ONBOARD_TRAINING_KEYS else {}),
+                    },
                 }
                 for _key, _name, _points, _hint in _dims
             ],

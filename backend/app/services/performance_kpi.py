@@ -13,6 +13,15 @@ from sqlalchemy.orm import Session
 from app.models.performance import PerformanceImportBatch, PerformanceMetricFact, PerformanceTemplate
 from app.models.user import User
 from app.services.performance_rule_engine import blocking, validate_definition
+from app.services.performance_template import item_evaluator
+
+
+def template_item_evaluator(item: object) -> str:
+    """模板指标的评分人（列优先，兼容写在 rule_config_json 里的）。
+
+    委托给 performance_template.item_evaluator，保持单一实现。
+    """
+    return item_evaluator(item)
 
 
 def validate_template(db: Session, template_id: int) -> dict:
@@ -182,6 +191,8 @@ def revise_template(db: Session, template_id: int) -> dict:
                 hint=item.hint,
                 metric_key=item.metric_key,
                 max_points=item.max_points,
+                # 双评分：评分人随版本一起复制
+                evaluator=item_evaluator(item),
                 rule_config_json=item.rule_config_json,
                 indicator_definition_id=item.indicator_definition_id,
                 scoring_type=item.scoring_type,
@@ -596,7 +607,8 @@ def open_stage_case(db: Session, payload: dict) -> dict:
                 metric_key=it.metric_key,
                 max_points=it.max_points,
                 data_state="pending",
-                evaluator=getattr(it, "evaluator", None),
+                # 评分人从模板带过来（列优先，兼容写在 rule 里的）
+                evaluator=template_item_evaluator(it),
             )
         )
 

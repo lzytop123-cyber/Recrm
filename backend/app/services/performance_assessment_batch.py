@@ -30,7 +30,7 @@ from app.models.performance import (
 from app.core.rbac import collect_permission_codes
 from app.models.user import User
 from app.services.performance_personnel_matcher import match_personnel
-from app.services.performance_template import require_published_for_launch
+from app.services.performance_template import item_evaluator, require_published_for_launch
 
 _BLOCKED_HINTS = {
     "duplicate_assessment": "本周期已存在相同模板（或同系列）考核，不能重复发起",
@@ -410,7 +410,8 @@ def _launch_one_batch(
                     metric_key=it.metric_key,
                     max_points=it.max_points,
                     data_state="pending",
-                    evaluator=getattr(it, "evaluator", None),
+                    # 评分人从模板带过来（列优先，兼容写在 rule 里的）
+                    evaluator=item_evaluator(it),
                 )
             )
         db.add(
