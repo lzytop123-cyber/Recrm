@@ -465,3 +465,89 @@ def test_assessment_history_scopes_manager_and_employee(db_session: Session) -> 
     assert as_u1["scope"] == "self"
     assert [row["name"] for row in as_u1["rows"]] == ["张明"]
     assert as_u1["rows"][0]["previous_score"] == "80.00"
+
+
+def test_department_progress_merges_same_name_different_ids(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同名部门即使 department_id 不同，看板也应合并为一行。"""
+    _, mgr, _, _, tpl, cycle = _fixture(db_session)
+    tpl2 = PerformanceTemplate(
+        name="新媒体运营月度",
+        code="BATCH-TPL-SAME-NAME",
+        status="published",
+        family_code="CONTENT_MONTHLY",
+        version=1,
+        engine_version="kpi-v2",
+        scoring_mode="points_sum",
+        assessment_kind="monthly",
+        published_at=datetime.now(timezone.utc),
+        published_by=mgr.id,
+        effective_from=date(2026, 1, 1),
+        effective_to=date(2026, 12, 31),
+    )
+    db_session.add(tpl2)
+    db_session.flush()
+    b1 = PerformanceAssessmentBatch(
+        cycle_id=cycle.id,
+        template_id=tpl.id,
+        status="launched",
+        idempotency_key="same-name-1",
+        created_by=mgr.id,
+        hr_review_required=False,
+    )
+    b2 = PerformanceAssessmentBatch(
+        cycle_id=cycle.id,
+        template_id=tpl2.id,
+        status="launched",
+        idempotency_key="same-name-2",
+        created_by=mgr.id,
+        hr_review_required=False,
+    )
+    db_session.add_all([b1, b2])
+    db_session.commit()
+
+    fake = {
+        b1.id: {
+            "id": b1.id,
+            "department_id": 101,
+            "department_name": "新媒体运营交付中心",
+            "template_name": "模板A",
+            "hr_review_required": False,
+            "total": 1,
+            "pending_employee": 1,
+            "pending_manager": 0,
+            "pending_hr_review": 0,
+            "pending_confirm": 0,
+            "appealing": 0,
+            "completed": 0,
+        },
+        b2.id: {
+            "id": b2.id,
+            "department_id": None,
+            "department_name": "新媒体运营交付中心",
+            "template_name": "模板B",
+            "hr_review_required": False,
+            "total": 4,
+            "pending_employee": 4,
+            "pending_manager": 0,
+            "pending_hr_review": 0,
+            "pending_confirm": 0,
+            "appealing": 0,
+            "completed": 0,
+        },
+    }
+
+    monkeypatch.setattr(
+        batch_svc,
+        "batch_progress_out",
+        lambda db, batch: fake[batch.id],
+    )
+    board = batch_svc.list_cycle_batch_progress(db_session, cycle.id)
+    assert len(board["departments"]) == 1
+    dept = board["departments"][0]
+    assert dept["department_name"] == "新媒体运营交付中心"
+    assert dept["department_id"] == 101
+    assert dept["total"] == 5
+    assert dept["pending_employee"] == 5
+    assert set(dept["batch_ids"]) == {b1.id, b2.id}

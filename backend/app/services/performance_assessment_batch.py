@@ -664,14 +664,15 @@ def list_cycle_batch_progress(db: Session, cycle_id: int, user: Optional[User] =
         "appealing": sum(r["appealing"] for r in rows),
         "completed": sum(r["completed"] for r in rows),
     }
-    # 按部门聚合（同一部门多模板合并人数）
+    # 按部门名聚合（同名多模板 / 多 department_id 合并成一行）
     by_dept: dict[str, dict[str, Any]] = {}
     for r in rows:
-        key = str(r.get("department_id") or r.get("department_name") or "unknown")
+        name = (r.get("department_name") or "").strip() or "未分组"
+        key = name
         if key not in by_dept:
             by_dept[key] = {
                 "department_id": r.get("department_id"),
-                "department_name": r.get("department_name") or "未分组",
+                "department_name": name,
                 "batch_ids": [],
                 "template_names": [],
                 "total": 0,
@@ -683,6 +684,8 @@ def list_cycle_batch_progress(db: Session, cycle_id: int, user: Optional[User] =
                 "completed": 0,
             }
         d = by_dept[key]
+        if d.get("department_id") is None and r.get("department_id") is not None:
+            d["department_id"] = r.get("department_id")
         d["batch_ids"].append(r["id"])
         if r.get("template_name"):
             d["template_names"].append(r["template_name"])
