@@ -37,6 +37,83 @@ _BLOCKED_HINTS = {
     "missing_manager": "缺少直属主管，无法生成考核单",
 }
 
+# 离职/停用：即使前端勾选并填写原因，也不允许纳入考核
+_RESIGNED_EMPLOYMENT_STATUSES = frozenset({"离职", "resigned", "inactive"})
+
+
+def _is_resigned_or_disabled(user: User) -> bool:
+    if not user.is_active:
+        return True
+    status = (user.employment_status or "").strip()
+    if status in _RESIGNED_EMPLOYMENT_STATUSES:
+        return True
+    return status.lower() in _RESIGNED_EMPLOYMENT_STATUSES
+
+
+def _assert_not_resigned_for_include(
+    db: Session, *, user_id: int, person_name: str, field: str
+) -> None:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KPI_PERSON_NOT_FOUND",
+                "message": f"用户 {user_id} 不存在",
+                "field": field,
+            },
+        )
+    if not _is_resigned_or_disabled(user):
+        return
+    name = person_name or user.real_name or user.username or f"用户{user_id}"
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "code": "KPI_PERSON_RESIGNED",
+            "message": f"{name}已离职或停用，不可纳入考核",
+            "field": field,
+            "details": {
+                "user_id": user_id,
+                "name": name,
+                "is_active": user.is_active,
+                "employment_status": user.employment_status,
+                "how_to_fix": "请取消勾选该人员后再发起",
+            },
+        },
+    )
+
+
+def _assert_no_launched_batch_for_template(
+    db: Session, *, cycle_id: int, template_id: int
+) -> None:
+    existing = (
+        db.query(PerformanceAssessmentBatch)
+        .filter(
+            PerformanceAssessmentBatch.cycle_id == cycle_id,
+            PerformanceAssessmentBatch.template_id == template_id,
+            PerformanceAssessmentBatch.status == BATCH_STATUS_LAUNCHED,
+        )
+        .order_by(PerformanceAssessmentBatch.id.asc())
+        .first()
+    )
+    if existing is None:
+        return
+    tpl = db.query(PerformanceTemplate).filter(PerformanceTemplate.id == template_id).first()
+    tpl_name = (tpl.name if tpl else None) or f"模板{template_id}"
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "KPI_TEMPLATE_BATCH_EXISTS",
+            "message": f"本周期「{tpl_name}」已发起考核，不能重复发起",
+            "details": {
+                "cycle_id": cycle_id,
+                "template_id": template_id,
+                "existing_batch_id": existing.id,
+                "how_to_fix": "请在本期已有批次中继续处理，或先取消原批次后再重新发起",
+            },
+        },
+    )
+
 
 def _blocked_http_detail(
     *,
@@ -149,6 +226,7 @@ def _launch_one_batch(
     if template is None:
         raise HTTPException(status_code=404, detail="考核模板不存在")
 
+    _assert_no_launched_batch_for_template(db, cycle_id=cycle_id, template_id=template_id)
     _validate_deadlines(payload)
     match_result = match_personnel(db, cycle_id=cycle_id, template_id=template_id)
     by_id = _index_match(match_result)
@@ -171,6 +249,13 @@ def _launch_one_batch(
                         "how_to_fix": "只提交 match-personnel 返回的 people 中的用户",
                     },
                 },
+            )
+        if selected:
+            _assert_not_resigned_for_include(
+                db,
+                user_id=uid,
+                person_name=str(matched.get("name") or ""),
+                field=f"people[{idx}].user_id",
             )
         if matched["match_status"] == "blocked" and selected:
             raise HTTPException(

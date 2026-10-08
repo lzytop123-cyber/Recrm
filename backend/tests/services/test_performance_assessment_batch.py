@@ -141,10 +141,53 @@ def test_duplicate_key_different_idem_blocks(db_session: Session) -> None:
         batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-b")
     assert exc.value.status_code == 409
     detail = exc.value.detail
-    assert detail["code"] == "KPI_PERSON_BLOCKED"
-    assert detail["details"]["reason_code"] == "duplicate_assessment"
-    assert "重复" in detail["message"]
+    assert detail["code"] == "KPI_TEMPLATE_BATCH_EXISTS"
+    assert detail["details"]["existing_batch_id"]
+    assert "不能重复发起" in detail["message"]
     assert db_session.query(PerformanceAssessmentBatch).count() == 1
+
+
+def test_resigned_person_cannot_be_manually_included(db_session: Session) -> None:
+    _, mgr, u1, u2, tpl, cycle = _fixture(db_session)
+    u2.employment_status = "离职"
+    db_session.commit()
+    payload = {
+        "cycle_id": cycle.id,
+        "template_id": tpl.id,
+        "people": [
+            {"user_id": u1.id, "selected": True, "adjustment_reason": None},
+            {"user_id": u2.id, "selected": True, "adjustment_reason": "加入考核"},
+        ],
+        **_due_chain(),
+    }
+    with pytest.raises(HTTPException) as exc:
+        batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-resigned")
+    assert exc.value.status_code == 422
+    detail = exc.value.detail
+    assert detail["code"] == "KPI_PERSON_RESIGNED"
+    assert "离职" in detail["message"]
+    assert db_session.query(PerformanceAssessmentBatch).count() == 0
+    assert db_session.query(PerformanceAssessment).count() == 0
+
+
+def test_inactive_flag_cannot_be_manually_included(db_session: Session) -> None:
+    _, mgr, u1, u2, tpl, cycle = _fixture(db_session)
+    u2.is_active = False
+    u2.employment_status = "正式"
+    db_session.commit()
+    payload = {
+        "cycle_id": cycle.id,
+        "template_id": tpl.id,
+        "people": [
+            {"user_id": u1.id, "selected": True},
+            {"user_id": u2.id, "selected": True, "adjustment_reason": "加入考核"},
+        ],
+        **_due_chain(),
+    }
+    with pytest.raises(HTTPException) as exc:
+        batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-inactive")
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "KPI_PERSON_RESIGNED"
 
 
 def test_one_person_failure_rolls_back(db_session: Session) -> None:
@@ -431,6 +474,8 @@ def test_assessment_history_scopes_manager_and_employee(db_session: Session) -> 
     }
     current[u1.id].total_points = Decimal("91")
     current[u2.id].total_points = Decimal("80")
+    current[u1.id].status = "completed"
+    current[u2.id].status = "completed"
     db_session.add(PerformanceAssessment(
         cycle_id=older.id,
         user_id=u1.id,

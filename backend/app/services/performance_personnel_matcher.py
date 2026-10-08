@@ -205,8 +205,14 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
         elif _is_inactive(user):
             match_status = "excluded"
             reason_code = "inactive_employment"
-            reason = "非在职状态"
-            allowed_action = "manual_include"
+            status = (user.employment_status or "").strip()
+            # 离职/停用不可手动纳入；待入职等仍允许手动纳入（由发起接口最终校验）
+            if (not user.is_active) or status in ("离职", "resigned", "inactive"):
+                reason = "离职或停用人员不可纳入考核"
+                allowed_action = "none"
+            else:
+                reason = "非在职状态"
+                allowed_action = "manual_include"
         elif _is_long_leave(db, user, start, end):
             match_status = "excluded"
             reason_code = "long_leave"
