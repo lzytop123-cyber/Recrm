@@ -568,9 +568,9 @@ def lecturer_status(
 @router.get("/stage-cases", summary="入职阶段考核")
 def list_stage_cases(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(ONBOARD_MANAGE)],
+    user: Annotated[User, Depends(ONBOARD_MANAGE)],
 ) -> list:
-    return performance_kpi.list_stage_cases(db)
+    return performance_kpi.list_stage_cases(db, user)
 
 
 @router.get("/stage-cases/candidates", summary="入职考核待开案候选(近 N 天入职员工)")

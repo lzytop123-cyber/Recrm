@@ -129,7 +129,10 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
 
     # 培训部评分（入职考核）：需要 kpi:onboarding:manage（培训部负责人）/ HR / 管理员
     codes = collect_permission_codes(user)
-    can_onboard = "*" in codes or "kpi:onboarding:manage" in codes
+    role_codes = {r.code for r in (getattr(user, "roles", []) or [])}
+    # 系统里没有 '*' 权限码；管理员靠角色码 admin 识别（collect_permission_codes 只有显式权限）
+    is_admin = "*" in codes or "admin" in role_codes
+    can_onboard = is_admin or "kpi:onboarding:manage" in codes
     if can_onboard:
         pending_training = (
             db.query(PerformanceAssessment)
@@ -146,7 +149,7 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
 
     # HR / 培训部复核：入职单培训部也可看到复核待办
     can_review = (
-        "*" in codes
+        is_admin
         or "kpi:template:manage" in codes
         or _has(user, "kpi:cycle:manage")
         or can_onboard
@@ -160,7 +163,7 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
         )
         for row in pending_review:
             # 禁止自审：自己就是评分主管 / 培训部评分人的单，不派给自己复核
-            if "*" not in codes and (
+            if not is_admin and (
                 row.manager_id == user.id or row.training_scorer_id == user.id
             ):
                 continue
@@ -185,10 +188,10 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
         .all()
     )
     is_hr_user = (
-        "*" in codes
+        is_admin
         or "kpi:template:manage" in codes
         or _has(user, "kpi:cycle:manage")
-        or any((r.code or "") == "hr" for r in (getattr(user, "roles", []) or []))
+        or "hr" in role_codes
     )
     for row in confirm_pending:
         try:
@@ -204,7 +207,7 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
             add(row, "待HR确认入职结果")
 
     # 入职不合格人事跟进（HR）
-    if "*" in codes or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage"):
+    if is_admin or "kpi:template:manage" in codes or _has(user, "kpi:cycle:manage"):
         failed = (
             db.query(PerformanceAssessment)
             .filter(

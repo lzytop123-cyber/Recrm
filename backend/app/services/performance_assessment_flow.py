@@ -297,10 +297,10 @@ def _can_review(assessment: PerformanceAssessment, user: User) -> bool:
     codes = collect_permission_codes(user)
     if not ("*" in codes or "kpi:onboarding:manage" in codes or _is_hr(user)):
         return False
-    # 禁止自审：评分主管 / 培训部评分人 都不做本单复核，交 HR 兜底（管理员可强制处理）
-    if "*" in codes:
+    # HR / 管理员始终可复核（技术兜底）；培训部负责人不得复核自己评过或自己带的单
+    if _is_hr(user):
         return True
-    if assessment.manager_id and assessment.manager_id == user.id and not _is_hr(user):
+    if assessment.manager_id and assessment.manager_id == user.id:
         return False
     if (
         getattr(assessment, "training_scorer_id", None)
