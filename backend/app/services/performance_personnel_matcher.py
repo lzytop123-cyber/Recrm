@@ -18,6 +18,7 @@ from app.models.performance import (
     PerformanceTemplateScope,
 )
 from app.models.user import User
+from app.services.org import descendant_department_ids
 from app.services.performance_data_source import cycle_window
 from app.services.performance_template import require_published_for_launch
 
@@ -136,6 +137,49 @@ def _existing_assessment(
     return None
 
 
+def _other_template_assessments_map(
+    db: Session,
+    *,
+    cycle_id: int,
+    user_ids: list[int],
+    template: PerformanceTemplate,
+) -> dict[int, list[dict[str, Any]]]:
+    """本周期其它模板已有考核单（提醒用，不阻断）。按 user_id 分组。"""
+    if not user_ids:
+        return {}
+    family = template.family_code or template.code
+    rows = (
+        db.query(PerformanceAssessment)
+        .filter(
+            PerformanceAssessment.cycle_id == cycle_id,
+            PerformanceAssessment.user_id.in_(user_ids),
+        )
+        .all()
+    )
+    tpl_ids = {r.template_id for r in rows if r.template_id}
+    tpl_by_id = {
+        t.id: t
+        for t in db.query(PerformanceTemplate).filter(PerformanceTemplate.id.in_(tpl_ids)).all()
+    } if tpl_ids else {}
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row.template_id == template.id:
+            continue
+        other = tpl_by_id.get(row.template_id) if row.template_id else None
+        if other and (other.family_code or other.code) == family:
+            continue
+        out.setdefault(row.user_id, []).append(
+            {
+                "assessment_id": row.id,
+                "template_id": row.template_id,
+                "template_name": other.name if other else None,
+                "template_code": other.code if other else None,
+                "assessment_kind": row.assessment_kind,
+            }
+        )
+    return out
+
+
 def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str, Any]:
     cycle = db.query(PerformanceCycle).filter(PerformanceCycle.id == cycle_id).first()
     if cycle is None:
@@ -159,25 +203,30 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
     seen_ids: set[int] = set()
     for scope in scopes:
         dept = db.query(Department).filter(Department.id == scope.department_id).first()
+        job = (scope.job_title or "").strip()
         scope_out.append(
             {
                 "department_id": scope.department_id,
                 "department_name": dept.name if dept else None,
-                "job_title": scope.job_title,
+                "job_title": job or None,
             }
         )
-        users = (
-            db.query(User)
-            .filter(
-                User.department_id == scope.department_id,
-                User.job_title == scope.job_title,
-            )
-            .all()
-        )
-        for u in users:
+        # 含本部门及全部下级；岗位留空 = 不限制岗位（整部门）
+        dept_ids = descendant_department_ids(db, scope.department_id)
+        q = db.query(User).filter(User.department_id.in_(dept_ids))
+        if job:
+            q = q.filter(User.job_title == job)
+        for u in q.all():
             if u.id not in seen_ids:
                 seen_ids.add(u.id)
                 candidates.append(u)
+
+    other_by_user = _other_template_assessments_map(
+        db,
+        cycle_id=cycle.id,
+        user_ids=[u.id for u in candidates],
+        template=template,
+    )
 
     people = []
     for user in candidates:
@@ -186,6 +235,7 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
         days = _days_in_period(db, user, start, end)
         emp_type = _employment_type(user)
         existing = _existing_assessment(db, cycle_id=cycle.id, user_id=user.id, template=template)
+        other_assessments = other_by_user.get(user.id) or []
 
         match_status = "matched"
         reason_code = "scope_and_policy_matched"
@@ -229,6 +279,20 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
             reason = f"本月在岗{days}天，少于{min_days}天"
             allowed_action = "manual_include"
 
+        warnings: list[dict[str, Any]] = []
+        if other_assessments and match_status != "blocked":
+            names = "、".join(
+                a["template_name"] or a["template_code"] or f"模板{a['template_id']}"
+                for a in other_assessments
+            )
+            warnings.append(
+                {
+                    "code": "other_template_assessment",
+                    "message": f"本周期已有其它模板考核：{names}",
+                    "assessments": other_assessments,
+                }
+            )
+
         people.append(
             {
                 "user_id": user.id,
@@ -246,6 +310,8 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
                 "reason": reason,
                 "allowed_action": allowed_action,
                 "existing_assessment_id": existing.id if existing else None,
+                "warnings": warnings,
+                "has_other_template_assessment": bool(warnings),
             }
         )
 
@@ -253,7 +319,9 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
         "matched": sum(1 for p in people if p["match_status"] == "matched"),
         "excluded": sum(1 for p in people if p["match_status"] == "excluded"),
         "blocked": sum(1 for p in people if p["match_status"] == "blocked"),
+        "warned": sum(1 for p in people if p["has_other_template_assessment"]),
     }
+
     return {
         "template": {
             "id": template.id,

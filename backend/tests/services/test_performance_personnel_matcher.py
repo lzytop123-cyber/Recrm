@@ -205,3 +205,85 @@ def test_unpublished_template_rejected(db_session: Session) -> None:
     with pytest.raises(HTTPException) as exc:
         matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
     assert exc.value.status_code == 409
+
+
+def test_empty_job_title_matches_all_jobs_in_dept(db_session: Session) -> None:
+    dept, _, mgr, tpl, cycle = _setup(db_session)
+    db_session.query(PerformanceTemplateScope).filter(
+        PerformanceTemplateScope.template_id == tpl.id
+    ).delete()
+    db_session.add(PerformanceTemplateScope(template_id=tpl.id, department_id=dept.id, job_title=""))
+    db_session.commit()
+
+    a = _person(db_session, username="all_a", dept_id=dept.id, job_title="培训总监", manager_id=mgr.id)
+    b = _person(db_session, username="all_b", dept_id=dept.id, job_title="", manager_id=mgr.id)
+    c = _person(db_session, username="all_c", dept_id=dept.id, job_title="讲师", manager_id=mgr.id)
+
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    ids = {p["user_id"] for p in result["people"]}
+    assert {a.id, b.id, c.id} <= ids
+    assert all(p["match_status"] == "matched" for p in result["people"] if p["user_id"] in {a.id, b.id, c.id})
+
+
+def test_scope_includes_child_department(db_session: Session) -> None:
+    dept, _, mgr, tpl, cycle = _setup(db_session)
+    child = Department(name="讲师交付组", code="MATCH_LEC_SUB", parent_id=dept.id)
+    db_session.add(child)
+    db_session.flush()
+    db_session.query(PerformanceTemplateScope).filter(
+        PerformanceTemplateScope.template_id == tpl.id
+    ).delete()
+    db_session.add(PerformanceTemplateScope(template_id=tpl.id, department_id=dept.id, job_title=""))
+    db_session.commit()
+
+    child_user = _person(
+        db_session, username="child_u", dept_id=child.id, job_title="讲师", manager_id=mgr.id
+    )
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    assert any(p["user_id"] == child_user.id and p["match_status"] == "matched" for p in result["people"])
+
+def test_other_template_assessment_warns_not_blocks(db_session: Session) -> None:
+    dept, _, mgr, tpl, cycle = _setup(db_session)
+    other_tpl = PerformanceTemplate(
+        name="讲师月度积分",
+        code="MATCH-TPL-LEC",
+        status="published",
+        family_code="LECTURER_MONTHLY",
+        version=1,
+        engine_version="kpi-v2",
+        scoring_mode="points_sum",
+        assessment_kind="monthly",
+        published_at=datetime.now(timezone.utc),
+        published_by=mgr.id,
+        effective_from=date(2026, 1, 1),
+        effective_to=date(2026, 12, 31),
+    )
+    db_session.add(other_tpl)
+    db_session.flush()
+
+    user = _person(db_session, username="warn_u", dept_id=dept.id, job_title="市场业务", manager_id=mgr.id)
+    db_session.add(
+        PerformanceAssessment(
+            cycle_id=cycle.id,
+            user_id=user.id,
+            department_id=dept.id,
+            template_id=other_tpl.id,
+            status="employee_pending",
+            assessment_kind="monthly",
+            instance_key="monthly_primary",
+            engine_version="v2",
+            revision=1,
+        )
+    )
+    db_session.commit()
+
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    person = next(p for p in result["people"] if p["user_id"] == user.id)
+    assert person["match_status"] == "matched"
+    assert person["allowed_action"] == "include_or_exclude"
+    assert person["has_other_template_assessment"] is True
+    assert person["warnings"]
+    assert person["warnings"][0]["code"] == "other_template_assessment"
+    assert "讲师月度积分" in person["warnings"][0]["message"]
+    assert result["summary"]["warned"] >= 1
+

@@ -229,7 +229,8 @@ class TemplateItemOut(BaseModel):
 
 class TemplateScopeIn(BaseModel):
     department_id: int
-    job_title: str = Field(..., min_length=1, max_length=80)
+    # 空字符串 = 该部门（及下级）全部岗位
+    job_title: str = Field("", max_length=80)
 
 
 class TemplateScopeOut(BaseModel):
@@ -238,7 +239,7 @@ class TemplateScopeOut(BaseModel):
     id: int
     template_id: int
     department_id: int
-    job_title: str
+    job_title: str = ""
     department_name: Optional[str] = None
 
 

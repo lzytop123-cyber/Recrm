@@ -52,7 +52,7 @@ def _replace_scopes(db: Session, template_id: int, scopes: Optional[list]) -> No
     for raw in scopes:
         if isinstance(raw, dict):
             dept_id = raw["department_id"]
-            job_title = raw["job_title"]
+            job_title = raw.get("job_title")
         else:
             dept_id = raw.department_id
             job_title = raw.job_title
@@ -60,7 +60,7 @@ def _replace_scopes(db: Session, template_id: int, scopes: Optional[list]) -> No
             PerformanceTemplateScope(
                 template_id=template_id,
                 department_id=dept_id,
-                job_title=job_title,
+                job_title=(job_title or "").strip(),
             )
         )
 
