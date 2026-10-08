@@ -188,6 +188,15 @@ def test_feedback_stage_observation_and_lecturer(db_session: Session) -> None:
     db_session.add(extra)
     db_session.commit()
     assert performance_kpi.lecturer_status(db_session, subject.id)["incompetent"] is True
+    # 入职考核开案需要对应的入职模板已发布（按 阶段 + 岗类 关联）
+    load_drafts(db_session)
+    onboard = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_SALES_D5")
+        .one()
+    )
+    onboard.status = "published"
+    db_session.commit()
     opened = performance_kpi.open_stage_case(db_session, {
         "user_id": subject.id,
         "hire_event_id": 9,
@@ -202,8 +211,11 @@ def test_feedback_stage_observation_and_lecturer(db_session: Session) -> None:
         "role_kind": "sales",
         "cycle_id": cycle.id,
     })
-    assert opened["instance_key"] == "onboarding:9:D5"
+    assert opened["instance_key"] == f"onboarding_{subject.id}_D5_{cycle.id}"
+    assert opened["template_id"] == onboard.id
+    assert opened["item_count"] > 0
     assert again["idempotent"] is True
+    assert again["assessment_id"] == opened["assessment_id"]
     released = performance_kpi.open_observation(db_session, {"user_id": subject.id, "end_score": "80", "retriggered": False})
     held = performance_kpi.open_observation(db_session, {"user_id": subject.id, "end_score": "80", "retriggered": True})
     assert released["status"] == "released"

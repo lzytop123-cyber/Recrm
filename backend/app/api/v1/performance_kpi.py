@@ -40,9 +40,9 @@ class ReviewIn(BaseModel):
 
 class StageIn(BaseModel):
     user_id: int
-    hire_event_id: int
     stage: str
     role_kind: str
+    hire_event_id: Optional[int] = None
     cycle_id: Optional[int] = None
     due_at: Optional[str] = None
 
@@ -569,6 +569,15 @@ def list_stage_cases(
     _: Annotated[User, Depends(MANAGE)],
 ) -> list:
     return performance_kpi.list_stage_cases(db)
+
+
+@router.get("/stage-cases/candidates", summary="入职考核待开案候选(近 N 天入职员工)")
+def list_onboarding_candidates(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(MANAGE)],
+    within_days: int = 180,
+) -> dict:
+    return performance_kpi.list_onboarding_candidates_api(db, within_days=within_days)
 
 
 @router.post("/stage-cases", summary="开立入职阶段考核")
