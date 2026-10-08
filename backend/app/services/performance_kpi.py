@@ -799,27 +799,9 @@ def lecturer_status(db: Session, user_id: int) -> dict:
     return {"user_id": user_id, "valid_complaints": count, "incompetent": lecturer_incompetent(count)}
 
 
-# 当前登录人对该考核单的可操作动作 → 按钮文案（前端只消费这个字段，不自己猜）
-_ONBOARD_ACTION_LABELS: tuple[tuple[str, str], ...] = (
-    ("training_submit", "去评分"),
-    ("party_confirm", "去确认"),
-    ("hr_approve", "去复核"),
-    ("hr_return", "去复核"),
-    ("employee_submit", "去填写"),
-    ("result_confirm", "去确认"),
-    ("resolve_appeal", "去处理申诉"),
-)
-
-
-def _my_action_label(actions: list[str]) -> str:
-    for code, label in _ONBOARD_ACTION_LABELS:
-        if code in actions:
-            return label
-    return "查看"
-
-
 def list_stage_cases(db: Session, user: User | None = None) -> list:
     from app.models.performance import PerformanceAssessment, PerformanceStageCase
+    from app.services import performance_assessment_flow as flow
 
     rows = db.query(PerformanceStageCase).order_by(PerformanceStageCase.id.desc()).all()
     user_names = {u.id: u.real_name for u in db.query(User).all()}
@@ -834,8 +816,6 @@ def list_stage_cases(db: Session, user: User | None = None) -> list:
         target = assess.get(row.assessment_id) if row.assessment_id else None
         actions: list[str] = []
         if target is not None and user is not None:
-            from app.services import performance_assessment_flow as flow
-
             actions = flow.allowed_actions(target, user)
         out.append(
             {
@@ -852,9 +832,8 @@ def list_stage_cases(db: Session, user: User | None = None) -> list:
                 "assessment_status": target.status if target is not None else None,
                 # 该不该由「当前登录人」处理 + 按钮文案（后端判定，前端只展示）
                 "my_actions": actions,
-                "action_label": _my_action_label(actions),
-                "action_required": bool(actions)
-                and any(code in actions for code, _ in _ONBOARD_ACTION_LABELS),
+                "action_label": flow.primary_action_label(actions),
+                "action_required": flow.action_required(actions),
             }
         )
     return out

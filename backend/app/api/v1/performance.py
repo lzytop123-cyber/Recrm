@@ -289,7 +289,18 @@ def team_assessments(
     rows = perf_service.list_team_assessments(
         db, current_user, scope=scope, period_label=period_label
     )
-    return [AssessmentOut.model_validate(x) for x in rows]
+    # 每行补「当前登录人能做什么」——前端只按 action_label 渲染按钮与统计
+    from app.services import performance_assessment_flow as kpi_flow
+
+    out: List[AssessmentOut] = []
+    for row in rows:
+        data = AssessmentOut.model_validate(row)
+        actions = kpi_flow.allowed_actions(row, current_user)
+        data.my_actions = actions
+        data.action_label = kpi_flow.primary_action_label(actions)
+        data.action_required = kpi_flow.action_required(actions)
+        out.append(data)
+    return out
 
 
 @router.get("/assessments/{assessment_id}/detail", response_model=AssessmentDetailOut, summary="考核明细")
@@ -307,11 +318,12 @@ def assessment_detail(
 def workbench(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceWorkbenchOut:
     data = perf_service.get_workbench(db, current_user, period_label)
     return PerformanceWorkbenchOut(
-        cycle=PerformanceCycleOut.model_validate(data["cycle"]),
+        # 系统里还没有任何考核周期时 cycle 为 None（不自动创建）
+        cycle=PerformanceCycleOut.model_validate(data["cycle"]) if data["cycle"] else None,
         assessments=[AssessmentOut.model_validate(x) for x in data["assessments"]],
         appeals=[AppealOut.model_validate(x) for x in data["appeals"]],
         grade_distribution=data["grade_distribution"],
@@ -370,7 +382,7 @@ def resolve_appeal(
 def reset_cycle(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.reset_cycle(db, current_user, period_label)
@@ -381,7 +393,7 @@ def reset_cycle(
 def calibrate(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.start_calibration(db, current_user, period_label)
@@ -392,7 +404,7 @@ def calibrate(
 def lock_cycle(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.lock_cycle(db, current_user, period_label)
@@ -403,7 +415,7 @@ def lock_cycle(
 def generate_payroll(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.generate_payroll(db, current_user, period_label)
@@ -414,7 +426,7 @@ def generate_payroll(
 def review_payroll(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.review_payroll(db, current_user, period_label)
@@ -425,7 +437,7 @@ def review_payroll(
 def publish_payroll(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(PermissionChecker(["okr:view"]))],
-    period_label: str = Query("2026-07"),
+    period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
         perf_service.publish_payroll(db, current_user, period_label)

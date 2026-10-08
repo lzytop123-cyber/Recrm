@@ -142,6 +142,10 @@ class AssessmentOut(BaseModel):
     suggested_okr_count: int = 0
     suggested_okr_period: Optional[str] = None
     items: List[AssessmentItemOut] = Field(default_factory=list)
+    # 当前登录人对该考核单的可操作动作（后端判定；前端只按这个渲染按钮/统计）
+    my_actions: List[str] = Field(default_factory=list)
+    action_label: Optional[str] = None
+    action_required: bool = False
 
 
 class AssessmentDetailOut(AssessmentOut):
@@ -168,7 +172,7 @@ class AppealOut(BaseModel):
 
 
 class PerformanceWorkbenchOut(BaseModel):
-    cycle: PerformanceCycleOut
+    cycle: Optional[PerformanceCycleOut] = None
     assessments: List[AssessmentOut]
     appeals: List[AppealOut]
     grade_distribution: dict

@@ -733,7 +733,17 @@ def _seed_roster(db: Session, cycle: PerformanceCycle) -> None:
         )
 
 
-def ensure_cycle(db: Session, period_label: str = "2026-07") -> PerformanceCycle:
+def current_period_label() -> str:
+    """当前自然月标签，如 2026-10（旧接口缺省周期用，避免硬编码历史月份）。"""
+    from datetime import date as _date
+
+    _t = _date.today()
+    return f"{_t.year}-{_t.month:02d}"
+
+
+def ensure_cycle(db: Session, period_label: str | None = None) -> PerformanceCycle:
+    """取得周期；缺省=当前自然月。缺失时才创建（带 roster 的历史行为保留给管理动作）。"""
+    period_label = period_label or current_period_label()
     cycle = db.query(PerformanceCycle).filter(PerformanceCycle.period_label == period_label).first()
     if cycle:
         return enrich_cycle(db, cycle)
@@ -751,7 +761,7 @@ def ensure_cycle(db: Session, period_label: str = "2026-07") -> PerformanceCycle
     return enrich_cycle(db, cycle)
 
 
-def reset_cycle(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def reset_cycle(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     """管理员重置周期：清空分数与申诉，回到待自评，可重新打分。"""
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="仅管理者可重置考核周期")
@@ -787,9 +797,23 @@ def reset_cycle(db: Session, user: User, period_label: str = "2026-07") -> Perfo
     return enrich_cycle(db, cycle)
 
 
-def get_workbench(db: Session, user: User, period_label: str = "2026-07") -> dict:
+def get_workbench(db: Session, user: User, period_label: str | None = None) -> dict:
+    """HR 总览。**只读**：没有周期时不自动创建（否则一打开页面就凭空出现历史周期）。
+
+    缺省周期 = 最新已有周期；若系统里没有任何周期，返回空工作台。
+    """
     _ = user
-    cycle = ensure_cycle(db, period_label)
+    if not period_label:
+        latest = db.query(PerformanceCycle).order_by(PerformanceCycle.id.desc()).first()
+        period_label = latest.period_label if latest else None
+    cycle = (
+        db.query(PerformanceCycle).filter(PerformanceCycle.period_label == period_label).first()
+        if period_label
+        else None
+    )
+    if cycle is None:
+        return {"cycle": None, "assessments": [], "appeals": [], "grade_distribution": {}}
+    period_label = cycle.period_label
     assessments = (
         db.query(PerformanceAssessment)
         .filter(PerformanceAssessment.cycle_id == cycle.id)
@@ -963,7 +987,7 @@ def resolve_appeal(
     return enrich_appeal(db, appeal)
 
 
-def start_calibration(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def start_calibration(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="无权发起校准")
     cycle = ensure_cycle(db, period_label)
@@ -997,7 +1021,7 @@ def start_calibration(db: Session, user: User, period_label: str = "2026-07") ->
     return enrich_cycle(db, cycle)
 
 
-def lock_cycle(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def lock_cycle(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="无权锁定")
     cycle = ensure_cycle(db, period_label)
@@ -1026,7 +1050,7 @@ def lock_cycle(db: Session, user: User, period_label: str = "2026-07") -> Perfor
     return enrich_cycle(db, cycle)
 
 
-def generate_payroll(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def generate_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="无权生成工资批次")
     cycle = ensure_cycle(db, period_label)
@@ -1041,7 +1065,7 @@ def generate_payroll(db: Session, user: User, period_label: str = "2026-07") -> 
     return enrich_cycle(db, cycle)
 
 
-def review_payroll(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def review_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="无权复核")
     cycle = ensure_cycle(db, period_label)
@@ -1053,7 +1077,7 @@ def review_payroll(db: Session, user: User, period_label: str = "2026-07") -> Pe
     return enrich_cycle(db, cycle)
 
 
-def publish_payroll(db: Session, user: User, period_label: str = "2026-07") -> PerformanceCycle:
+def publish_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
     if not can_manage_performance(user):
         raise HTTPException(status_code=403, detail="无权发布")
     cycle = ensure_cycle(db, period_label)

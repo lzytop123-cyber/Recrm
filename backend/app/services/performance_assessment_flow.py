@@ -294,6 +294,33 @@ def _is_hr(user: User) -> bool:
     )
 
 
+# 动作 → 按钮文案。前端只消费 action_label，不自己判权限/拼文案。
+ACTION_BUTTON_LABELS: tuple[tuple[str, str], ...] = (
+    ("manager_submit", "去评分"),
+    ("training_submit", "去评分"),
+    ("party_confirm", "去确认"),
+    ("hr_approve", "去复核"),
+    ("hr_return", "去复核"),
+    ("employee_submit", "去填写"),
+    ("result_confirm", "去确认"),
+    ("resolve_appeal", "去处理申诉"),
+    ("appeal", "去申诉"),
+)
+ACTION_CODES: tuple[str, ...] = tuple(code for code, _ in ACTION_BUTTON_LABELS)
+
+
+def primary_action_label(actions: list[str]) -> str:
+    """把「当前登录人可用的动作」翻译成按钮文案；无可动作时=查看详情。"""
+    for code, label in ACTION_BUTTON_LABELS:
+        if code in actions:
+            return label
+    return "查看详情"
+
+
+def action_required(actions: list[str]) -> bool:
+    return any(code in actions for code in ACTION_CODES)
+
+
 def _is_admin(user: User) -> bool:
     """系统管理员：系统里没有 '*' 权限码，admin 靠角色码识别。"""
     if "*" in collect_permission_codes(user):
