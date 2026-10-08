@@ -20,6 +20,7 @@ LEAD_ENTRY_ONLY_ROLE_CODES: Set[str] = {
 }
 
 # 菜单定义：permission 为空表示登录即可见；有值则需具备对应权限（admin 角色放行）
+# children 非空时为一级分组，侧栏以 el-sub-menu 展开
 MENU_CATALOG: List[dict] = [
     {"path": "/dashboard", "title": "经营总览", "icon": "Odometer", "permission": "dashboard:view"},
     {"path": "/todos", "title": "我的待办", "icon": "Bell", "permission": None},
@@ -31,11 +32,52 @@ MENU_CATALOG: List[dict] = [
     {"path": "/tickets", "title": "协作工单", "icon": "Tickets", "permission": "ticket:view"},
     {"path": "/schedules", "title": "排期会议", "icon": "Calendar", "permission": "schedule:view"},
     {"path": "/okrs", "title": "目标绩效", "icon": "Flag", "permission": "okr:view"},
+    {
+        "path": "/group/performance",
+        "title": "绩效管理",
+        "icon": "Trophy",
+        "permission": None,
+        "children": [
+            {"path": "/performance/mine", "title": "我的绩效", "icon": "Trophy", "permission": None},
+            {
+                "path": "/performance/team",
+                "title": "团队绩效",
+                "icon": "UserFilled",
+                "permission": None,
+                "requires_subordinates": True,
+            },
+            {
+                "path": "/performance/admin/cycles",
+                "title": "绩效中心",
+                "icon": "DataAnalysis",
+                "permission": "kpi:template:manage",
+            },
+        ],
+    },
     {"path": "/assets", "title": "固定资产", "icon": "Box", "permission": "asset:view"},
+    {"path": "/knowledge", "title": "知识库", "icon": "Reading", "permission": "knowledge:view"},
     {"path": "/org", "title": "员工管理", "icon": "OfficeBuilding", "permission": "org:view"},
-    {"path": "/system", "title": "系统管理", "icon": "Setting", "permission": "system:view"},
-    {"path": "/system/dictionaries", "title": "字典管理", "icon": "Collection", "permission": "system:view"},
-    {"path": "/system/approval-rules", "title": "审批规则", "icon": "SetUp", "permission": "system:view"},
+    {
+        "path": "/group/system",
+        "title": "系统设置",
+        "icon": "Setting",
+        "permission": "system:view",
+        "children": [
+            {"path": "/system", "title": "系统管理", "icon": "Setting", "permission": "system:view"},
+            {
+                "path": "/system/dictionaries",
+                "title": "字典管理",
+                "icon": "Collection",
+                "permission": "system:view",
+            },
+            {
+                "path": "/system/approval-rules",
+                "title": "审批规则",
+                "icon": "SetUp",
+                "permission": "system:view",
+            },
+        ],
+    },
 ]
 
 # 第二期再开放：菜单隐藏，路由/API 仍保留便于以后打开
@@ -56,6 +98,28 @@ TICKET_MENU_ROLE_CODES: Set[str] = {
     "hr",
     "staff",
 }
+
+
+def iter_menu_leaves(catalog: Optional[List[dict]] = None) -> List[dict]:
+    """展开目录叶子项（含权限/可见性校验用的真实 path）。"""
+    leaves: List[dict] = []
+    for item in catalog if catalog is not None else MENU_CATALOG:
+        children = item.get("children") or []
+        if children:
+            leaves.extend(iter_menu_leaves(children))
+        else:
+            leaves.append(item)
+    return leaves
+
+
+def flatten_menu_paths(menus: List[MenuItem]) -> Set[str]:
+    """收集用户可见菜单的全部 path（含分组节点与叶子）。"""
+    out: Set[str] = set()
+    for m in menus:
+        out.add(m.path)
+        if m.children:
+            out |= flatten_menu_paths(m.children)
+    return out
 
 
 def _hide_tickets_menu(user: User) -> bool:
@@ -110,38 +174,107 @@ def _load_visibility_overrides(
     return merged
 
 
+def _filter_menu_item(
+    item: dict,
+    *,
+    user: User,
+    is_admin: bool,
+    owned: Set[str],
+    entry_only: bool,
+    overrides: Dict[str, bool],
+    has_subordinates: bool,
+) -> Optional[MenuItem]:
+    path = item["path"]
+    children_raw = item.get("children") or []
+
+    if children_raw:
+        kids: List[MenuItem] = []
+        for child in children_raw:
+            filtered = _filter_menu_item(
+                child,
+                user=user,
+                is_admin=is_admin,
+                owned=owned,
+                entry_only=entry_only,
+                overrides=overrides,
+                has_subordinates=has_subordinates,
+            )
+            if filtered is not None:
+                kids.append(filtered)
+        if not kids:
+            return None
+        # 分组节点本身不做 permission 拦截；有可见子项即展示
+        return MenuItem(
+            path=path,
+            title=item["title"],
+            icon=item.get("icon"),
+            permission=item.get("permission"),
+            children=kids,
+        )
+
+    if path in PHASE2_HIDDEN_MENU_PATHS:
+        return None
+    perm = item.get("permission")
+    if not (perm is None or is_admin or perm in owned):
+        return None
+    if item.get("requires_subordinates") and not (is_admin or has_subordinates):
+        return None
+
+    payload = {k: v for k, v in item.items() if k not in ("requires_subordinates", "children")}
+    if path in overrides:
+        if overrides[path]:
+            return MenuItem(**payload)
+        return None
+
+    if path == "/tickets" and _hide_tickets_menu(user):
+        return None
+    # 仅录入岗：显示线索录入，不显示完整销售中心
+    if entry_only:
+        if path == "/sales":
+            return None
+    else:
+        if path == "/lead-entry":
+            return None
+    return MenuItem(**payload)
+
+
 def build_menus_for_user(user: User, db: Optional[Session] = None) -> List[MenuItem]:
     role_codes = {r.code for r in user.roles}
     is_admin = "admin" in role_codes
     owned = collect_permission_codes(user)
     entry_only = is_lead_entry_only(user)
     overrides = _load_visibility_overrides(db, role_codes)
+    has_subordinates = False
+    if db is not None:
+        has_subordinates = (
+            db.query(User.id).filter(User.manager_id == user.id, User.is_active.is_(True)).first()
+            is not None
+        )
     menus: List[MenuItem] = []
     for item in MENU_CATALOG:
-        path = item["path"]
-        if path in PHASE2_HIDDEN_MENU_PATHS:
-            continue
-        perm = item.get("permission")
-        if not (perm is None or is_admin or perm in owned):
-            continue
-
-        # 后台覆盖优先：命中即以覆盖为准，跳过默认隐藏规则
-        if path in overrides:
-            if overrides[path]:
-                menus.append(MenuItem(**item))
-            continue
-
-        if path == "/tickets" and _hide_tickets_menu(user):
-            continue
-        # 仅录入岗：显示线索录入，不显示完整销售中心
-        if entry_only:
-            if path == "/sales":
-                continue
-        else:
-            if path == "/lead-entry":
-                continue
-        menus.append(MenuItem(**item))
+        filtered = _filter_menu_item(
+            item,
+            user=user,
+            is_admin=is_admin,
+            owned=owned,
+            entry_only=entry_only,
+            overrides=overrides,
+            has_subordinates=has_subordinates,
+        )
+        if filtered is not None:
+            menus.append(filtered)
     return menus
+
+
+def _first_menu_path(menus: List[MenuItem]) -> Optional[str]:
+    for m in menus:
+        if m.children:
+            child = _first_menu_path(m.children)
+            if child:
+                return child
+        elif not m.path.startswith("/group/"):
+            return m.path
+    return None
 
 
 def _resolve_home_path(
@@ -159,9 +292,7 @@ def _resolve_home_path(
     if entry_only:
         return "/lead-entry"
     menus = build_menus_for_user(user, db)
-    if menus:
-        return menus[0].path
-    return "/lead-entry"
+    return _first_menu_path(menus) or "/lead-entry"
 
 
 def build_user_info(user: User, db: Optional[Session] = None) -> UserInfoResponse:
@@ -175,6 +306,13 @@ def build_user_info(user: User, db: Optional[Session] = None) -> UserInfoRespons
         if "*" not in permissions:
             permissions = ["*"] + permissions
         entry_only = False
+
+    has_subordinates = False
+    if db is not None:
+        has_subordinates = (
+            db.query(User.id).filter(User.manager_id == user.id, User.is_active.is_(True)).first()
+            is not None
+        )
 
     return UserInfoResponse(
         id=user.id,
@@ -190,4 +328,5 @@ def build_user_info(user: User, db: Optional[Session] = None) -> UserInfoRespons
         menus=build_menus_for_user(user, db),
         lead_entry_only=entry_only,
         home_path=_resolve_home_path(user, entry_only=entry_only, permissions=permissions, db=db),
+        has_subordinates=has_subordinates,
     )

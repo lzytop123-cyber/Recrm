@@ -8,6 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.project_resource import ResourceRoleAssignment
 
 
+class ProjectContractGateOut(BaseModel):
+    id: int
+    contract_type: str
+    status: str
+    payment_ok: bool
+
+
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     # 选填：无合同也可立项；有合同则校验签署/到款（或无到款例外）

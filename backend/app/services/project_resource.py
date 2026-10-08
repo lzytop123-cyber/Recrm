@@ -364,6 +364,23 @@ def list_pending_resources(
     return [enrich_need(db, n) for n in needs]
 
 
+def list_project_resources(db: Session, user: User, project_id: int) -> list[ProjectResourceNeed]:
+    """某项目的全部资源安排（详情页只读，不限项目状态）。"""
+    from app.services import project as project_service
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    project_service.assert_can_view(user, project)
+    needs = (
+        db.query(ProjectResourceNeed)
+        .filter(ProjectResourceNeed.project_id == project_id)
+        .order_by(ProjectResourceNeed.id.asc())
+        .all()
+    )
+    return [enrich_need(db, n, project) for n in needs]
+
+
 def pending_count_for_project(db: Session, project_id: int) -> int:
     return (
         db.query(ProjectResourceNeed)

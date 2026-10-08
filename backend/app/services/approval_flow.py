@@ -91,6 +91,10 @@ BIZ_CATEGORY: dict[str, str] = {
     "asset_inventory_diff": "固定资产",
     "asset_compensation": "固定资产",
     "role_change": "组织权限",
+    "labor_contract_renew": "人事合同",
+    "hr_transfer": "人事异动",
+    "hr_resignation": "人事异动",
+    "hr_leave": "假勤",
     "ticket": "协作工单",
     "ticket_cross_accept": "协作工单",
     "schedule": "排期会议",
@@ -956,6 +960,42 @@ def _dispatch_callback(
         from app.services import org as org_service
 
         org_service.on_role_change_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "kpi_review":
+        from app.services import performance as perf_service
+
+        perf_service.on_kpi_review_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "performance_template_review":
+        from app.services import performance_template as tpl_service
+
+        tpl_service.on_template_flow_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "labor_contract_renew":
+        from app.services import hr as hr_service
+
+        hr_service.on_contract_renew_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "hr_transfer":
+        from app.services import hr as hr_service
+
+        hr_service.on_transfer_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "hr_resignation":
+        from app.services import hr as hr_service
+
+        hr_service.on_resignation_result(
+            db, instance, approved=approved, withdrawn=withdrawn
+        )
+    elif biz == "hr_leave":
+        from app.services import hr as hr_service
+
+        hr_service.on_leave_result(
             db, instance, approved=approved, withdrawn=withdrawn
         )
     # 其余业务回调在各自接入阶段注册

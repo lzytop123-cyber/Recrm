@@ -31,12 +31,13 @@ class RoleBrief(BaseModel):
 
 
 class MenuItem(BaseModel):
-    """前端左侧菜单项（由权限码推导）。"""
+    """前端左侧菜单项（由权限码推导；可含二级 children）。"""
 
     path: str
     title: str
     icon: Optional[str] = None
     permission: Optional[str] = None
+    children: List["MenuItem"] = Field(default_factory=list)
 
 
 class UserInfoResponse(BaseModel):
@@ -53,6 +54,7 @@ class UserInfoResponse(BaseModel):
     menus: List[MenuItem] = []
     lead_entry_only: bool = False
     home_path: str = "/dashboard"
+    has_subordinates: bool = False
 
     model_config = {"from_attributes": True}
 

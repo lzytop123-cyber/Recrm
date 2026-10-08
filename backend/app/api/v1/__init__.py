@@ -2,6 +2,8 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    agent,
+    ai_scenes,
     approval_rules,
     approvals,
     assets,
@@ -11,6 +13,7 @@ from app.api.v1 import (
     dashboard,
     directory,
     finance,
+    hr,
     knowledge,
     leads,
     notifications,
@@ -19,6 +22,7 @@ from app.api.v1 import (
     org,
     payments,
     performance,
+    performance_kpi,
     projects,
     schedules,
     shooting_schedules,
@@ -31,6 +35,8 @@ from app.api.v1 import (
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(ai_scenes.router)
+api_router.include_router(agent.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(todos.router)
 api_router.include_router(approvals.router)
@@ -45,9 +51,12 @@ api_router.include_router(payments.router)
 api_router.include_router(projects.router)
 api_router.include_router(okrs.router)
 api_router.include_router(performance.router)
+api_router.include_router(performance_kpi.router)
 api_router.include_router(assets.router)
 api_router.include_router(shooting_schedules.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(hr.router)
+api_router.include_router(hr.payslip_router)
 api_router.include_router(timesheets.router)
 api_router.include_router(tickets.router)
 api_router.include_router(schedules.router)

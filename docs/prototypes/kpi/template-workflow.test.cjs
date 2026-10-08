@@ -1,0 +1,43 @@
+const assert=require('node:assert/strict');
+const wf=require('./template-workflow.js');
+const state=wf.createTemplateState();
+assert.equal(state.templates.find(x=>x.id==='demo').status,'published');
+assert.equal(wf.availableForLaunch(state).length,9);
+const draft=wf.createTemplate(state,{name:'市场销售月度',department:'市场部',role:'市场业务',cycle:'monthly'});
+assert.equal(draft.status,'draft');
+assert.throws(()=>wf.submitForReview(state,draft.id,'hr'),/校验/);
+wf.updateTemplate(state,draft.id,{effectiveFrom:'2026-10-01',description:'适用于市场部业务人员月度绩效考核'},'hr');
+wf.replaceMetrics(state,draft.id,[
+ {id:'m1',name:'签约客户',max:60,target:'4家',unit:'家',source:'签约记录',formula:'每完成1家得15分，最高60分',evidence:'系统记录'},
+ {id:'m2',name:'客户拜访',max:40,target:'20家',unit:'家',source:'拜访记录',formula:'完成率×40，最高40分',evidence:'系统记录'}
+],'hr');
+assert.deepEqual(wf.validateTemplate(draft),[]);
+assert.equal(wf.simulate(draft,'m1',3),45);
+wf.submitForReview(state,draft.id,'hr');
+assert.equal(draft.status,'in_review');
+assert.throws(()=>wf.updateTemplate(state,draft.id,{name:'偷改'},'hr'));
+assert.throws(()=>wf.review(state,draft.id,'hr',{decision:'approve'}));
+wf.review(state,draft.id,'manager',{decision:'return',note:'请明确拜访去重口径'});
+assert.equal(draft.status,'returned');
+wf.updateMetric(state,draft.id,'m2',{formula:'按客户去重；完成率×40，最高40分'},'hr');
+wf.submitForReview(state,draft.id,'hr');
+wf.review(state,draft.id,'manager',{decision:'approve',note:'规则清晰'});
+assert.equal(draft.status,'approved');
+assert.equal(wf.availableForLaunch(state).length,9);
+wf.publish(state,draft.id,'hr');
+assert.equal(draft.status,'published');assert.equal(draft.version,1);
+assert.equal(wf.availableForLaunch(state).length,10);
+assert.throws(()=>wf.updateMetric(state,draft.id,'m1',{max:50},'hr'));
+const v2=wf.copyVersion(state,draft.id,'hr');
+assert.equal(v2.status,'draft');assert.equal(v2.version,2);assert.equal(v2.parentId,draft.id);
+wf.disable(state,draft.id,'hr');
+assert.equal(draft.status,'disabled');assert.equal(wf.availableForLaunch(state).some(x=>x.id===draft.id),false);
+assert.throws(()=>wf.disable(state,'demo','manager'));
+const bad=wf.createTemplate(state,{name:'坏模板',department:'市场部',role:'市场业务',cycle:'monthly'});
+wf.updateTemplate(state,bad.id,{effectiveFrom:'2026-10-01',description:'测试'},'hr');
+wf.replaceMetrics(state,bad.id,[{id:'x',name:'空来源',max:90,target:'10',unit:'条',source:'',formula:'',evidence:''}],'hr');
+const errors=wf.validateTemplate(bad);
+assert.ok(errors.some(x=>x.includes('100')));
+assert.ok(errors.some(x=>x.includes('数据来源')));
+assert.throws(()=>wf.simulate(bad,'x',3));
+console.log('Template lifecycle, validation, review, publish, versioning and launch availability passed');

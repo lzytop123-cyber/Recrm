@@ -15,6 +15,7 @@ from app.schemas.project import (
     MilestoneUpdate,
     ProjectAcceptRequest,
     ProjectAcceptanceReviewRequest,
+    ProjectContractGateOut,
     ProjectCreate,
     ProjectDetailOut,
     ProjectFinanceCheckRequest,
@@ -46,6 +47,15 @@ from app.services import project_resource as resource_service
 from app.services import sales_journey as sales_journey_service
 
 router = APIRouter(prefix="/projects", tags=["项目管理"])
+
+
+@router.get("/contract-gate/{contract_id}", response_model=ProjectContractGateOut, summary="合同立项门槛")
+def contract_initiation_gate(
+    contract_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectContractGateOut:
+    return ProjectContractGateOut(**project_service.contract_initiation_gate(db, current_user, contract_id))
 
 
 @router.get("/stats", response_model=ProjectStatsOut, summary="项目统计")
@@ -222,6 +232,25 @@ def get_project_hours_budget(
 ) -> ProjectHoursBudgetOut:
     project = project_service.get_project_detail(db, current_user, project_id)
     return ProjectHoursBudgetOut(**resource_service.get_hours_budget(db, project.id))
+
+
+@router.get(
+    "/{project_id}/resource-needs",
+    response_model=ProjectResourceNeedListOut,
+    summary="项目资源安排（详情页）",
+)
+def list_project_resource_needs(
+    project_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["project:view"]))],
+) -> ProjectResourceNeedListOut:
+    items = resource_service.list_project_resources(db, current_user, project_id)
+    pending = sum(1 for x in items if x.status == "pending")
+    return ProjectResourceNeedListOut(
+        items=[ProjectResourceNeedOut.model_validate(x) for x in items],
+        total=len(items),
+        pending_count=pending,
+    )
 
 
 @router.patch("/{project_id}", response_model=ProjectOut, summary="编辑项目")

@@ -8,7 +8,7 @@ from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
 from app.services.asset import can_manage_assets
-from app.services.menu import build_menus_for_user
+from app.services.menu import build_menus_for_user, flatten_menu_paths, flatten_menu_paths
 
 
 def _user_with_perms(db: Session, username: str, *codes: str, role_code: str | None = None) -> User:
@@ -59,7 +59,7 @@ def test_sales_has_ticket_perm_but_no_tickets_menu(db_session: Session) -> None:
         "ticket:view",
         role_code="sales",
     )
-    paths = {m.path for m in build_menus_for_user(sales)}
+    paths = flatten_menu_paths(build_menus_for_user(sales))
     assert "/tickets" not in paths
     assert "/dashboard" in paths
 
@@ -72,7 +72,7 @@ def test_employee_still_sees_tickets_menu(db_session: Session) -> None:
         "schedule:view",
         role_code="employee",
     )
-    paths = {m.path for m in build_menus_for_user(emp)}
+    paths = flatten_menu_paths(build_menus_for_user(emp))
     assert "/tickets" in paths
 
 
@@ -111,8 +111,8 @@ def test_operations_sees_lead_entry_not_sales(db_session: Session) -> None:
         "lead:view",
         "customer:view",
         "dashboard:view",
-        role_code="operations",
+        role_code="ops",
     )
-    paths = {m.path for m in build_menus_for_user(ops)}
+    paths = flatten_menu_paths(build_menus_for_user(ops))
     assert "/lead-entry" in paths
     assert "/sales" not in paths

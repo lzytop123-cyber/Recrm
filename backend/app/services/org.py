@@ -397,7 +397,7 @@ def update_employee(db: Session, user_id: int, payload: EmployeeUpdate, *, actor
         if not mgr:
             raise HTTPException(status_code=400, detail="直属负责人不存在")
 
-    if data.get("is_active") is False and user.id == actor.id:
+    if (data.get("is_active") is False or data.get("employment_status") == "离职") and user.id == actor.id:
         raise HTTPException(status_code=400, detail="不能停用当前登录账号")
 
     if "feishu_open_id" in data:
@@ -417,10 +417,11 @@ def update_employee(db: Session, user_id: int, payload: EmployeeUpdate, *, actor
         setattr(user, k, v)
 
     if role_ids is not None:
-        if user.id == actor.id:
-            raise HTTPException(status_code=400, detail="不能修改自己的角色")
         current_ids = sorted(r.id for r in user.roles)
-        new_ids = sorted(role_ids)
+        new_ids = sorted(set(role_ids))
+        actor_is_admin = "admin" in {r.code for r in (actor.roles or [])}
+        if user.id == actor.id and current_ids != new_ids and not actor_is_admin:
+            raise HTTPException(status_code=400, detail="不能修改自己的角色")
         if current_ids != new_ids:
             from app.services import approval_flow
 

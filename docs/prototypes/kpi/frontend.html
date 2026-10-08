@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN" data-kpi-mode="simple">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>企业知识库 · 交互原型</title>
+  <link id="prototype-style" rel="stylesheet" href="knowledge-prototype.css">
+</head>
+<body>
+  <div id="app"></div>
+  <div id="overlay"></div>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <script>
+    // 默认展示知识库；已有 KPI 原型通过独立入口保留。
+    (async function () {
+      const params = new URLSearchParams(location.search);
+      const kpi = params.get('view') === 'kpi';
+      const classic = kpi && params.get('experience') === 'classic';
+      if (kpi) document.getElementById('prototype-style').href = classic ? 'frontend-flow.css' : 'kpi-workbench.css';
+      const files = classic ? ['frontend-flow.js', 'template-workflow.js', 'personnel-matching.js', 'frontend-simple.js'] : kpi ? ['kpi-employee.js', 'kpi-manager.js', 'kpi-workbench.js'] : ['knowledge-editor.js', 'knowledge-prototype.js'];
+      for (const file of files) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = file;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.appendChild(script);
+        });
+      }
+      if (classic) {
+        const addKnowledgeLink = () => {
+          const nav = document.querySelector('.sidebar nav');
+          if (nav && !nav.querySelector('[data-knowledge-link]')) nav.insertAdjacentHTML('beforeend', '<a href="frontend.html" data-knowledge-link class="navbutton" style="display:block;text-decoration:none">企业知识库原型</a>');
+        };
+        addKnowledgeLink();
+        new MutationObserver(addKnowledgeLink).observe(document.getElementById('app'), { childList: true });
+      }
+    })().catch(() => { document.getElementById('app').textContent = '原型资源加载失败，请检查同目录下的 CSS 和 JS 文件。'; });
+  </script>
+</body>
+</html>

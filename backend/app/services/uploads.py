@@ -10,7 +10,13 @@ from fastapi import HTTPException, UploadFile
 # backend/uploads/
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 
-ALLOWED_CATEGORIES = {"contract_proof", "acceptance_proof", "milestone_evidence"}
+ALLOWED_CATEGORIES = {
+    "contract_proof",
+    "acceptance_proof",
+    "milestone_evidence",
+    "labor_contract",
+    "knowledge",
+}
 ALLOWED_EXTENSIONS = {
     ".pdf",
     ".png",
@@ -58,6 +64,8 @@ def save_upload(file: UploadFile, *, category: str) -> dict:
         "contract_proof": "contracts",
         "acceptance_proof": "acceptance",
         "milestone_evidence": "milestone_evidence",
+        "labor_contract": "labor_contracts",
+        "knowledge": "knowledge",
     }.get(category, category)
     dest_dir = UPLOAD_ROOT / subdir
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -73,3 +81,24 @@ def save_upload(file: UploadFile, *, category: str) -> dict:
         "url": f"/uploads/{relative}",
         "size": len(data),
     }
+
+
+def resolve_stored_file(relative: str) -> Path:
+    raw = (relative or "").strip().replace("\\", "/")
+    if raw.startswith("/uploads/"):
+        raw = raw[len("/uploads/") :]
+    elif raw.startswith("uploads/"):
+        raw = raw[len("uploads/") :]
+    raw = raw.lstrip("/")
+    parts = Path(raw).parts
+    if not raw or Path(raw).is_absolute() or any(p in ("..", "") for p in parts):
+        raise HTTPException(status_code=404, detail="附件不存在")
+    root = UPLOAD_ROOT.resolve()
+    dest = (root / raw).resolve()
+    try:
+        dest.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="附件不存在") from exc
+    if not dest.is_file():
+        raise HTTPException(status_code=404, detail="附件文件不存在")
+    return dest

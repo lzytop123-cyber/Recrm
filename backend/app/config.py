@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-chat"
     llm_timeout_seconds: int = 45
+    agent_max_iterations: int = 10
+    agent_timeout_seconds: int = 60
 
     @property
     def feishu_enabled(self) -> bool:

@@ -202,6 +202,91 @@ class FeishuClient:
         )
         return list((data.get("data") or {}).get("user_task_results") or [])
 
+    async def get_wiki_node(self, token: str) -> dict[str, Any]:
+        data = await self._get("/open-apis/wiki/v2/spaces/get_node", params={"token": token})
+        return (data.get("data") or {}).get("node") or {}
+
+    async def get_mindnote_nodes(self, mindnote_id: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while True:
+            params: dict[str, Any] = {}
+            if page_token:
+                params["page_token"] = page_token
+            data = await self._get(f"/open-apis/mindnote/v1/mindnotes/{mindnote_id}/nodes", params=params)
+            payload = data.get("data") or {}
+            items.extend(payload.get("nodes") or [])
+            if not payload.get("has_more"):
+                break
+            page_token = payload.get("page_token")
+            if not page_token:
+                break
+        return items
+
+    async def get_doc_raw_content(self, doc_token: str) -> str:
+        data = await self._get(f"/open-apis/doc/v2/{doc_token}/raw_content")
+        return str((data.get("data") or {}).get("content") or "")
+
+    async def get_sheet_meta(self, spreadsheet_token: str) -> dict[str, Any]:
+        data = await self._get(f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/metainfo")
+        return data.get("data") or {}
+
+    async def get_sheet_values(self, spreadsheet_token: str, range_ref: str) -> list[list[Any]]:
+        from urllib.parse import quote
+
+        path = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values/{quote(range_ref, safe='')}"
+        data = await self._get(
+            path,
+            params={"valueRenderOption": "ToString", "dateTimeRenderOption": "FormattedString"},
+        )
+        values = ((data.get("data") or {}).get("valueRange") or {}).get("values") or []
+        return list(values)
+
+    async def list_bitable_tables(self, app_token: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(items) < 10:
+            params: dict[str, Any] = {"page_size": 10}
+            if page_token:
+                params["page_token"] = page_token
+            data = await self._get(f"/open-apis/bitable/v1/apps/{app_token}/tables", params=params)
+            payload = data.get("data") or {}
+            items.extend(payload.get("items") or [])
+            if not payload.get("has_more"):
+                break
+            page_token = payload.get("page_token")
+            if not page_token:
+                break
+        return items[:10]
+
+    async def list_bitable_records(self, app_token: str, table_id: str, *, limit: int = 200) -> tuple[list[dict[str, Any]], bool]:
+        items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(items) < limit:
+            params: dict[str, Any] = {"page_size": min(100, limit - len(items))}
+            if page_token:
+                params["page_token"] = page_token
+            data = await self._get(
+                f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+                params=params,
+            )
+            payload = data.get("data") or {}
+            items.extend(payload.get("items") or [])
+            if not payload.get("has_more"):
+                return items[:limit], False
+            page_token = payload.get("page_token")
+            if not page_token or len(items) >= limit:
+                return items[:limit], True
+        return items[:limit], True
+
+    async def get_docx_meta(self, document_id: str) -> dict[str, Any]:
+        data = await self._get(f"/open-apis/docx/v1/documents/{document_id}")
+        return (data.get("data") or {}).get("document") or {}
+
+    async def get_docx_raw_content(self, document_id: str) -> str:
+        data = await self._get(f"/open-apis/docx/v1/documents/{document_id}/raw_content")
+        return str((data.get("data") or {}).get("content") or "")
+
     async def send_text_message(self, *, receive_open_id: str, text: str) -> dict[str, Any]:
         """以应用身份向用户发文本私聊（需 IM 发消息权限）。"""
         content = json.dumps({"text": text}, ensure_ascii=False)

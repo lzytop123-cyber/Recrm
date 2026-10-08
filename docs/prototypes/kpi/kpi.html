@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KPI 考核 · 原型入口</title>
+  <link rel="stylesheet" href="knowledge-prototype.css">
+  <style>
+    .entry { max-width: 1050px; margin: 9vh auto; padding: 24px; }
+    .entry-brand { display:flex; gap:13px; align-items:center; color:#6b7c93; font-size:12px; margin-bottom:42px; }
+    .entry h1 { font-size:30px; margin-bottom:12px; letter-spacing:-.04em; }
+    .entry > p { color:#6b7c93; font-size:13px; line-height:1.9; max-width:680px; }
+    .entry-roles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:30px; }
+    .entry-role { display:flex; flex-direction:column; min-height:235px; background:#fff; border:1px solid #e3e9f2; border-radius:10px; padding:24px; }
+    .entry-role small { color:#8495ae; font-size:11px; margin-bottom:15px; }
+    .entry-role h2 { font-size:20px; margin-bottom:12px; }
+    .entry-role p { color:#6b7c93; font-size:12px; line-height:1.9; flex:1; margin-bottom:24px; }
+    .entry-role a { align-self:flex-start; }
+    .entry-footer { border-top:1px solid #e3e9f2; margin-top:28px; padding-top:18px; display:flex; flex-wrap:wrap; gap:15px; font-size:12px; color:#6b7c93; }
+    .entry-footer a { color:#2446b8; }
+    .entry-note { margin-top:20px; font-size:11px !important; }
+    @media(max-width:700px) { .entry { margin:20px auto; padding:20px; } .entry-roles { grid-template-columns:1fr; } .entry-role { min-height:0; } .entry-brand { margin-bottom:25px; } }
+  </style>
+</head>
+<body>
+  <main class="entry">
+    <div class="entry-brand"><span class="kb-brand-mark">鼎</span><span>中泰旭鼎 CRM / 交互原型</span></div>
+    <h1>KPI 考核，按角色体验</h1>
+    <p>三个视角共用同一条考核流程，各自呈现对应的任务、数据范围与操作。进入任意页面后，可通过右上角的原型体验身份切换视角，查看同一份记录如何流转。</p>
+    <section class="entry-roles">
+      <article class="entry-role"><small>陈悦 · 人力资源管理员</small><h2>管理与复核</h2><p>发起考核、看部门和人员进度，复核主管评分。管理模板与往期记录。</p><a class="kb-btn primary" href="frontend.html?view=kpi&role=admin">进入管理员工作台</a></article>
+      <article class="entry-role"><small>李岚 · 市场部主管</small><h2>团队与评分</h2><p>只看自己负责的团队，核对员工成果，逐项评分或退回员工补充。</p><a class="kb-btn primary" href="frontend.html?view=kpi&role=manager&page=team">进入主管工作台</a></article>
+      <article class="entry-role"><small>张明 · 市场部员工</small><h2>填报与结果</h2><p>只处理本人的考核，补充材料、保存草稿、提交主管并查看最终结果。</p><a class="kb-btn primary" href="frontend.html?view=kpi&role=employee&page=self">进入员工工作台</a></article>
+    </section>
+    <nav class="entry-footer"><a href="KPI前端开发交付说明.md">查看前端开发交付说明</a><a href="frontend.html">企业知识库原型</a><a href="frontend.html?view=kpi&experience=classic">查看旧版完整流程</a></nav>
+    <p class="entry-note">本原型使用示例数据，提交进度刷新后恢复。保存的草稿缓存在当前浏览器；附件仅演示文件信息。正式系统的身份与操作权限由登录用户和服务端决定。</p>
+  </main>
+</body>
+</html>

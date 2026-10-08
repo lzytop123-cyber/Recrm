@@ -172,6 +172,20 @@ def _assert_can_associate_contract(user: User, contract: Contract) -> None:
     raise HTTPException(status_code=403, detail="只能关联自己负责或创建的合同立项")
 
 
+def contract_initiation_gate(db: Session, user: User, contract_id: int) -> dict:
+    """项目挂接仅查询本人合同的类型、状态与到账门槛，不暴露金额。"""
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="合同不存在")
+    _assert_can_associate_contract(user, contract)
+    return {
+        "id": contract.id,
+        "contract_type": contract.contract_type,
+        "status": contract.status,
+        "payment_ok": _contract_confirmed_paid(db, contract.id) > 0,
+    }
+
+
 def assert_contract_ready_for_initiation(
     db: Session,
     contract: Contract,

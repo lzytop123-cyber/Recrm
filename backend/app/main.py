@@ -4,7 +4,13 @@ FastAPI 入口：挂载路由、CORS、启动时可选种子数据提示。
   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 文档：http://127.0.0.1:8000/docs
 """
+import asyncio
+import sys
 from pathlib import Path
+
+# Windows + psycopg 异步（LangGraph AsyncPostgresSaver）需要 SelectorEventLoop
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +38,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.on_event("startup")
 def _ensure_schema() -> None:

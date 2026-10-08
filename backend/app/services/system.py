@@ -16,7 +16,7 @@ from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.system import MenuVisibilityBulkUpdate, RoleCreate, RoleUpdate
-from app.services.menu import MENU_CATALOG, PHASE2_HIDDEN_MENU_PATHS
+from app.services.menu import PHASE2_HIDDEN_MENU_PATHS, iter_menu_leaves
 
 PROTECTED_ROLE_CODES = {"admin"}
 
@@ -193,7 +193,7 @@ def list_menu_visibility(db: Session) -> dict:
     role_codes = {r.code for r in roles}
 
     menus: list[dict] = []
-    for item in MENU_CATALOG:
+    for item in iter_menu_leaves():
         path = item["path"]
         if path in PHASE2_HIDDEN_MENU_PATHS:
             continue
@@ -228,7 +228,7 @@ def list_menu_visibility(db: Session) -> dict:
 def replace_menu_visibility(db: Session, payload: MenuVisibilityBulkUpdate) -> dict:
     """整表替换。前端提交完整的 override 集合，服务端按 (role_code, menu_path) 幂等 upsert，
     未包含的组合会被删除。"""
-    valid_paths = {item["path"] for item in MENU_CATALOG} - PHASE2_HIDDEN_MENU_PATHS
+    valid_paths = {item["path"] for item in iter_menu_leaves()} - PHASE2_HIDDEN_MENU_PATHS
     valid_roles = {r.code for r in db.query(Role).all()}
 
     seen: set[tuple[str, str]] = set()

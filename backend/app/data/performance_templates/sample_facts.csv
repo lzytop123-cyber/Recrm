@@ -1,0 +1,3 @@
+employee,metric_key,occurred_on,value,unit,source_record_id,project_ref
+合成员工甲,market.signed_clients,2026-09-01,4,customer,SYN-001,P1
+合成员工甲,market.valid_leads,2026-09-01,,count,SYN-002,P1

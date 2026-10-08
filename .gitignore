@@ -6,7 +6,11 @@ __pycache__/
 .Python
 backend/.venv/
 backend/venv/
+.venv/
 venv/
+1/
+frontend.zip
+backend/.audit-tmp*/
 .env
 backend/.env
 backend/.env.bak*
