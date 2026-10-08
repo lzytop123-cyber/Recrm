@@ -185,6 +185,15 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
     if cycle is None:
         raise HTTPException(status_code=404, detail="考核周期不存在")
     template = require_published_for_launch(db, template_id, cycle=cycle)
+    # 入职考核按「人 + 阶段」开案，不参与部门/岗位匹配，给出明确业务提示
+    if (template.assessment_kind or "").strip() == "onboarding":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KPI_ONBOARDING_NOT_MATCHABLE",
+                "message": "入职考核模板按「人 + 阶段」开案，不通过部门/岗位匹配；请在入职阶段考核中开案",
+            },
+        )
     scopes = (
         db.query(PerformanceTemplateScope)
         .filter(PerformanceTemplateScope.template_id == template.id)
