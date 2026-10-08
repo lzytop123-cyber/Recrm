@@ -482,6 +482,11 @@ def open_stage_case(db: Session, payload: dict) -> dict:
     employee = db.query(User).filter(User.id == user_id).first()
     if employee is None:
         raise HTTPException(status_code=404, detail="员工不存在")
+    if not employee.manager_id:
+        raise HTTPException(status_code=422, detail={
+            "code": "KPI_ONBOARDING_MANAGER_REQUIRED",
+            "message": f"{employee.real_name} 未配置直属主管，无法生成评分流程；请先在员工档案里补上直属主管",
+        })
 
     cycle = _resolve_onboard_cycle(db, payload, template)
     hire_id = int(payload.get("hire_event_id") or 0)

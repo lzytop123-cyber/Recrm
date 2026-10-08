@@ -129,8 +129,11 @@ ROLES_V2: list[tuple[str, str, str, list[str]]] = [
     ]),
     ("人力资源", "hr", "company", [
         "lead:view", "approval:center", "org:view", "org:manage",
-        "okr:view", "kpi:view", "kpi:template:manage", "kpi:cycle:manage",
+        "okr:view", "kpi:view", "kpi:template:manage", "kpi:cycle:manage", "kpi:onboarding:manage",
         "ticket:view", "schedule:view", "knowledge:view", "knowledge:manage",
+    ]),
+    ("培训部负责人", "training_lead", "company", [
+        "okr:view", "kpi:view", "kpi:onboarding:manage",
     ]),
     ("普通员工", "staff", "personal", [
         "lead:view", "okr:view", "kpi:view", "timesheet:view",

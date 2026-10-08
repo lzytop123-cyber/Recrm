@@ -75,6 +75,7 @@ PERMISSIONS = [
     ("绩效模板管理", "kpi:template:manage", "kpi", "HR 建基础模板、审批部门模板、归档周期"),
     ("绩效模板编写", "kpi:template:write", "kpi", "部门 fork/编辑本部门绩效模板"),
     ("绩效周期管理", "kpi:cycle:manage", "kpi", "建周期、批量生成考核单、归档"),
+    ("入职考核管理", "kpi:onboarding:manage", "kpi", "培训部/HR 开立入职阶段考核并复核（仅限入职考核，不涉及月度考核）"),
     ("工时查看", "timesheet:view", "timesheet", "查看/填报工时；挂项目走 /directory"),
     ("工时审批", "timesheet:approve", "timesheet", "审批工时"),
     ("协作工单（使用）", "ticket:view", "ticket", "工单列表与处理；销售默认可接单但不进侧栏全量菜单"),

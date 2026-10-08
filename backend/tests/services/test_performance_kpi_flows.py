@@ -161,6 +161,9 @@ def test_market_score_is_not_clamped_and_onboarding_skips_pay(db_session: Sessio
 def test_feedback_stage_observation_and_lecturer(db_session: Session) -> None:
     subject = _user(db_session, "lecturer_kpi")
     reviewer = _user(db_session, "reviewer_kpi")
+    # 入职考核开案要求员工有直属主管（否则会卡在待主管评分）
+    subject.manager_id = reviewer.id
+    db_session.commit()
     cycle = _cycle(db_session)
     created = performance_kpi.create_feedback(db_session, {
         "form_type": "complaint",
@@ -221,3 +224,62 @@ def test_feedback_stage_observation_and_lecturer(db_session: Session) -> None:
     assert released["status"] == "released"
     assert held["status"] == "hr_todo"
     assert "工资" in (held["hr_todo"] or "")
+
+def test_open_stage_case_requires_manager(db_session: Session) -> None:
+    """入职考核开案：员工没有直属主管时应被拒绝（否则会卡在待主管评分）。"""
+    subject = _user(db_session, "onboard_no_manager")
+    assert subject.manager_id is None
+    load_drafts(db_session)
+    onboard = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_SALES_D5")
+        .one()
+    )
+    onboard.status = "published"
+    db_session.commit()
+    with pytest.raises(HTTPException) as exc:
+        performance_kpi.open_stage_case(
+            db_session,
+            {"user_id": subject.id, "stage": "D5", "role_kind": "SALES"},
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "KPI_ONBOARDING_MANAGER_REQUIRED"
+
+
+def test_onboarding_review_permission_is_type_aware(db_session: Session) -> None:
+    """入职考核复核权限：培训部负责人可复核；同人自审时交给 HR；月度考核不受影响。"""
+    from types import SimpleNamespace
+
+    from app.models.permission import Permission
+    from app.models.role import Role
+    from app.services import performance_assessment_flow as flow
+
+    training_lead = _user(db_session, "training_lead_user")
+    hr_user = _user(db_session, "hr_review_user")
+    onboard_perm = db_session.query(Permission).filter(Permission.code == "kpi:onboarding:manage").first()
+    if onboard_perm is None:
+        onboard_perm = Permission(name="入职考核管理", code="kpi:onboarding:manage", module="kpi")
+        db_session.add(onboard_perm)
+        db_session.commit()
+    role = Role(name="培训部负责人", code="training_lead", data_scope="company", module_scopes={})
+    db_session.add(role)
+    hr_role = Role(name="人力资源", code="hr", data_scope="company", module_scopes={})
+    db_session.add(hr_role)
+    db_session.commit()
+    role.permissions = [onboard_perm]
+    training_lead.roles = [role]
+    hr_user.roles = [hr_role]
+    db_session.commit()
+
+    def asmt(kind: str, manager_id: int | None):
+        return SimpleNamespace(assessment_kind=kind, manager_id=manager_id)
+
+    # 培训部负责人可复核「别人带的新员工」的入职考核
+    assert flow._can_review(asmt("onboarding", 999), training_lead) is True
+    # 但不能复核「自己带的新员工」（防自审 → HR 兜底）
+    assert flow._can_review(asmt("onboarding", training_lead.id), training_lead) is False
+    # 月度考核不受影响：培训部负责人没有复核权
+    assert flow._can_review(asmt("monthly", 999), training_lead) is False
+    # HR 两种都能复核（含自审场景兜底）
+    assert flow._can_review(asmt("onboarding", hr_user.id), hr_user) is True
+    assert flow._can_review(asmt("monthly", hr_user.id), hr_user) is True

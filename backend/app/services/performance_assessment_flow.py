@@ -149,6 +149,24 @@ def _is_hr(user: User) -> bool:
     )
 
 
+def _can_review(assessment: PerformanceAssessment, user: User) -> bool:
+    """谁能操作「复核」节点。
+
+    - 月度等其他考核：维持原逻辑（HR / 管理员 / 模板管理权限）。
+    - 入职考核(onboarding)：培训部负责人（kpi:onboarding:manage）也可复核 —— 对应培训部制度里的
+      「直属领导 + 培训部」双重考核。但若复核人与该单的评分主管是同一人（培训部内部新员工），
+      则不给复核权限，交由 HR 兜底，避免自己评自己审。
+    """
+    if (assessment.assessment_kind or "") != "onboarding":
+        return _is_hr(user)
+    codes = collect_permission_codes(user)
+    if not ("*" in codes or "kpi:onboarding:manage" in codes or _is_hr(user)):
+        return False
+    if assessment.manager_id and assessment.manager_id == user.id and not _is_hr(user):
+        return False
+    return True
+
+
 def _check_revision(assessment: PerformanceAssessment, revision: int) -> None:
     if int(revision) != int(assessment.revision or 1):
         raise HTTPException(
@@ -204,12 +222,13 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
     is_employee = assessment.user_id == user.id
     is_manager = assessment.manager_id == user.id
     is_hr = _is_hr(user)
+    can_review = _can_review(assessment, user)
 
     if status == ASSESS_EMPLOYEE_PENDING and is_employee:
         actions.extend(["save_material_draft", "employee_submit"])
     if status == ASSESS_MANAGER_PENDING and is_manager:
         actions.extend(["manager_submit", "return_material", "verify_material"])
-    if status == ASSESS_HR_REVIEW_PENDING and is_hr:
+    if status == ASSESS_HR_REVIEW_PENDING and can_review:
         actions.extend(["hr_approve", "hr_return"])
     if status == ASSESS_EMPLOYEE_CONFIRM_PENDING and is_employee:
         actions.extend(["result_confirm", "appeal"])
@@ -512,8 +531,8 @@ def hr_review(
 ) -> dict:
     assessment = _assessment(db, assessment_id)
     _check_revision(assessment, revision)
-    if not _is_hr(user):
-        raise HTTPException(status_code=403, detail="需要 HR 权限")
+    if not _can_review(assessment, user):
+        raise HTTPException(status_code=403, detail="需要 HR 或培训部复核权限")
     if assessment.status != ASSESS_HR_REVIEW_PENDING:
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前不在 HR 复核"})
     from_status = assessment.status

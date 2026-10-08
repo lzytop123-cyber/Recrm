@@ -13,6 +13,8 @@ from app.services import performance_kpi
 
 router = APIRouter(prefix="/performance", tags=["绩效KPI"])
 MANAGE = PermissionChecker(["kpi:template:manage"])
+# 入职考核：培训部负责人(kpi:onboarding:manage)或 HR/管理员均可开案
+ONBOARD_MANAGE = PermissionChecker(["kpi:onboarding:manage", "kpi:template:manage"], any_of=True)
 BATCH_VIEW = PermissionChecker(["kpi:template:manage", "kpi:view"], any_of=True)
 HISTORY_VIEW = PermissionChecker(["kpi:template:manage", "kpi:view", "okr:view"], any_of=True)
 
@@ -566,7 +568,7 @@ def lecturer_status(
 @router.get("/stage-cases", summary="入职阶段考核")
 def list_stage_cases(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(MANAGE)],
+    _: Annotated[User, Depends(ONBOARD_MANAGE)],
 ) -> list:
     return performance_kpi.list_stage_cases(db)
 
@@ -574,7 +576,7 @@ def list_stage_cases(
 @router.get("/stage-cases/candidates", summary="入职考核待开案候选(近 N 天入职员工)")
 def list_onboarding_candidates(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(MANAGE)],
+    _: Annotated[User, Depends(ONBOARD_MANAGE)],
     within_days: int = 180,
 ) -> dict:
     return performance_kpi.list_onboarding_candidates_api(db, within_days=within_days)
@@ -584,7 +586,7 @@ def list_onboarding_candidates(
 def open_stage_case(
     payload: StageIn,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(MANAGE)],
+    _: Annotated[User, Depends(ONBOARD_MANAGE)],
 ) -> dict:
     return performance_kpi.open_stage_case(db, payload.model_dump())
 
