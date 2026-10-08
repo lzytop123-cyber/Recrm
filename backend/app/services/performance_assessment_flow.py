@@ -17,6 +17,7 @@ from app.models.performance import (
     ASSESS_EMPLOYEE_PENDING,
     ASSESS_HR_REVIEW_PENDING,
     ASSESS_MANAGER_PENDING,
+    ASSESS_TRAINING_PENDING,
     PerformanceActionLog,
     PerformanceAppeal,
     PerformanceAssessment,
@@ -228,6 +229,8 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
         actions.extend(["save_material_draft", "employee_submit"])
     if status == ASSESS_MANAGER_PENDING and is_manager:
         actions.extend(["manager_submit", "return_material", "verify_material"])
+    if status == ASSESS_TRAINING_PENDING and _can_training_score(assessment, user):
+        actions.append("training_submit")
     if status == ASSESS_HR_REVIEW_PENDING and can_review:
         actions.extend(["hr_approve", "hr_return"])
     if status == ASSESS_EMPLOYEE_CONFIRM_PENDING and is_employee:
@@ -250,6 +253,7 @@ def next_step_label(assessment: PerformanceAssessment) -> str:
     mapping = {
         ASSESS_EMPLOYEE_PENDING: "员工填写实际并提交",
         ASSESS_MANAGER_PENDING: "各部门主管评分",
+        ASSESS_TRAINING_PENDING: "培训部评分",
         ASSESS_HR_REVIEW_PENDING: "HR 复核",
         ASSESS_EMPLOYEE_CONFIRM_PENDING: "员工结果确认",
         ASSESS_APPEAL_PENDING: "处理申诉",
@@ -359,6 +363,11 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         "full_points": str(full_points),
         "scoring_mode": scoring_mode,
         "hr_review_required": _hr_review_required(db, assessment),
+        # 双评分（入职考核）：区分两个评分人，供前端分区块展示
+        "assessment_kind": assessment.assessment_kind,
+        "is_onboarding": _is_onboarding(assessment),
+        "training_required": _has_training_items(db, assessment.id),
+        "can_training_score": _can_training_score(assessment, user),
         "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
     }
 
@@ -493,10 +502,87 @@ def manager_submit(
         raise HTTPException(status_code=403, detail="普通员工不能调用主管动作")
     _apply_actuals(db, assessment_id, actuals, required=False)
     materials.apply_system_scores(db, assessment_id)
-    _apply_item_scores(db, assessment_id, scores)
+    # 双评分：主管只评自己负责的维度（培训部维度由培训部评分节点处理）
+    split = _has_training_items(db, assessment_id)
+    missing = _apply_item_scores(
+        db, assessment_id, scores, only_evaluator="manager" if split else None
+    )
+    if split and missing:
+        db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KPI_ITEM_SCORES_REQUIRED",
+                "message": "还有未评分的指标：" + "、".join(i.name for i in missing),
+                "items": [{"id": i.id, "name": i.name} for i in missing],
+            },
+        )
     _recalc_assessment_total(db, assessment)
     if comment:
         assessment.manager_comment = comment
+    from_status = assessment.status
+    if split and _is_onboarding(assessment):
+        # 入职考核：主管评完 → 培训部评分
+        assessment.status = ASSESS_TRAINING_PENDING
+        assessment.current_handler_type = "training"
+        assessment.current_handler_id = None
+    elif _hr_review_required(db, assessment):
+        assessment.status = ASSESS_HR_REVIEW_PENDING
+        assessment.current_handler_type = "hr"
+        assessment.current_handler_id = None
+    else:
+        assessment.status = ASSESS_EMPLOYEE_CONFIRM_PENDING
+        assessment.current_handler_type = "employee"
+        assessment.current_handler_id = assessment.user_id
+    _bump(assessment)
+    _log(
+        db,
+        assessment,
+        action="manager_submit",
+        actor_id=user.id,
+        from_status=from_status,
+        to_status=assessment.status,
+        note=comment,
+    )
+    db.commit()
+    return detail_payload(db, assessment, user)
+
+
+def training_submit(
+    db: Session,
+    assessment_id: int,
+    user: User,
+    *,
+    revision: int,
+    scores: Optional[list[dict]] = None,
+    comment: Optional[str] = None,
+) -> dict:
+    """入职考核专属：培训部评分节点（只评 evaluator=training 的维度）。"""
+    assessment = _assessment(db, assessment_id)
+    _check_revision(assessment, revision)
+    if assessment.status != ASSESS_TRAINING_PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "KPI_ACTION_NOT_ALLOWED",
+                "message": "当前状态不可培训部提交",
+                "details": {"status": _public_status(assessment.status)},
+            },
+        )
+    if not _can_training_score(assessment, user):
+        raise HTTPException(status_code=403, detail="需要培训部（或 HR）权限")
+    missing = _apply_item_scores(db, assessment_id, scores, only_evaluator="training")
+    if missing:
+        db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KPI_ITEM_SCORES_REQUIRED",
+                "message": "还有未评分的指标：" + "、".join(i.name for i in missing),
+                "items": [{"id": i.id, "name": i.name} for i in missing],
+            },
+        )
+    _recalc_assessment_total(db, assessment)
     from_status = assessment.status
     if _hr_review_required(db, assessment):
         assessment.status = ASSESS_HR_REVIEW_PENDING
@@ -510,7 +596,7 @@ def manager_submit(
     _log(
         db,
         assessment,
-        action="manager_submit",
+        action="training_submit",
         actor_id=user.id,
         from_status=from_status,
         to_status=assessment.status,
@@ -571,34 +657,79 @@ def result_confirm(db: Session, assessment_id: int, user: User, *, revision: int
     return detail_payload(db, assessment, user)
 
 
-def _apply_item_scores(db: Session, assessment_id: int, scores: Optional[list[dict]]) -> None:
-    if not scores:
-        return
-    for s in scores:
-        raw = s.get("score")
-        if raw is None:
-            continue
-        if isinstance(raw, str) and not raw.strip():
-            continue
-        item = (
-            db.query(PerformanceAssessmentItem)
-            .filter(
-                PerformanceAssessmentItem.id == int(s["item_id"]),
-                PerformanceAssessmentItem.assessment_id == assessment_id,
+def _is_onboarding(assessment: PerformanceAssessment) -> bool:
+    return (assessment.assessment_kind or "") == "onboarding"
+
+
+def _item_evaluator(item: PerformanceAssessmentItem) -> str:
+    return (item.evaluator or "manager").strip() or "manager"
+
+
+def _items_by_evaluator(db: Session, assessment_id: int, evaluator: str) -> list[PerformanceAssessmentItem]:
+    rows = (
+        db.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == assessment_id)
+        .all()
+    )
+    return [i for i in rows if _item_evaluator(i) == evaluator]
+
+
+def _has_training_items(db: Session, assessment_id: int) -> bool:
+    return bool(_items_by_evaluator(db, assessment_id, "training"))
+
+
+def _can_training_score(assessment: PerformanceAssessment, user: User) -> bool:
+    """培训部评分人：仅入职考核，且需要 kpi:onboarding:manage（培训部负责人）或 HR/管理员。"""
+    if not _is_onboarding(assessment):
+        return False
+    codes = collect_permission_codes(user)
+    return "*" in codes or "kpi:onboarding:manage" in codes or _is_hr(user)
+
+
+def _apply_item_scores(
+    db: Session,
+    assessment_id: int,
+    scores: Optional[list[dict]],
+    *,
+    only_evaluator: Optional[str] = None,
+) -> list[PerformanceAssessmentItem]:
+    """写入评分。only_evaluator 为空时按历史行为写全部；否则只写属于该评分人的指标。
+
+    返回本次未评分（仍为空）的指标，交调用方决定是否阻断提交。
+    """
+    scored_ids: set[int] = set()
+    if scores:
+        for s in scores:
+            raw = s.get("score")
+            if raw is None:
+                continue
+            if isinstance(raw, str) and not raw.strip():
+                continue
+            item = (
+                db.query(PerformanceAssessmentItem)
+                .filter(
+                    PerformanceAssessmentItem.id == int(s["item_id"]),
+                    PerformanceAssessmentItem.assessment_id == assessment_id,
+                )
+                .first()
             )
-            .first()
-        )
-        if item is None:
-            continue
-        try:
-            score = Decimal(str(raw))
-        except Exception:
-            continue
-        item.leader_score = score
-        if s.get("comment") is not None:
-            item.leader_comment = s.get("comment")
-        item.awarded_points = score
-        item.final_score = score
+            if item is None:
+                continue
+            if only_evaluator is not None and _item_evaluator(item) != only_evaluator:
+                continue
+            try:
+                score = Decimal(str(raw))
+            except Exception:
+                continue
+            item.leader_score = score
+            if s.get("comment") is not None:
+                item.leader_comment = s.get("comment")
+            item.awarded_points = score
+            item.final_score = score
+            scored_ids.add(item.id)
+    if only_evaluator is None:
+        return []
+    return [i for i in _items_by_evaluator(db, assessment_id, only_evaluator) if i.id not in scored_ids]
 
 
 def _recalc_assessment_total(db: Session, assessment: PerformanceAssessment) -> Decimal:

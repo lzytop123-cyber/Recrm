@@ -617,6 +617,8 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
                 "score_label": getattr(item, "score_label", None),
                 "handling_mode": getattr(item, "handling_mode", None),
                 "scoring_type": getattr(item, "scoring_type", None),
+                # 评分人：manager=直属主管 / training=培训部（空值按 manager 处理）
+                "evaluator": item.evaluator or "manager",
             }
         )
     return out

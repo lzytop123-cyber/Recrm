@@ -596,6 +596,7 @@ def open_stage_case(db: Session, payload: dict) -> dict:
                 metric_key=it.metric_key,
                 max_points=it.max_points,
                 data_state="pending",
+                evaluator=getattr(it, "evaluator", None),
             )
         )
 

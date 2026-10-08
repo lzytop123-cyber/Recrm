@@ -38,6 +38,8 @@ ASSESS_COMPLETED = "completed"
 ASSESS_EMPLOYEE_PENDING = "employee_pending"
 ASSESS_MANAGER_PENDING = "manager_pending"
 ASSESS_HR_REVIEW_PENDING = "hr_review_pending"
+# 入职考核专属：培训部评分节点（直属主管评完 → 培训部评分 → HR 复核）
+ASSESS_TRAINING_PENDING = "training_pending"
 ASSESS_EMPLOYEE_CONFIRM_PENDING = "employee_confirm_pending"
 ASSESS_APPEAL_PENDING = "appeal_pending"
 
@@ -252,6 +254,8 @@ class PerformanceTemplateItem(Base):
     metric_key: Mapped[Optional[str]] = mapped_column(String(80))
     max_points: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
     rule_config_json: Mapped[Optional[str]] = mapped_column(Text)
+    # 评分人标注：manager=直属主管 / training=培训部（空值按 manager 处理）
+    evaluator: Mapped[Optional[str]] = mapped_column(String(20))
     indicator_definition_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("performance_indicator_definitions.id"), nullable=True, index=True
     )
@@ -299,6 +303,8 @@ class PerformanceAssessmentItem(Base):
     awarded_points: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
     data_state: Mapped[Optional[str]] = mapped_column(String(20))
     calculation_trace_json: Mapped[Optional[str]] = mapped_column(Text)
+    # 评分人标注：manager=直属主管 / training=培训部（空值按 manager 处理）
+    evaluator: Mapped[Optional[str]] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

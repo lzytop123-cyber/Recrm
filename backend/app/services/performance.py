@@ -602,19 +602,52 @@ def list_team_assessments(
     period_label: Optional[str] = None,
 ) -> list[PerformanceAssessment]:
     ids = _direct_report_ids(db, user.id) if scope == "direct" else _dept_report_ids(db, user.id)
-    if not ids:
-        return []
-    q = db.query(PerformanceAssessment).filter(PerformanceAssessment.user_id.in_(ids))
-    if period_label:
-        cycle = (
-            db.query(PerformanceCycle)
-            .filter(PerformanceCycle.period_label == period_label)
-            .first()
+    # 入职考核「培训部评分」节点不属于直属下属，按权限把待办一并列出（培训部负责人/HR）
+    from app.core.rbac import collect_permission_codes
+
+    codes = collect_permission_codes(user)
+    can_onboard = "*" in codes or "kpi:onboarding:manage" in codes
+
+    rows: list[PerformanceAssessment] = []
+    if ids:
+        q = db.query(PerformanceAssessment).filter(PerformanceAssessment.user_id.in_(ids))
+        if period_label:
+            cycle = (
+                db.query(PerformanceCycle)
+                .filter(PerformanceCycle.period_label == period_label)
+                .first()
+            )
+            if not cycle:
+                return []
+            q = q.filter(PerformanceAssessment.cycle_id == cycle.id)
+        rows = q.order_by(PerformanceAssessment.id.desc()).all()
+
+    seen = {r.id for r in rows}
+    if can_onboard:
+        from app.models.performance import ASSESS_TRAINING_PENDING
+
+        extra_q = db.query(PerformanceAssessment).filter(
+            PerformanceAssessment.assessment_kind == "onboarding",
+            PerformanceAssessment.status == ASSESS_TRAINING_PENDING,
         )
-        if not cycle:
-            return []
-        q = q.filter(PerformanceAssessment.cycle_id == cycle.id)
-    rows = q.order_by(PerformanceAssessment.id.desc()).all()
+        if period_label:
+            cycle = (
+                db.query(PerformanceCycle)
+                .filter(PerformanceCycle.period_label == period_label)
+                .first()
+            )
+            if cycle:
+                extra_q = extra_q.filter(PerformanceAssessment.cycle_id == cycle.id)
+            else:
+                extra_q = extra_q.filter(False)
+        for r in extra_q.order_by(PerformanceAssessment.id.desc()).all():
+            if r.id not in seen:
+                seen.add(r.id)
+                rows.append(r)
+        rows.sort(key=lambda r: r.id, reverse=True)
+
+    if not rows:
+        return []
     cycle_map = {
         c.id: c
         for c in db.query(PerformanceCycle)

@@ -410,6 +410,7 @@ def _launch_one_batch(
                     metric_key=it.metric_key,
                     max_points=it.max_points,
                     data_state="pending",
+                    evaluator=getattr(it, "evaluator", None),
                 )
             )
         db.add(

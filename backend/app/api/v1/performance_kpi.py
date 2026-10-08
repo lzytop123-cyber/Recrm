@@ -748,6 +748,25 @@ def manager_submit(
     )
 
 
+@router.post("/assessments/{assessment_id}/training-submit", summary="培训部提交评分（入职考核）")
+def training_submit(
+    assessment_id: int,
+    payload: ManagerSubmitIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    from app.services import performance_assessment_flow as flow
+
+    return flow.training_submit(
+        db,
+        assessment_id,
+        user,
+        revision=payload.revision,
+        scores=payload.scores,
+        comment=payload.comment,
+    )
+
+
 @router.post("/assessments/{assessment_id}/hr-review", summary="HR复核")
 def hr_review(
     assessment_id: int,
