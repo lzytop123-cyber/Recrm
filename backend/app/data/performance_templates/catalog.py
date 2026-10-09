@@ -604,7 +604,9 @@ FAMILIES = [
                       "event_type": "协同支持业务部门并促成签约"}},
             {"metric_key": "lecturer.revenue", "name": "集团业务收入提成", "max_points": None,
              "hint": "根据集团业务收入提成",
-             "rule": {"type": "event_bonus", "points_per": "1", "per_amount": "100", "cap": None,
+             # 1 分/次（与其余加减分项口径一致）。历史上写成 points_per=1 + per_amount=100
+             # （分/100元），导致填 1 次只算 0.01 分 —— 2026-10-09 修正
+             "rule": {"type": "event_bonus", "points_per_event": "1", "cap": None,
                       "event_type": "根据集团业务收入提成"}},
             {"metric_key": "lecturer.talk_good", "name": "宣讲/试讲评分＞3", "max_points": None,
              "hint": "单次宣讲/模拟试讲最终评分＞3分",
