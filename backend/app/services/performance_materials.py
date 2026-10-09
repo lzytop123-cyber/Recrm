@@ -581,6 +581,7 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
     enrich_assessment_items(db, assessment_id, items)
     tip_ids = [i.template_item_id for i in items if i.template_item_id]
     hint_by_tpl: dict[int, Optional[str]] = {}
+    rule_by_tpl: dict[int, dict] = {}
     if tip_ids:
         for tip in (
             db.query(PerformanceTemplateItem)
@@ -588,8 +589,27 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
             .all()
         ):
             hint_by_tpl[tip.id] = tip.hint
+            if tip.rule_config_json:
+                try:
+                    parsed = json.loads(tip.rule_config_json)
+                    if isinstance(parsed, dict):
+                        rule_by_tpl[tip.id] = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
     out: list[dict[str, Any]] = []
     for item in items:
+        # 事件台账（讲师加减分）：单次分值只存在模板 rule_config_json.points_per_event 里，
+        # 考核单指标没有 rule 列 → 这里回填 target_value，前端「单次加减分/得分」才有值。
+        target_value = item.target_value
+        event_points = None
+        rule = rule_by_tpl.get(item.template_item_id) if item.template_item_id else None
+        if isinstance(rule, dict) and rule.get("type") in ("event_bonus", "event_deduction"):
+            per_event = rule.get("points_per_event")
+            if per_event not in (None, ""):
+                per_amount = rule.get("per_amount")
+                event_points = f"{per_event}/{per_amount}" if per_amount else str(per_event)
+                if not (target_value or "").strip():
+                    target_value = event_points
         out.append(
             {
                 "id": item.id,
@@ -600,7 +620,8 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
                 "weight": str(item.weight) if item.weight is not None else None,
                 "data_source": item.data_source,
                 "source_ref": item.source_ref,
-                "target_value": item.target_value,
+                "target_value": target_value,
+                "event_points": event_points,
                 "score_rule": item.score_rule,
                 "hint": hint_by_tpl.get(item.template_item_id) if item.template_item_id else None,
                 "metric_key": item.metric_key,
