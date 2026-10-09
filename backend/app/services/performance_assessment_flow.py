@@ -290,6 +290,8 @@ def _is_hr(user: User) -> bool:
         or "kpi:assessment:manage" in codes
         or "kpi:template:manage" in codes
         or "admin" in role_codes
+        # 角色码兜底：HR 必须能复核/签三方确认，不能因为后台改了权限码就失去签字权
+        or "hr" in role_codes
     )
 
 

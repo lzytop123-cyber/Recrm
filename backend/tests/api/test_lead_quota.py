@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.models.department import Department
 from app.models.lead import LEAD_STATUS_PENDING, Lead, LeadLog
+from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.lead import LeadCreate
@@ -20,6 +21,16 @@ def _seed_sales_user(db: Session) -> User:
         role = Role(name="销售", code="sales", data_scope="personal")
         db.add(role)
         db.flush()
+    # 领取公海 / 自跟进需要 lead:self_follow（与 seed_roles_v2 销售角色一致）
+    for code, name in (("lead:view", "查看线索"), ("lead:self_follow", "线索自跟进")):
+        perm = db.query(Permission).filter(Permission.code == code).first()
+        if not perm:
+            perm = Permission(name=name, code=code, module="lead")
+            db.add(perm)
+            db.flush()
+        if perm not in role.permissions:
+            role.permissions.append(perm)
+    db.flush()
     dept = db.query(Department).filter(Department.code == "ROOT").first()
     if not dept:
         dept = Department(name="总公司", code="ROOT")

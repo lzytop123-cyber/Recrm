@@ -191,6 +191,7 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
         is_admin
         or "kpi:template:manage" in codes
         or _has(user, "kpi:cycle:manage")
+        or "hr" in role_codes  # 角色码兜底，保证 HR 能看到「待HR确认入职结果」
     )
     for row in confirm_pending:
         try:
