@@ -60,10 +60,7 @@ def _can_review_receipt(user: User) -> bool:
 
 
 def _can_resolve_appeal(user: User) -> bool:
-    if user_can(user, "org:manage"):
-        return True
-    role_codes = {r.code for r in user.roles}
-    return bool(role_codes & {"executive", "middle_manager", "hr_supervisor"})
+    return user_can(user, "org:manage")
 
 
 def _contract_brief(db: Session, contract_id: int | None) -> str:

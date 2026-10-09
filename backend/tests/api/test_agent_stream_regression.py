@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.api.v1 import agent as agent_api
 from app.core.security import create_access_token
@@ -122,3 +122,108 @@ def test_model_failure_does_not_expose_exception(monkeypatch, db_session, active
     assert "secret-api-key" not in text
     assert "private-host" not in text
     assert text
+
+
+def test_new_message_after_unconfirmed_write_cancels_it(monkeypatch, db_session, active_user):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agent import graph
+
+    class WriteTool:
+        _requires_confirmation = True
+        _confirmation_prompt = "write"
+
+        def invoke(self, args):
+            pytest.fail("unconfirmed write must not run")
+
+    monkeypatch.setitem(graph.TOOLS_MAP, "write_one", WriteTool())
+    replies = iter([
+        AIMessage(content="", tool_calls=[{"name": "write_one", "id": "one", "args": {}, "type": "tool_call"}]),
+        AIMessage(content="ok"),
+    ])
+    seen = []
+
+    class LLM:
+        def invoke(self, messages):
+            seen.append(messages)
+            return next(replies)
+
+    monkeypatch.setattr(graph, "get_llm", lambda **kwargs: LLM())
+    app = graph.build_graph(MemorySaver())
+
+    async def get_graph():
+        return app
+
+    monkeypatch.setattr(agent_api, "get_agent_app", get_graph)
+    config = {"configurable": {"thread_id": "t", "db": db_session, "user": active_user}}
+
+    async def run():
+        await app.ainvoke({"messages": [HumanMessage(content="create")], "conversation_id": "t"}, config)
+        assert await agent_api._interrupt_payload(config)
+        await agent_api._cancel_pending(config)
+        assert not await agent_api._interrupt_payload(config)
+        await app.ainvoke({"messages": [HumanMessage(content="never mind")]}, config)
+
+    asyncio.run(run())
+    sent = seen[-1]
+    assert [m.tool_call_id for m in sent if isinstance(m, ToolMessage)] == ["one"]
+    assert sent[-1].content == "never mind"
+
+
+def test_recent_turns_starts_on_user_message():
+    from app.agent.graph import recent_turns
+
+    messages = []
+    for i in range(10):
+        messages += [
+            HumanMessage(content=f"q{i}"),
+            AIMessage(content="", tool_calls=[{"name": "t", "id": f"c{i}", "args": {}, "type": "tool_call"}]),
+            ToolMessage(content="r", tool_call_id=f"c{i}"),
+            AIMessage(content=f"a{i}"),
+        ]
+    kept = recent_turns(messages, turns=3)
+    assert kept[0].content == "q7"
+    assert len(kept) == 12
+    assert recent_turns(messages[:4], turns=3) == messages[:4]
+
+
+def test_stream_counts_tokens(monkeypatch):
+    class Graph:
+        async def astream_events(self, *args, **kwargs):
+            for total in (30, 12):
+                yield {
+                    "event": "on_chat_model_end",
+                    "data": {"output": AIMessage(content="", usage_metadata={
+                        "input_tokens": total - 2, "output_tokens": 2, "total_tokens": total,
+                    })},
+                }
+
+        async def aget_state(self, config):
+            return SimpleNamespace(values={"messages": []}, interrupts=[])
+
+    async def get_graph():
+        return Graph()
+
+    monkeypatch.setattr(agent_api, "get_agent_app", get_graph)
+    usage = {}
+
+    async def collect():
+        return [e async for e in agent_api._stream_graph({}, {}, "c", usage)]
+
+    asyncio.run(collect())
+    assert usage["tokens"] == 42
+
+
+def test_chat_respects_scene_switch_and_budget(client, db_session, active_user):
+    from app.services import ai_admin
+
+    headers = {"Authorization": f"Bearer {create_access_token(str(active_user.id))}"}
+    ai_admin.set_scene(db_session, active_user, "agent_chat", False)
+    assert client.post("/api/v1/agent/chat", json={"message": "hi"}, headers=headers).status_code == 409
+
+    ai_admin.set_scene(db_session, active_user, "agent_chat", True)
+    ai_admin.save_budgets(
+        db_session, active_user,
+        [{"scope": "user", "scope_id": active_user.id, "monthly_tokens": 0}], None,
+    )
+    assert client.post("/api/v1/agent/chat", json={"message": "hi"}, headers=headers).status_code == 429

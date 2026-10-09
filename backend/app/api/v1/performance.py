@@ -201,6 +201,16 @@ def disable_template(
     return _tpl_out(tpl_service.disable_template(db, template_id, current_user))
 
 
+@router.delete("/templates/{template_id}", status_code=204, summary="删除未使用的模板")
+def delete_template(
+    template_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["kpi:template:manage"]))],
+) -> None:
+    _ = current_user
+    tpl_service.delete_template(db, template_id)
+
+
 # —— 周期 ——
 @router.get("/cycles", response_model=List[PerformanceCycleOut], summary="考核周期列表")
 def list_cycles(

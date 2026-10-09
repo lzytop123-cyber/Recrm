@@ -536,7 +536,7 @@ def test_agent_search_knowledge_tool(db_session: Session) -> None:
         KnowledgeArticle(
             title="报销制度",
             space_id=space.id,
-            content="报销需先提交申请单。",
+            content="1. 提交申请。\n2. 主管签字。\n3. 财务打款。",
             status="published",
         )
     )
@@ -546,6 +546,7 @@ def test_agent_search_knowledge_tool(db_session: Session) -> None:
         miss = search_knowledge.invoke({"question": "火星移民审批流程"})
     assert hit["found"] is True
     assert hit["citations"][0]["title"] == "报销制度"
+    assert "财务打款" in hit["citations"][0]["content"]
     assert miss["found"] is False
 
 

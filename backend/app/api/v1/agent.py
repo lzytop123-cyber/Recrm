@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from typing import Annotated, Any, AsyncIterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 from sqlalchemy.orm import Session, joinedload
 
@@ -16,6 +17,7 @@ from app.agent.graph import get_agent_app
 from app.api.deps import _compute_dept_scope_ids, get_current_user
 from app.config import get_settings
 from app.database import SessionLocal, get_db
+from app.models.agent import AiSceneRun
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.agent import (
@@ -25,6 +27,7 @@ from app.schemas.agent import (
     HistoryMessageOut,
 )
 from app.services import agent_conversation as conv_service
+from app.services import ai_admin
 from app.services.agent_memory import note_user_message
 
 router = APIRouter(prefix="/agent", tags=["智能体"])
@@ -74,6 +77,44 @@ async def _interrupt_payload(config: dict) -> Optional[dict]:
     return value if isinstance(value, dict) else {"raw": value}
 
 
+async def _cancel_pending(config: dict) -> None:
+    """用户没点确认就发新消息：补上取消结果，否则悬空的 tool_calls 会让模型接口报 400。"""
+    if not await _interrupt_payload(config):
+        return
+    app = await get_agent_app()
+    snapshot = await app.aget_state(config)
+    last = ((snapshot.values or {}).get("messages") or [None])[-1]
+    cancels = [
+        ToolMessage(content="用户未确认，已取消操作", tool_call_id=c["id"])
+        for c in (getattr(last, "tool_calls", None) or [])
+    ]
+    # 以 agent 节点身份写入：最后一条是 ToolMessage，路由直接到 END，中断随之清除
+    await app.aupdate_state(config, {"messages": cancels}, as_node="agent")
+
+
+def _record_run(
+    db: Session,
+    user_id: int,
+    conversation_id: str,
+    question: str,
+    answer: str,
+    tokens: int,
+    elapsed_ms: int,
+) -> None:
+    db.add(
+        AiSceneRun(
+            user_id=user_id,
+            scene="agent_chat",
+            target_id=conversation_id[:64],
+            result={"message": question[:200], "summary": answer[:200]},
+            model_version=get_settings().llm_model[:40],
+            tokens=tokens,
+            elapsed_ms=elapsed_ms,
+            cost=0,
+        )
+    )
+
+
 async def _latest_assistant_text(config: dict) -> str:
     app = await get_agent_app()
     snapshot = await app.aget_state(config)
@@ -85,7 +126,7 @@ async def _latest_assistant_text(config: dict) -> str:
 
 
 async def _stream_graph(
-    input_data: Any, config: dict, conversation_id: str
+    input_data: Any, config: dict, conversation_id: str, usage: Optional[dict] = None
 ) -> AsyncIterator[str]:
     # invoke 失败时 agent_node 会直接塞 AIMessage，不会走 on_chat_model_stream
     had_content = False
@@ -99,6 +140,10 @@ async def _stream_graph(
                 if text:
                     had_content = True
                     yield _sse("message", {"type": "content", "text": text})
+            elif kind == "on_chat_model_end" and usage is not None:
+                meta = getattr((event.get("data") or {}).get("output"), "usage_metadata", None)
+                if meta:
+                    usage["tokens"] = usage.get("tokens", 0) + int(meta.get("total_tokens") or 0)
             elif kind == "on_tool_start":
                 yield _sse(
                     "message",
@@ -146,6 +191,9 @@ async def chat(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
+    if not ai_admin.scene_enabled(db, "agent_chat"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="智能助手已停用")
+    ai_admin.assert_budget(db, user)
     if not get_settings().llm_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -172,17 +220,26 @@ async def chat(
             stream_user = _load_agent_user(stream_db, user_id)
             config = _thread_config(user_id, conversation_id, stream_db, stream_user)
             yield _sse("message", {"type": "meta", "conversation_id": conversation_id})
-            async for chunk in _stream_graph(initial_state, config, conversation_id):
+            await _cancel_pending(config)
+            usage: dict = {}
+            started = time.perf_counter()
+            async for chunk in _stream_graph(initial_state, config, conversation_id, usage):
                 yield chunk
             text = await _latest_assistant_text(config)
-            if text and not await _interrupt_payload(config):
+            pending = await _interrupt_payload(config)
+            if text and not pending:
                 conv_row = conv_service.get_or_create(
                     stream_db, user_id, conversation_id, title=req.message[:40]
                 )
                 conv_service.append_message(
                     stream_db, conv_row, role="assistant", content=text
                 )
-                stream_db.commit()
+            _record_run(
+                stream_db, user_id, conversation_id, req.message,
+                "" if pending else text, usage.get("tokens", 0),
+                int((time.perf_counter() - started) * 1000),
+            )
+            stream_db.commit()
         except HTTPException as exc:
             yield _sse("error", {"error": exc.detail})
         finally:
@@ -222,8 +279,10 @@ async def confirm(
             stream_user = _load_agent_user(stream_db, user_id)
             config = _thread_config(user_id, req.conversation_id, stream_db, stream_user)
             yield _sse("message", {"type": "meta", "conversation_id": req.conversation_id})
+            usage: dict = {}
+            started = time.perf_counter()
             async for chunk in _stream_graph(
-                Command(resume=resume_value), config, req.conversation_id
+                Command(resume=resume_value), config, req.conversation_id, usage
             ):
                 yield chunk
             text = await _latest_assistant_text(config)
@@ -232,7 +291,11 @@ async def confirm(
                 conv_service.append_message(
                     stream_db, conv_row, role="assistant", content=text
                 )
-                stream_db.commit()
+            _record_run(
+                stream_db, user_id, req.conversation_id, f"[{resume_value}]", text,
+                usage.get("tokens", 0), int((time.perf_counter() - started) * 1000),
+            )
+            stream_db.commit()
         except HTTPException as exc:
             yield _sse("error", {"error": exc.detail})
         finally:

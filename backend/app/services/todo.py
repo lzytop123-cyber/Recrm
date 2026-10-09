@@ -191,7 +191,6 @@ def _kpi_todos(db: Session, user: User) -> list[TodoItemOut]:
         is_admin
         or "kpi:template:manage" in codes
         or _has(user, "kpi:cycle:manage")
-        or "hr" in role_codes
     )
     for row in confirm_pending:
         try:

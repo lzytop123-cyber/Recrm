@@ -325,8 +325,6 @@ def assert_can_operate(user: User, project: Project) -> None:
         return
     if user_can(user, "project:manage"):
         return
-    if "delivery_lead" in role_codes or "middle_manager" in role_codes or "executive" in role_codes:
-        return
     raise HTTPException(status_code=403, detail="无权操作该项目")
 
 
@@ -360,11 +358,10 @@ def assert_can_update_task(
 
 
 def can_manage_plan(user: User, project: Project) -> bool:
-    """计划基线管理（加里程碑/审证据/锁基线等）：本部门负责人或系统管理员。"""
-    role_codes = {r.code for r in user.roles}
-    if "admin" in role_codes:
+    """计划基线管理（加里程碑/审证据/锁基线等）：持 project:plan_manage 且为本部门项目，或系统管理员。"""
+    if "admin" in {r.code for r in user.roles}:
         return True
-    if "dept_head" not in role_codes:
+    if not user_can(user, "project:plan_manage"):
         return False
     if project.department_id and user.department_id and project.department_id != user.department_id:
         return False

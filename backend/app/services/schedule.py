@@ -17,7 +17,7 @@ try:
 except Exception:  # pragma: no cover
     _APP_TZ = timezone(timedelta(hours=8))
 
-from app.core.rbac import resolve_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.project import Project, ProjectTask
 from app.models.schedule import (
     FEISHU_SYNC_PENDING,
@@ -160,13 +160,7 @@ def assert_can_view(user: User, item: Schedule) -> None:
 
 
 def can_manage(user: User) -> bool:
-    role_codes = {r.code for r in user.roles}
-    return bool(
-        "admin" in role_codes
-        or "middle_manager" in role_codes
-        or "executive" in role_codes
-        or "delivery_lead" in role_codes
-    )
+    return user_can(user, "schedule:manage")
 
 
 def is_admin(user: User) -> bool:

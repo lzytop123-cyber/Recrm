@@ -290,7 +290,6 @@ def _is_hr(user: User) -> bool:
         or "kpi:assessment:manage" in codes
         or "kpi:template:manage" in codes
         or "admin" in role_codes
-        or "hr" in role_codes
     )
 
 

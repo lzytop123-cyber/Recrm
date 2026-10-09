@@ -273,13 +273,7 @@ def get_payment(db: Session, user: User, payment_id: int) -> Payment:
 def confirm_payment(
     db: Session, user: User, payment_id: int, payload: PaymentConfirmRequest
 ) -> Payment:
-    role_codes = {r.code for r in user.roles}
-    can_confirm = (
-        user_can(user, "payment:manage")
-        or "admin" in role_codes
-        or "finance" in role_codes
-    )
-    if not can_confirm:
+    if not (user_can(user, "payment:confirm") or user_can(user, "payment:manage")):
         raise HTTPException(status_code=403, detail="无权确认收款")
 
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
@@ -305,12 +299,7 @@ def confirm_payment(
 
 
 def refund_payment(db: Session, user: User, payment_id: int, reason: Optional[str] = None) -> Payment:
-    role_codes = {r.code for r in user.roles}
-    if (
-        not user_can(user, "payment:manage")
-        and "admin" not in role_codes
-        and "finance" not in role_codes
-    ):
+    if not (user_can(user, "payment:refund") or user_can(user, "payment:manage")):
         raise HTTPException(status_code=403, detail="无权退款")
 
     payment = db.query(Payment).filter(Payment.id == payment_id).first()

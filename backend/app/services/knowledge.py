@@ -94,8 +94,9 @@ _SYSTEM_PROMPT = (
     "你是中泰旭鼎 CRM 企业知识库助手。只能依据用户提供的「已授权知识资料」作答，"
     "不得编造资料中没有的流程、数字或制度。"
     "若资料不足以回答，明确说明依据不足并建议查阅相关知识源。"
-    "用简体中文回答，条理清晰，控制在 200 字以内。"
-    "只输出纯文本段落，不要 Markdown 标题、列表符号或 HTML 标签；段与段之间用空行分隔。"
+    "用简体中文回答，条理清晰。"
+    "资料里有多个阶段或步骤时按顺序写全，不要只写开头。"
+    "只输出纯文本，段与段之间用空行分隔，不要 HTML 标签。"
 )
 
 
@@ -934,6 +935,8 @@ def _tokenize(question: str) -> list[str]:
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 80
+# 问答要把命中文档的正文交给模型。只给最高分的 500 字片段时，流程类文档往往只剩第 1 阶段。
+EXCERPT_LIMIT = 8000
 
 
 def _chunk_text(text: str) -> list[str]:
@@ -970,6 +973,19 @@ def _score_article(article: KnowledgeArticle, tokens: list[str]) -> tuple[int, s
     return best_score, best_chunk
 
 
+def _article_excerpt(article: KnowledgeArticle, limit: int = EXCERPT_LIMIT) -> str:
+    """命中文档的正文。过长时从开头截断，并标明后面还有内容。"""
+    content = (article.content or "").strip()
+    attachment = (getattr(article, "attachment_text", None) or "").strip()
+    parts = [content] if content else []
+    if attachment and attachment not in content:
+        parts.append(attachment)
+    text = "\n".join(parts).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n（正文较长，这里只返回前一部分）"
+
+
 def _build_citations(db: Session, hits: list[tuple[str, KnowledgeArticle]]) -> list[dict]:
     citations = []
     source_ids = [a.source_id for _, a in hits if a.source_id]
@@ -991,6 +1007,7 @@ def _build_citations(db: Session, hits: list[tuple[str, KnowledgeArticle]]) -> l
                 "version": art.version,
                 "updated_at": updated,
                 "snippet": snippet,
+                "excerpt": _article_excerpt(art) or snippet,
                 "source_url": _http_source_url(source),
             }
         )
@@ -998,17 +1015,17 @@ def _build_citations(db: Session, hits: list[tuple[str, KnowledgeArticle]]) -> l
 
 
 def _stitch_answer_html(hits: list[tuple[str, KnowledgeArticle]]) -> str:
-    lead_chunk, lead_art = hits[0]
-    lead = lead_art.summary or lead_chunk[:80]
-    paragraphs = [f"<p><strong>{html.escape(lead)}</strong></p>"]
-    for i, (chunk, _art) in enumerate(hits):
-        text = chunk.replace("。", "。\n").split("\n")
-        if i == 0:
-            body = "".join(f"<p>{html.escape(t)}</p>" for t in text[1:3] if t.strip())
-        else:
-            body = "".join(f"<p>{html.escape(t)}</p>" for t in text[:2] if t.strip())
-        if body:
-            paragraphs.append(body)
+    paragraphs: list[str] = []
+    for _chunk, art in hits:
+        text = _article_excerpt(art)
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        paragraphs.append(f"<p><strong>{html.escape(art.title or '')}</strong></p>")
+        for ln in lines[:80]:
+            paragraphs.append(f"<p>{html.escape(ln)}</p>")
+        if len(lines) > 80:
+            paragraphs.append("<p>正文较长，这里只展示前一部分。</p>")
     return "".join(paragraphs)
 
 
@@ -1038,7 +1055,7 @@ def _generate_llm_answer(question: str, hits: list[tuple[str, KnowledgeArticle]]
             f"[{i}] 标题：{art.title}\n"
             f"来源：{art.source_label or '知识条目'} · 版本：{art.version}\n"
             f"摘要：{art.summary or ''}\n"
-            f"相关片段：{chunk}"
+            f"正文：{_article_excerpt(art) or chunk}"
         )
     user_content = (
         f"问题：{question}\n\n"

@@ -186,14 +186,8 @@ def can_manage_lead_pool(user: User) -> bool:
 
 
 def can_self_follow_on_create(user: User) -> bool:
-    """销售录入后可直接自己跟进；其他岗位仍进管理层待分配池。"""
-    role_codes = {r.code for r in (user.roles or [])}
-    if "sales" in role_codes:
-        return True
-    # 兼容自定义角色：角色名包含"销售"或持有 lead:manage 权限视为销售
-    if any("销售" in (r.name or "") for r in (user.roles or [])):
-        return True
-    return user_can(user, "lead:manage")
+    """持 lead:self_follow 录入后可直接自己跟进；其他岗位仍进管理层待分配池。"""
+    return user_can(user, "lead:self_follow")
 
 
 def dept_scope_ids(db: Session, user: User) -> set[int]:
@@ -745,9 +739,7 @@ def _assert_claim_quota(db: Session, user: User) -> None:
 
 def claim_lead(db: Session, user: User, lead_id: int) -> Lead:
     """公海领取。"""
-    can_claim = user_can(user, "lead:manage") or any(
-        r.code in {"sales", "middle_manager", "admin", "executive"} for r in user.roles
-    )
+    can_claim = user_can(user, "lead:manage") or user_can(user, "lead:self_follow")
     if not can_claim:
         raise HTTPException(status_code=403, detail="当前角色不可领取公海线索")
 

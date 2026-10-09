@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import resolve_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.okr import (
     OKR_LEVELS,
     OKR_PERIODS,
@@ -87,7 +87,7 @@ def assert_can_operate(user: User, okr: Okr) -> None:
         return
     if okr.owner_id == user.id or okr.creator_id == user.id:
         return
-    if "middle_manager" in role_codes or "executive" in role_codes:
+    if user_can(user, "okr:manage"):
         return
     raise HTTPException(status_code=403, detail="无权操作该 OKR")
 

@@ -11,9 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.models.department import Department
 from app.models.performance import (
+    PerformanceAssessment,
+    PerformanceAssessmentBatch,
+    PerformanceAssessmentItem,
     PerformanceCycle,
     PerformanceIndicatorDefinition,
     PerformanceTemplate,
+    PerformanceTemplateAssignment,
     PerformanceTemplateItem,
     PerformanceTemplateScope,
 )
@@ -681,6 +685,79 @@ def disable_template(db: Session, template_id: int, user: User) -> PerformanceTe
     row.status = "disabled"
     db.commit()
     return get_template(db, row.id)
+
+
+def delete_template(db: Session, template_id: int) -> None:
+    """删除未使用的模板。已用于考核或被其他模板复制的，不能删。"""
+    row = db.query(PerformanceTemplate).filter(PerformanceTemplate.id == template_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    used = (
+        db.query(PerformanceAssessment.id)
+        .filter(PerformanceAssessment.template_id == template_id)
+        .first()
+    )
+    if used:
+        raise HTTPException(status_code=409, detail="这份模板已经用于考核，不能删除。可以停用。")
+    batched = (
+        db.query(PerformanceAssessmentBatch.id)
+        .filter(PerformanceAssessmentBatch.template_id == template_id)
+        .first()
+    )
+    if batched:
+        raise HTTPException(status_code=409, detail="这份模板已经发起过考核，不能删除。可以停用。")
+    forked = (
+        db.query(PerformanceTemplate.id)
+        .filter(PerformanceTemplate.base_template_id == template_id)
+        .first()
+    )
+    if forked:
+        raise HTTPException(
+            status_code=409,
+            detail="还有从这份模板复制出来的模板，请先删除那些模板。",
+        )
+    item_ids = [
+        item_id
+        for (item_id,) in db.query(PerformanceTemplateItem.id)
+        .filter(PerformanceTemplateItem.template_id == template_id)
+        .all()
+    ]
+    if item_ids and (
+        db.query(PerformanceAssessmentItem.id)
+        .filter(PerformanceAssessmentItem.template_item_id.in_(item_ids))
+        .first()
+    ):
+        raise HTTPException(status_code=409, detail="这份模板已经用于考核，不能删除。可以停用。")
+
+    db.query(PerformanceCycle).filter(PerformanceCycle.default_template_id == template_id).update(
+        {PerformanceCycle.default_template_id: None},
+        synchronize_session=False,
+    )
+    db.query(PerformanceTemplate).filter(PerformanceTemplate.supersedes_id == template_id).update(
+        {PerformanceTemplate.supersedes_id: None},
+        synchronize_session=False,
+    )
+    for assignment in (
+        db.query(PerformanceTemplateAssignment)
+        .filter(PerformanceTemplateAssignment.template_id == template_id)
+        .all()
+    ):
+        db.delete(assignment)
+    for scope in (
+        db.query(PerformanceTemplateScope)
+        .filter(PerformanceTemplateScope.template_id == template_id)
+        .all()
+    ):
+        db.delete(scope)
+    for item in (
+        db.query(PerformanceTemplateItem)
+        .filter(PerformanceTemplateItem.template_id == template_id)
+        .all()
+    ):
+        db.delete(item)
+    db.flush()
+    db.delete(row)
+    db.commit()
 
 
 def is_template_effective_for_period(

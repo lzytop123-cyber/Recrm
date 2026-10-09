@@ -16,6 +16,7 @@ from app.models.platform import SystemConfig
 from app.models.user import User
 
 SCENES = {
+    "agent_chat": "智能助手对话",
     "knowledge_ask": "知识问答",
     "daily_report": "日报周报",
     "followup_summary": "跟进摘要",

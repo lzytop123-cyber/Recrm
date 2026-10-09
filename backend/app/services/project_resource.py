@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.rbac import user_can
 from app.models.department import Department
 from app.models.project import (
     PROJECT_STATUS_INITIATING,
@@ -403,10 +404,9 @@ def confirm_resource(
         raise HTTPException(status_code=404, detail="项目不存在")
     assert_can_view(user, project)
     assert_can_operate(user, project)
-    # 资源确认仅限部门负责人（或管理员代审）；防止销售等创建人越权确认
-    _role_codes = {r.code for r in (user.roles or [])}
-    if "admin" not in _role_codes and "dept_head" not in _role_codes:
-        raise HTTPException(status_code=403, detail="仅部门负责人可确认资源投入")
+    # 防止销售等创建人越权确认
+    if not user_can(user, "project:resource_confirm"):
+        raise HTTPException(status_code=403, detail="无权确认资源投入（需「确认资源投入」权限）")
     if need.status != RESOURCE_NEED_PENDING:
         raise HTTPException(status_code=400, detail="该资源需求已处理")
 

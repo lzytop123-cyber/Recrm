@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import extract, func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.rbac import resolve_data_scope
+from app.core.rbac import resolve_data_scope, user_can
 from app.models.department import Department
 from app.models.project import (
     PROJECT_STATUS_COMPLETED,
@@ -301,17 +301,7 @@ def assert_can_view(user: User, ticket: Ticket) -> None:
 
 def can_manage(user: User) -> bool:
     """部门侧管理角色（用于 SLA 找负责人等），不等于可代办全部工单动作。"""
-    role_codes = {r.code for r in user.roles}
-    return bool(
-        "admin" in role_codes
-        or "center_lead" in role_codes
-        or "gm" in role_codes
-        or "vp" in role_codes
-        or "pm" in role_codes
-        or "middle_manager" in role_codes
-        or "executive" in role_codes
-        or "delivery_lead" in role_codes
-    )
+    return user_can(user, "ticket:manage")
 
 
 def _is_admin(user: User) -> bool:

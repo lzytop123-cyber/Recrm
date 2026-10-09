@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -22,6 +23,9 @@ from app.core.rbac import user_can
 from app.services.agent_memory import load_memory
 
 TOOLS_MAP = {t.name: t for t in ALL_TOOLS}
+# 只把最近几轮发给模型；checkpoint 仍保留全量
+_HISTORY_TURNS = 6
+logger = logging.getLogger(__name__)
 
 # 由 init_agent_app() 懒加载（AsyncPostgresSaver 需事件循环）
 agent_app: Any = None
@@ -63,13 +67,22 @@ def _runtime_from_config(config: RunnableConfig):
     return db, user
 
 
-def _first_write_call(state: AgentState):
+def _write_calls(state: AgentState) -> list[tuple[dict, Any]]:
     last = state["messages"][-1]
+    out = []
     for call in getattr(last, "tool_calls", None) or []:
         fn = TOOLS_MAP.get(call["name"])
         if fn and requires_confirmation(fn):
-            return call, fn
-    return None, None
+            out.append((call, fn))
+    return out
+
+
+def recent_turns(messages: list[BaseMessage], turns: int = _HISTORY_TURNS) -> list[BaseMessage]:
+    """从倒数第 turns 条用户消息截起，保证不会以孤立的 ToolMessage 开头。"""
+    humans = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    if len(humans) <= turns:
+        return messages
+    return messages[humans[-turns]:]
 
 
 def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
@@ -85,30 +98,35 @@ def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         )
         try:
             llm = get_llm(tools=ALL_TOOLS)
-            response = llm.invoke([system_msg, *state["messages"]])
-        except Exception as exc:  # noqa: BLE001 — 模型超时/网络错误回传给用户
-            return {
-                "messages": [
-                    AIMessage(
-                        content=f"大模型暂时不可用：{exc}。请稍后重试，或检查 LLM_API_KEY / 网络。"
-                    )
-                ]
-            }
+            response = llm.invoke([system_msg, *recent_turns(state["messages"])])
+        except Exception:  # noqa: BLE001 — 异常原文可能含密钥/内网地址，只记日志
+            logger.exception("Agent LLM call failed")
+            return {"messages": [AIMessage(content="大模型暂时不可用，请稍后重试或联系管理员。")]}
         return {"messages": [response]}
 
 
 def confirm_node(state: AgentState) -> dict[str, Any]:
     """写操作确认：interrupt 挂起，等待 /confirm 恢复。"""
-    call, fn = _first_write_call(state)
-    if call is None or fn is None:
+    writes = _write_calls(state)
+    if not writes:
         return {}
 
-    choice = interrupt(
+    # 同一条消息里所有写操作一次确认；tool_name/args 保留首个以兼容旧前端
+    actions = [
         {
-            "type": "confirm_write",
             "tool_name": call["name"],
             "action_desc": confirmation_prompt(fn),
             "args": call.get("args") or {},
+        }
+        for call, fn in writes
+    ]
+    choice = interrupt(
+        {
+            "type": "confirm_write",
+            "tool_name": actions[0]["tool_name"],
+            "action_desc": "；".join(a["action_desc"] for a in actions),
+            "args": actions[0]["args"],
+            "actions": actions,
         }
     )
     if choice == "confirmed":
@@ -150,8 +168,7 @@ def route_after_agent(state: AgentState) -> str:
     last = state["messages"][-1]
     if not (isinstance(last, AIMessage) and last.tool_calls):
         return END
-    _, fn = _first_write_call(state)
-    if fn is not None:
+    if _write_calls(state):
         return "confirm"
     return "tools"
 

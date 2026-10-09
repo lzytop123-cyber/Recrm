@@ -19,6 +19,7 @@ def get_llm(*, tools: Optional[Sequence[Any]] = None) -> ChatOpenAI:
         base_url=settings.llm_base_url,
         temperature=0.1,
         streaming=True,
+        stream_usage=True,
         max_tokens=2000,
         timeout=settings.llm_timeout_seconds,
         max_retries=1,
