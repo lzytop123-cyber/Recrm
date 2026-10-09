@@ -19,29 +19,22 @@ def _ensure_role(db: Session, code: str, name: str, *, manage: bool) -> Role:
         role = Role(name=name, code=code, data_scope="personal" if code == "sales" else "company")
         db.add(role)
         db.flush()
-    if manage:
-        perm = db.query(Permission).filter(Permission.code == "lead:manage").first()
+
+    def _grant(perm_code: str, perm_name: str) -> None:
+        perm = db.query(Permission).filter(Permission.code == perm_code).first()
         if not perm:
-            perm = Permission(name="管理线索", code="lead:manage", module="lead")
+            perm = Permission(name=perm_name, code=perm_code, module="lead")
             db.add(perm)
             db.flush()
         if perm not in role.permissions:
             role.permissions.append(perm)
-        view = db.query(Permission).filter(Permission.code == "lead:view").first()
-        if not view:
-            view = Permission(name="查看线索", code="lead:view", module="lead")
-            db.add(view)
-            db.flush()
-        if view not in role.permissions:
-            role.permissions.append(view)
-    else:
-        view = db.query(Permission).filter(Permission.code == "lead:view").first()
-        if not view:
-            view = Permission(name="查看线索", code="lead:view", module="lead")
-            db.add(view)
-            db.flush()
-        if view not in role.permissions:
-            role.permissions.append(view)
+
+    _grant("lead:view", "查看线索")
+    if manage:
+        _grant("lead:manage", "管理线索")
+    # 销售的「录入即自跟进 / 领取公海」由 lead:self_follow 决定（与 seed_roles_v2 销售角色一致）
+    if code == "sales":
+        _grant("lead:self_follow", "线索自跟进")
     db.flush()
     return role
 

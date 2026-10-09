@@ -34,7 +34,11 @@ def _ensure_sales(db: Session) -> User:
         role = Role(name="销售", code="sales", data_scope="personal")
         db.add(role)
         db.flush()
-    for code, name in (("lead:view", "查看线索"), ("opportunity:view", "查看商机")):
+    for code, name in (
+        ("lead:view", "查看线索"),
+        ("lead:self_follow", "线索自跟进"),
+        ("opportunity:view", "查看商机"),
+    ):
         perm = db.query(Permission).filter(Permission.code == code).first()
         if not perm:
             perm = Permission(name=name, code=code, module=code.split(":")[0])
