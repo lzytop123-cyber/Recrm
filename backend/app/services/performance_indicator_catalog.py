@@ -153,10 +153,15 @@ def list_indicators(
     if status:
         q = q.filter(PerformanceIndicatorDefinition.status == status)
     if department_id is not None:
+        # 指标可能挂在「中心」下的「组」上，而模板主范围写的是「中心」→ 按部门子树匹配，
+        # 只按精确 id 过滤会让模板详情页的「从指标库选择」整块消失。
+        from app.services.org import descendant_department_ids
+
+        dept_ids = descendant_department_ids(db, int(department_id))
         q = q.filter(
             or_(
                 PerformanceIndicatorDefinition.department_id.is_(None),
-                PerformanceIndicatorDefinition.department_id == department_id,
+                PerformanceIndicatorDefinition.department_id.in_(dept_ids),
             )
         )
     if job_title:
