@@ -605,11 +605,16 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
         rule = rule_by_tpl.get(item.template_item_id) if item.template_item_id else None
         if isinstance(rule, dict) and rule.get("type") in ("event_bonus", "event_deduction"):
             per_event = rule.get("points_per_event")
+            points_min = rule.get("points_min")
+            points_max = rule.get("points_max")
             if per_event not in (None, ""):
                 per_amount = rule.get("per_amount")
                 event_points = f"{per_event}/{per_amount}" if per_amount else str(per_event)
-                if not (target_value or "").strip():
-                    target_value = event_points
+            elif points_min not in (None, "") and points_max not in (None, ""):
+                # 区间项（如 2~5 分/次）：前端据此显示「-2~5/次」并由主管在区间内手填扣分
+                event_points = f"{points_min}~{points_max}"
+            if event_points and not (target_value or "").strip():
+                target_value = event_points
         out.append(
             {
                 "id": item.id,
