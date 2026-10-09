@@ -83,38 +83,6 @@ def _assert_not_resigned_for_include(
     )
 
 
-def _assert_no_launched_batch_for_template(
-    db: Session, *, cycle_id: int, template_id: int
-) -> None:
-    existing = (
-        db.query(PerformanceAssessmentBatch)
-        .filter(
-            PerformanceAssessmentBatch.cycle_id == cycle_id,
-            PerformanceAssessmentBatch.template_id == template_id,
-            PerformanceAssessmentBatch.status == BATCH_STATUS_LAUNCHED,
-        )
-        .order_by(PerformanceAssessmentBatch.id.asc())
-        .first()
-    )
-    if existing is None:
-        return
-    tpl = db.query(PerformanceTemplate).filter(PerformanceTemplate.id == template_id).first()
-    tpl_name = (tpl.name if tpl else None) or f"模板{template_id}"
-    raise HTTPException(
-        status_code=409,
-        detail={
-            "code": "KPI_TEMPLATE_BATCH_EXISTS",
-            "message": f"本周期「{tpl_name}」已发起考核，不能重复发起",
-            "details": {
-                "cycle_id": cycle_id,
-                "template_id": template_id,
-                "existing_batch_id": existing.id,
-                "how_to_fix": "请在本期已有批次中继续处理，或先取消原批次后再重新发起",
-            },
-        },
-    )
-
-
 def _blocked_http_detail(
     *,
     person: dict[str, Any],
@@ -226,7 +194,6 @@ def _launch_one_batch(
     if template is None:
         raise HTTPException(status_code=404, detail="考核模板不存在")
 
-    _assert_no_launched_batch_for_template(db, cycle_id=cycle_id, template_id=template_id)
     _validate_deadlines(payload)
     match_result = match_personnel(db, cycle_id=cycle_id, template_id=template_id)
     by_id = _index_match(match_result)

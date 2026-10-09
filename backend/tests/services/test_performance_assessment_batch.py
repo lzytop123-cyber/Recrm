@@ -141,10 +141,42 @@ def test_duplicate_key_different_idem_blocks(db_session: Session) -> None:
         batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-b")
     assert exc.value.status_code == 409
     detail = exc.value.detail
-    assert detail["code"] == "KPI_TEMPLATE_BATCH_EXISTS"
-    assert detail["details"]["existing_batch_id"]
-    assert "不能重复发起" in detail["message"]
+    assert detail["code"] == "KPI_PERSON_BLOCKED"
+    assert detail["details"]["reason_code"] == "duplicate_assessment"
     assert db_session.query(PerformanceAssessmentBatch).count() == 1
+
+
+def test_same_template_can_append_another_person(db_session: Session) -> None:
+    _, mgr, u1, u2, tpl, cycle = _fixture(db_session)
+    due = _due_chain()
+    batch_svc.create_assessment_batch(
+        db_session,
+        mgr,
+        {
+            "cycle_id": cycle.id,
+            "template_id": tpl.id,
+            "people": [{"user_id": u1.id, "selected": True, "adjustment_reason": None}],
+            **due,
+        },
+        idempotency_key="idem-first",
+    )
+    second = batch_svc.create_assessment_batch(
+        db_session,
+        mgr,
+        {
+            "cycle_id": cycle.id,
+            "template_id": tpl.id,
+            "people": [
+                {"user_id": u1.id, "selected": False, "adjustment_reason": "已在本期"},
+                {"user_id": u2.id, "selected": True, "adjustment_reason": None},
+            ],
+            **due,
+        },
+        idempotency_key="idem-append",
+    )
+    assert second["idempotent"] is False
+    assert db_session.query(PerformanceAssessmentBatch).count() == 2
+    assert db_session.query(PerformanceAssessment).filter_by(user_id=u2.id).count() == 1
 
 
 def test_resigned_person_cannot_be_manually_included(db_session: Session) -> None:
