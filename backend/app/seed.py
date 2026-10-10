@@ -448,9 +448,10 @@ APPROVAL_RULES = [
         "code": "AP-HR-04", "name": "假勤审批", "biz_type": "hr_leave",
         "timeout_hours": 48, "conditions": None,
         "nodes": {"nodes": [
+            {"name": "部门负责人审批", "type": "approve", "roles": ["dept_head"]},
             {"name": "人力资源审批", "type": "approve", "roles": ["hr"]},
         ], "cc": []},
-        "remark": "请假/加班/补卡/外勤由人力资源审批。",
+        "remark": "请假/加班/补卡/外勤：部门负责人审批 → 人力资源审批。",
     },
 ]
 
