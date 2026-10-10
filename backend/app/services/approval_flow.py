@@ -390,8 +390,9 @@ def _user_can_act_task(db: Session, user: User, task: ApprovalTask, instance: Ap
     # 本人是角色候选人 → 直通
     if _user_role_codes(user) & set(_task_roles(task)):
         # 部门负责人/中心负责人节点：须与申请人同部门（含上级链），防止跨部门误审
-        if DEPT_SCOPED_ROLES & set(_task_roles(task)) and instance.department_id:
-            allowed = _dept_ancestor_ids(db, instance.department_id)
+        scope_dept = _task_scope_department_id(instance, task)
+        if DEPT_SCOPED_ROLES & set(_task_roles(task)) and scope_dept:
+            allowed = _dept_ancestor_ids(db, scope_dept)
             if (user.department_id or 0) not in allowed:
                 return False
         return True
@@ -405,6 +406,18 @@ def _user_can_act_task(db: Session, user: User, task: ApprovalTask, instance: Ap
         if d.granter_id in direct and _delegation_covers(d, instance.biz_type):
             return True
     return False
+
+
+def _task_scope_department_id(instance: ApprovalInstance, task: ApprovalTask) -> Optional[int]:
+    """节点部门范围。规则写了 department_fact 时用发起快照里的部门，否则用实例部门。"""
+    ctx = _loads(instance.context_json)
+    scopes = ctx.get("node_departments") if isinstance(ctx, dict) else None
+    if isinstance(scopes, dict) and scopes.get(str(task.seq)) is not None:
+        try:
+            return int(scopes[str(task.seq)])
+        except (TypeError, ValueError):
+            pass
+    return instance.department_id
 
 
 def _dept_ancestor_ids(db: Session, dept_id: Optional[int]) -> set[int]:
@@ -457,8 +470,9 @@ def _resolve_task_candidates(
         return set(), "blocked"
     eligible = all_ids.copy()
     # 部门负责人/中心负责人节点：只匹配申请人部门（含上级部门链）内的持有人，避免跨部门误派
-    if DEPT_SCOPED_ROLES & set(roles) and instance.department_id:
-        allowed = _dept_ancestor_ids(db, instance.department_id)
+    scope_dept = _task_scope_department_id(instance, task)
+    if DEPT_SCOPED_ROLES & set(roles) and scope_dept:
+        allowed = _dept_ancestor_ids(db, scope_dept)
         dept_map = dict(
             db.query(User.id, User.department_id).filter(User.id.in_(eligible)).all()
         )
@@ -520,6 +534,18 @@ def start_instance(
     nodes, cc_list = _rule_nodes(rule)
     if not nodes:
         raise HTTPException(status_code=500, detail=f"审批规则 {rule.code} 未配置任何节点")
+    node_departments: dict[str, int] = {}
+    for idx, node in enumerate(nodes):
+        fact_key = node.get("department_fact")
+        if not fact_key or facts.get(fact_key) is None:
+            continue
+        try:
+            node_departments[str(idx + 1)] = int(facts[fact_key])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"审批节点部门无效：{fact_key}")
+    context = dict(facts)
+    if node_departments:
+        context["node_departments"] = node_departments
 
     instance = ApprovalInstance(
         code="",
@@ -537,7 +563,7 @@ def start_instance(
         initiator_name=initiator.real_name or initiator.username,
         department_id=department_id if department_id is not None else initiator.department_id,
         cc_json=json.dumps(cc_list, ensure_ascii=False) if cc_list else None,
-        context_json=json.dumps(_jsonable(facts), ensure_ascii=False) if facts else None,
+        context_json=json.dumps(_jsonable(context), ensure_ascii=False) if context else None,
         deep_link=deep_link,
     )
     db.add(instance)

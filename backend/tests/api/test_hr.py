@@ -206,3 +206,85 @@ def test_leave_and_payslip(client: TestClient, db_session: Session) -> None:
     board = client.get("/api/v1/hr/dashboard", headers=headers)
     assert board.status_code == 200
     assert board.json()["headcount"] >= 1
+
+def test_transfer_assigns_target_department_head(client: TestClient, db_session: Session) -> None:
+    import json
+
+    from app.models.approval_flow import ApprovalInstance
+    from app.models.approval_rule import RULE_STATUS_PUBLISHED, ApprovalRule
+    from app.services.approval_flow import _resolve_task_candidates
+
+    src = Department(name="????", code="sales_xfer_scope")
+    dst = Department(name="????", code="delivery_xfer_scope")
+    head_role = Role(name="?????", code="dept_head", data_scope="department")
+    db_session.add_all([src, dst, head_role])
+    db_session.flush()
+    from_head = User(
+        username="from_head_xfer",
+        password_hash=hash_password("secret123"),
+        real_name="???????",
+        department_id=src.id,
+        is_active=True,
+    )
+    to_head = User(
+        username="to_head_xfer",
+        password_hash=hash_password("secret123"),
+        real_name="????????",
+        department_id=dst.id,
+        is_active=True,
+    )
+    from_head.roles.append(head_role)
+    to_head.roles.append(head_role)
+    db_session.add_all([from_head, to_head])
+    db_session.commit()
+    hr = _user(db_session, "hr_xfer_scope", "org:view", "org:manage")
+    emp = _user(db_session, "staff_xfer_scope")
+    emp.department_id = src.id
+    db_session.add(
+        ApprovalRule(
+            code="AP-HR-02",
+            name="????",
+            biz_type="hr_transfer",
+            nodes_json=json.dumps(
+                {
+                    "nodes": [
+                        {"name": "??????", "type": "approve", "roles": ["dept_head"]},
+                        {
+                            "name": "???????",
+                            "type": "approve",
+                            "roles": ["dept_head"],
+                            "department_fact": "to_department_id",
+                        },
+                        {"name": "??????", "type": "approve", "roles": ["hr"]},
+                    ],
+                    "cc": [],
+                },
+                ensure_ascii=False,
+            ),
+            timeout_hours=72,
+            version=1,
+            status=RULE_STATUS_PUBLISHED,
+        )
+    )
+    db_session.commit()
+    resp = client.post(
+        "/api/v1/hr/transfers",
+        headers=_headers(client, "hr_xfer_scope"),
+        json={
+            "employee_id": emp.id,
+            "to_department_id": dst.id,
+            "effective_on": str(date.today()),
+            "reason": "????",
+            "job_title": "????",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "pending"
+    inst = db_session.get(ApprovalInstance, body["approval_instance_id"])
+    tasks = sorted(inst.tasks, key=lambda item: item.seq)
+    from_ids, from_res = _resolve_task_candidates(db_session, inst, tasks[0])
+    to_ids, to_res = _resolve_task_candidates(db_session, inst, tasks[1])
+    assert from_res == "ok" and to_res == "ok"
+    assert from_ids == {from_head.id}
+    assert to_ids == {to_head.id}

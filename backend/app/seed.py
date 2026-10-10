@@ -430,7 +430,7 @@ APPROVAL_RULES = [
         "timeout_hours": 72, "conditions": None,
         "nodes": {"nodes": [
             {"name": "现部门负责人", "type": "approve", "roles": ["dept_head"]},
-            {"name": "目标部门负责人", "type": "approve", "roles": ["dept_head"]},
+            {"name": "目标部门负责人", "type": "approve", "roles": ["dept_head"], "department_fact": "to_department_id"},
             {"name": "人力资源审批", "type": "approve", "roles": ["hr"]},
         ], "cc": []},
         "remark": "转岗：双方部门负责人→人力资源。测试环境无规则时业务侧直接生效。",

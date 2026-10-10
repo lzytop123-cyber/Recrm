@@ -494,6 +494,7 @@ def create_transfer(db: Session, user: User, payload: TransferCreate) -> HrTrans
         summary=payload.reason,
         department_id=emp.department_id,
         deep_link=f"/hr/transfers/{row.id}",
+        facts={"to_department_id": payload.to_department_id},
     )
     if inst is None:
         _apply_transfer(db, row)
@@ -1169,3 +1170,4 @@ def dashboard(db: Session, user: User) -> dict:
         "open_handovers": open_ho,
         "payslip_total": payslip_total,
     }
+
