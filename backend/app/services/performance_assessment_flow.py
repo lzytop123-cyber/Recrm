@@ -30,6 +30,11 @@ from app.models.performance import (
 from app.models.user import User
 from app.services import performance_materials as materials
 
+# 单条指标「实际完成」的字符上限（汉字按 1 字计）。曾为 60 字，对入职考核的
+# 维度描述偏紧，2026-10-12 按业务要求放宽到 500 字。
+MAX_ACTUAL_CHARS = 500
+
+
 APPEAL_PENDING = "pending"
 
 
@@ -661,8 +666,8 @@ def _apply_actuals(
             continue
         if not value:
             raise HTTPException(status_code=422, detail={"code": "KPI_ACTUAL_REQUIRED", "message": f"请填写{by_id[item_id].name}的实际完成"})
-        if len(value) > 60:
-            raise HTTPException(status_code=422, detail={"code": "KPI_ACTUAL_TOO_LONG", "message": f"{by_id[item_id].name}的实际完成请控制在60字以内"})
+        if len(value) > MAX_ACTUAL_CHARS:
+            raise HTTPException(status_code=422, detail={"code": "KPI_ACTUAL_TOO_LONG", "message": f"{by_id[item_id].name}的实际完成请控制在{MAX_ACTUAL_CHARS}字以内"})
         provided[item_id] = value
     if required:
         missing = [
