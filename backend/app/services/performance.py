@@ -24,6 +24,8 @@ from app.models.performance import (
     APPEAL_REJECTED,
     ASSESS_APPEALING,
     ASSESS_COMPLETED,
+    ASSESS_EMPLOYEE_PENDING,
+    ASSESS_MANAGER_PENDING,
     ASSESS_PENDING_CALIBRATION,
     ASSESS_PENDING_MANAGER,
     ASSESS_PENDING_SELF,
@@ -711,8 +713,13 @@ def enrich_cycle(db: Session, cycle: PerformanceCycle) -> PerformanceCycle:
         .filter(PerformanceAssessment.cycle_id == cycle.id)
         .all()
     )
-    cycle.pending_self = sum(1 for x in assessments if x.status == ASSESS_PENDING_SELF)  # type: ignore
-    cycle.pending_manager = sum(1 for x in assessments if x.status == ASSESS_PENDING_MANAGER)  # type: ignore
+    # 状态码有两套:旧（pending_self / pending_manager）与新流程（employee_pending /
+    # manager_pending / hr_review_pending / training_pending / appeal_pending）
+    # —— 两套都要计入,否则发起考核后周期卡片会显示 0。
+    pending_self_codes = {ASSESS_PENDING_SELF, ASSESS_EMPLOYEE_PENDING}
+    pending_manager_codes = {ASSESS_PENDING_MANAGER, ASSESS_MANAGER_PENDING}
+    cycle.pending_self = sum(1 for x in assessments if x.status in pending_self_codes)  # type: ignore
+    cycle.pending_manager = sum(1 for x in assessments if x.status in pending_manager_codes)  # type: ignore
     cycle.pending_appeals = sum(1 for x in appeals if x.status == APPEAL_PENDING)  # type: ignore
     cycle.completed_count = sum(1 for x in assessments if x.status == ASSESS_COMPLETED)  # type: ignore
     cycle.total_assessments = len(assessments)  # type: ignore
