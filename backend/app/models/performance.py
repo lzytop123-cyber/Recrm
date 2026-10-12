@@ -250,7 +250,7 @@ class PerformanceTemplateItem(Base):
         String(20), nullable=False, index=True, comment="system | okr | manual | self_manual"
     )
     source_ref: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    target_value: Mapped[Optional[str]] = mapped_column(String(60))
+    target_value: Mapped[Optional[str]] = mapped_column(String(500))
     score_rule: Mapped[Optional[str]] = mapped_column(String(200))
     hint: Mapped[Optional[str]] = mapped_column(Text)
     metric_key: Mapped[Optional[str]] = mapped_column(String(80))
@@ -291,9 +291,10 @@ class PerformanceAssessmentItem(Base):
     weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     data_source: Mapped[str] = mapped_column(String(20), nullable=False)
     source_ref: Mapped[Optional[str]] = mapped_column(String(120))
-    target_value: Mapped[Optional[str]] = mapped_column(String(60))
+    target_value: Mapped[Optional[str]] = mapped_column(String(500))
     score_rule: Mapped[Optional[str]] = mapped_column(String(200))
-    actual_value: Mapped[Optional[str]] = mapped_column(String(60))
+    # 员工填写的「实际完成」：代码上限 MAX_ACTUAL_CHARS=500，列宽留冗余
+    actual_value: Mapped[Optional[str]] = mapped_column(String(1000))
     system_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     self_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     self_comment: Mapped[Optional[str]] = mapped_column(Text)
