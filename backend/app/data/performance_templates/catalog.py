@@ -672,12 +672,17 @@ _ONBOARD_ROLE_CN = {"SALES": "业务岗", "FUNCTION": "职能岗"}
 
 # 双评分：这几个维度由「培训部」评分，其余维度由「直属主管」评分
 # （公司介绍/产品介绍/产品知识/学习任务/述职汇报 = 培训部能判的；工作实操与业绩 = 主管判）
+# 2026-10-12 培训部确认：第3个月（产出期）培训部也要打分——
+#   SALES  M3 的「工作态度与成长」(15) 、FUNCTION M3 的「专业技能提升」(10) 归培训部，
+#   即 M3 也走「培训部评分」而不是「仅确认」(training_ack_only)。
 _ONBOARD_TRAINING_KEYS = {
     "company_intro",
     "product_intro",
     "product_knowledge",
     "learning_task",
     "monthly_report",
+    "attitude_growth",
+    "skill_growth",
 }
 
 # (metric_key 后缀, 维度名, 分值/权重, 考核内容与合格/不合格标准)
