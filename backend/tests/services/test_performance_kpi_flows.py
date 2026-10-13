@@ -333,7 +333,7 @@ def test_onboarding_review_permission_is_type_aware(db_session: Session) -> None
 
 
 def test_onboarding_m3_always_enters_training_node(db_session: Session) -> None:
-    """M3 无培训部维度时，主管提交后仍进入培训部确认节点（ack-only）。"""
+    """M3 也走培训部评分节点（全表双评：培训部同样要打分）。"""
     from app.models.performance import ASSESS_MANAGER_PENDING, ASSESS_TRAINING_PENDING, PerformanceAssessment
     from app.services import performance_assessment_flow as flow
 
@@ -364,7 +364,8 @@ def test_onboarding_m3_always_enters_training_node(db_session: Session) -> None:
     scores = [{"item_id": i.id, "score": str(i.max_points)} for i in items]
     out = flow.manager_submit(db_session, asmt.id, mgr, revision=asmt.revision, scores=scores)
     assert out["status"] == ASSESS_TRAINING_PENDING
-    assert out["training_ack_only"] is True
+    # 全表双评：培训部同样要打分，"仅确认"路径已取消
+    assert out["training_ack_only"] is False
 
 
 def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> None:
@@ -420,24 +421,32 @@ def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> Non
     db_session.commit()
     mgr_items = [i for i in items if (i.evaluator or "manager") != "training"]
     tr_items = [i for i in items if (i.evaluator or "") == "training"]
-    # 公司25+产品25=50 培训；团队10+适配40=50 主管 → 各打 30/30 = 60
+    # 全表双评：两边都对所有指标打分。
+    # 主管：部门工作适配 30，其余 0 → 主管总分 30（<75 不通过）
+    # 培训部：公司介绍 30，其余 0 → 培训部总分 30（<75 不通过）→ 都不通过 = 不合格
     flow.manager_submit(
         db_session,
         asmt.id,
         mgr,
         revision=asmt.revision,
-        scores=[{"item_id": i.id, "score": "30" if i.name == "部门工作适配" else "0"} for i in mgr_items],
+        scores=[{"item_id": i.id, "score": "30" if i.name == "部门工作适配" else "0"} for i in items],
     )
     asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
     assert asmt.status == ASSESS_TRAINING_PENDING
+    dual_after_mgr = flow._recalc_dual_review(db_session, asmt)
+    assert dual_after_mgr["manager_total"] == 30.0
+    assert dual_after_mgr["trainer_total"] is None  # 培训部还没评
     flow.training_submit(
         db_session,
         asmt.id,
         training,
         revision=asmt.revision,
-        scores=[{"item_id": i.id, "score": "30" if i.name == "公司介绍" else "0"} for i in tr_items],
+        scores=[{"item_id": i.id, "score": "30" if i.name == "公司介绍" else "0"} for i in items],
     )
     asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    dual = flow._recalc_dual_review(db_session, asmt)
+    assert dual["manager_total"] == 30.0 and dual["trainer_total"] == 30.0
+    assert dual["outcome"] == "fail"  # 都不通过
     assert asmt.status == ASSESS_HR_REVIEW_PENDING
     # HR 用培训权限以外：给 training 复核会被自审拦住，用新 HR
     hr = _user(db_session, "tri_hr")
@@ -482,3 +491,74 @@ def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> Non
     assert asmt.status == ASSESS_COMPLETED
     assert out["hr_followup"]["needed"] is True
 
+
+def test_onboarding_dual_review_pending_gm(db_session: Session) -> None:
+    """全表双评：一边通过一边不通过 → 待总经理裁决（不下合格/不合格结论）。"""
+    from app.models.performance import ASSESS_MANAGER_PENDING, PerformanceAssessment
+    from app.models.permission import Permission
+    from app.models.role import Role
+    from app.services import performance_assessment_flow as flow
+
+    load_drafts(db_session)
+    mgr = _user(db_session, "gm_mgr")
+    training = _user(db_session, "gm_training")
+    subject = _user(db_session, "gm_subject")
+    subject.manager_id = mgr.id
+
+    perm = db_session.query(Permission).filter(Permission.code == "kpi:onboarding:manage").first()
+    if perm is None:
+        perm = Permission(name="入职考核管理", code="kpi:onboarding:manage", module="kpi")
+        db_session.add(perm)
+        db_session.commit()
+    role = Role(name="培训部负责人3", code="training_lead3", data_scope="company", module_scopes={})
+    db_session.add(role)
+    db_session.commit()
+    role.permissions = [perm]
+    training.roles = [role]
+
+    tpl = (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.family_code == "ONBOARD_FUNCTION_D5")
+        .one()
+    )
+    tpl.status = "published"
+    db_session.commit()
+
+    opened = performance_kpi.open_stage_case(
+        db_session, {"user_id": subject.id, "stage": "D5", "role_kind": "FUNCTION"}
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    items = (
+        db_session.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == asmt.id)
+        .all()
+    )
+    asmt.status = ASSESS_MANAGER_PENDING
+    asmt.current_handler_type = "manager"
+    asmt.current_handler_id = mgr.id
+    db_session.commit()
+
+    # 主管全给满分 → 主管通过；培训部全给 0 → 培训部不通过
+    flow.manager_submit(
+        db_session, asmt.id, mgr, revision=asmt.revision,
+        scores=[{"item_id": i.id, "score": str(i.max_points)} for i in items],
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+    flow.training_submit(
+        db_session, asmt.id, training, revision=asmt.revision,
+        scores=[{"item_id": i.id, "score": "0"} for i in items],
+    )
+    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
+
+    dual = flow._recalc_dual_review(db_session, asmt)
+    assert dual["manager_pass"] is True
+    assert dual["trainer_pass"] is False
+    assert dual["outcome"] == "pending_gm"
+    assert dual["outcome_label"] == "待总经理裁决"
+
+    flow._apply_onboarding_grade(asmt, dual)
+    assert asmt.grade_label is None  # 不下合格/不合格结论
+    wf = flow._workflow(asmt)
+    assert wf["hr_followup"]["needed"] is True
+    assert wf["hr_followup"]["decision"] == "pending_gm"
+    assert "待总经理裁决" in wf["hr_followup"]["reason"]

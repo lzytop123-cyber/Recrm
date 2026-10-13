@@ -638,6 +638,8 @@ def items_payload(db: Session, assessment_id: int) -> list[dict[str, Any]]:
                 "system_score": str(item.system_score) if item.system_score is not None else None,
                 "self_score": str(item.self_score) if item.self_score is not None else None,
                 "leader_score": str(item.leader_score) if item.leader_score is not None else None,
+                # 全表双评：培训部分（入职考核，与主管分各算各的总分）
+                "trainer_score": str(item.trainer_score) if item.trainer_score is not None else None,
                 "final_score": str(item.final_score) if item.final_score is not None else None,
                 "awarded_points": str(item.awarded_points) if item.awarded_points is not None else None,
                 "score_label": getattr(item, "score_label", None),

@@ -190,33 +190,117 @@ def _onboarding_stage(assessment: PerformanceAssessment) -> str:
     return str(onboard.get("stage") or "")
 
 
-def _apply_onboarding_grade(assessment: PerformanceAssessment) -> None:
-    """入职合格线 75：写 grade_label，不合格时挂 HR 人事跟进标记（不自动改雇佣）。"""
-    score = assessment.final_score
-    if score is None and assessment.total_points is not None:
-        score = int(assessment.total_points)
-    if score is None:
-        assessment.grade_label = None
-        return
-    passed = int(score) >= ONBOARD_PASS_SCORE
-    assessment.grade_label = "合格" if passed else "不合格"
-    assessment.grade = assessment.grade_label
-    wf = _workflow(assessment)
+def _apply_onboarding_grade(assessment: PerformanceAssessment, dual: Optional[dict] = None) -> None:
+    """入职结论（全表双评）：两边都通过=合格；都不通过=不合格；一通过一不通过=待总经理裁决。
+
+    dual 为 _recalc_dual_review 的结果；缺省时按总分（兼容历史单）。
+    """
     stage = _onboarding_stage(assessment)
-    if passed:
+    wf = _workflow(assessment)
+    outcome = (dual or {}).get("outcome")
+    if dual is None:
+        # 历史兼容：老单没有双评数据，按总分判定
+        score = assessment.final_score
+        if score is None and assessment.total_points is not None:
+            score = int(assessment.total_points)
+        if score is None:
+            assessment.grade_label = None
+            return
+        outcome = "pass" if int(score) >= ONBOARD_PASS_SCORE else "fail"
+    if outcome == "pass":
+        assessment.grade_label = "合格"
+        assessment.grade = "合格"
         wf.pop("hr_followup", None)
-    else:
+    elif outcome == "fail":
+        assessment.grade_label = "不合格"
+        assessment.grade = "不合格"
         consequence = "不予转正" if stage == "M3" else "不予留用"
         wf["hr_followup"] = {
             "needed": True,
             "resolved": False,
-            "score": int(score),
+            "score": dual.get("manager_total") if dual else None,
             "pass_score": ONBOARD_PASS_SCORE,
             "stage": stage or None,
-            "reason": f"入职考核不合格（{stage or '阶段未知'}，得分 {int(score)} < {ONBOARD_PASS_SCORE}），建议{consequence}",
+            "reason": (
+                f"入职考核不合格（{stage or '阶段未知'}）：主管与培训部均未达 {ONBOARD_PASS_SCORE} 分，建议{consequence}"
+            ),
+            "dual_review": dual,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+    elif outcome == "pending_gm":
+        # 一通过一不通过：不下结论，交总经理裁决
+        dm = dual or {}
+        assessment.grade_label = None
+        assessment.grade = None
+        wf["hr_followup"] = {
+            "needed": True,
+            "resolved": False,
+            "decision": "pending_gm",
+            "score": None,
+            "pass_score": ONBOARD_PASS_SCORE,
+            "stage": stage or None,
+            "reason": (
+                f"主管与培训部结论不一致（主管 {dm.get('manager_total')} 分 / "
+                f"培训部 {dm.get('trainer_total')} 分，合格线 {ONBOARD_PASS_SCORE}），待总经理裁决"
+            ),
+            "dual_review": dual,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        assessment.grade_label = None
     _save_workflow(assessment, wf)
+
+
+DUAL_OUTCOME_LABELS = {
+    "pass": "通过",
+    "fail": "不通过",
+    "pending_gm": "待总经理裁决",
+}
+
+
+def _recalc_dual_review(db: Session, assessment: PerformanceAssessment) -> dict:
+    """入职全表双评：算主管/培训部各自总分与通过结论，写入 workflow 并返回。
+
+    - 任一方还有指标未打分 → 该方总分为 None、outcome 为 None（未评完）
+    - 两边都 ≥ 合格线 → pass；都不达 → fail；一边通过一边不通过 → pending_gm（待总经理裁决）
+    """
+    items = (
+        db.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == assessment.id)
+        .all()
+    )
+
+    def _total(field: str) -> Optional[Decimal]:
+        vals = [getattr(i, field) for i in items]
+        if not vals or any(v is None for v in vals):
+            return None
+        return sum((v for v in vals if v is not None), Decimal("0"))
+
+    manager_total = _total("leader_score")
+    trainer_total = _total("trainer_score")
+    manager_pass = None if manager_total is None else manager_total >= ONBOARD_PASS_SCORE
+    trainer_pass = None if trainer_total is None else trainer_total >= ONBOARD_PASS_SCORE
+    if manager_pass is None or trainer_pass is None:
+        outcome: Optional[str] = None
+    elif manager_pass and trainer_pass:
+        outcome = "pass"
+    elif not manager_pass and not trainer_pass:
+        outcome = "fail"
+    else:
+        outcome = "pending_gm"
+    data = {
+        "manager_total": float(manager_total) if manager_total is not None else None,
+        "trainer_total": float(trainer_total) if trainer_total is not None else None,
+        "manager_pass": manager_pass,
+        "trainer_pass": trainer_pass,
+        "outcome": outcome,
+        "outcome_label": DUAL_OUTCOME_LABELS.get(outcome or ""),
+        "pass_score": ONBOARD_PASS_SCORE,
+    }
+    wf = _workflow(assessment)
+    wf["dual_review"] = data
+    _save_workflow(assessment, wf)
+    return data
 
 
 def _all_parties_confirmed(assessment: PerformanceAssessment) -> bool:
@@ -258,7 +342,7 @@ def _try_complete_onboarding(db: Session, assessment: PerformanceAssessment, use
     assessment.confirmed_revision = assessment.revision
     assessment.current_handler_type = None
     assessment.current_handler_id = None
-    _apply_onboarding_grade(assessment)
+    _apply_onboarding_grade(assessment, _recalc_dual_review(db, assessment))
     _bump(assessment)
     _log(
         db,
@@ -602,7 +686,26 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         "assessment_kind": assessment.assessment_kind,
         "is_onboarding": _is_onboarding(assessment),
         "training_required": _is_onboarding(assessment) or _has_training_items(db, assessment.id),
-        "training_ack_only": _is_onboarding(assessment) and not _has_training_items(db, assessment.id),
+        # 全表双评：入职考核培训部对每条指标都要打分，不再有"仅确认"路径
+        "training_ack_only": False,
+        # 双评结果：主主管/培训部各自总分与通过结论（都通过=通过；一边通过=待总经理裁决）
+        "dual_review": (_workflow(assessment).get("dual_review") if _is_onboarding(assessment) else None),
+        "manager_total": (
+            (_workflow(assessment).get("dual_review") or {}).get("manager_total")
+            if _is_onboarding(assessment) else None
+        ),
+        "trainer_total": (
+            (_workflow(assessment).get("dual_review") or {}).get("trainer_total")
+            if _is_onboarding(assessment) else None
+        ),
+        "dual_outcome": (
+            (_workflow(assessment).get("dual_review") or {}).get("outcome")
+            if _is_onboarding(assessment) else None
+        ),
+        "dual_outcome_label": (
+            (_workflow(assessment).get("dual_review") or {}).get("outcome_label")
+            if _is_onboarding(assessment) else None
+        ),
         "can_training_score": _can_training_score(assessment, user),
         "can_review": _can_review(assessment, user),
         "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
@@ -745,12 +848,11 @@ def manager_submit(
         raise HTTPException(status_code=403, detail="普通员工不能调用主管动作")
     _apply_actuals(db, assessment_id, actuals, required=False)
     materials.apply_system_scores(db, assessment_id)
-    # 双评分：主管只评自己负责的维度（培训部维度由培训部评分节点处理）
-    split = _has_training_items(db, assessment_id)
-    missing = _apply_item_scores(
-        db, assessment_id, scores, only_evaluator="manager" if split else None
-    )
-    if split and missing:
+    # 全表双评（入职考核）：主管对**所有**指标打分；培训部在同一张表上另打一次。
+    # 月度考核维持历史行为（不强制"每项都评"）。
+    is_onboarding = _is_onboarding(assessment)
+    missing = _apply_item_scores(db, assessment_id, scores, target="leader")
+    if is_onboarding and missing:
         db.rollback()
         raise HTTPException(
             status_code=422,
@@ -761,6 +863,9 @@ def manager_submit(
             },
         )
     _recalc_assessment_total(db, assessment)
+    if is_onboarding:
+        # 记录主管总分/双评状态（培训部未评时 trainer_total 为 None）
+        _recalc_dual_review(db, assessment)
     if comment:
         assessment.manager_comment = comment
     from_status = assessment.status
@@ -814,13 +919,9 @@ def training_submit(
         )
     if not _can_training_score(assessment, user):
         raise HTTPException(status_code=403, detail="需要培训部（或 HR）权限")
-    has_training = _has_training_items(db, assessment_id)
-    missing = (
-        _apply_item_scores(db, assessment_id, scores, only_evaluator="training")
-        if has_training
-        else []
-    )
-    if has_training and missing:
+    # 全表双评（入职考核）：培训部对**所有**指标打分，写入 trainer_score（不影响主管总分口径）
+    missing = _apply_item_scores(db, assessment_id, scores, target="trainer")
+    if missing:
         db.rollback()
         raise HTTPException(
             status_code=422,
@@ -830,8 +931,7 @@ def training_submit(
                 "items": [{"id": i.id, "name": i.name} for i in missing],
             },
         )
-    if has_training:
-        _recalc_assessment_total(db, assessment)
+    _recalc_dual_review(db, assessment)
     # 记录培训部评分/确认人，复核节点禁止自审
     assessment.training_scorer_id = user.id
     from_status = assessment.status
@@ -1001,13 +1101,21 @@ def _apply_item_scores(
     assessment_id: int,
     scores: Optional[list[dict]],
     *,
-    only_evaluator: Optional[str] = None,
+    target: str = "leader",
 ) -> list[PerformanceAssessmentItem]:
-    """写入评分。only_evaluator 为空时按历史行为写全部；否则只写属于该评分人的指标。
+    """写入评分，返回「本次仍未评分」的指标，由调用方决定是否阻断提交。
 
-    返回本次未评分（仍为空）的指标，交调用方决定是否阻断提交。
+    target='leader'  主管分 → leader_score（同时写 awarded_points/final_score，保持总分口径不变）
+    target='trainer' 培训部分 → trainer_score（不动总分口径，两个总分各自计算）
+
+    全表双评：两边都对**所有**指标打分，因此不再按 evaluator 过滤。
     """
-    scored_ids: set[int] = set()
+    items = (
+        db.query(PerformanceAssessmentItem)
+        .filter(PerformanceAssessmentItem.assessment_id == assessment_id)
+        .all()
+    )
+    by_id = {item.id: item for item in items}
     if scores:
         for s in scores:
             raw = s.get("score")
@@ -1015,31 +1123,26 @@ def _apply_item_scores(
                 continue
             if isinstance(raw, str) and not raw.strip():
                 continue
-            item = (
-                db.query(PerformanceAssessmentItem)
-                .filter(
-                    PerformanceAssessmentItem.id == int(s["item_id"]),
-                    PerformanceAssessmentItem.assessment_id == assessment_id,
-                )
-                .first()
-            )
+            item = by_id.get(int(s["item_id"]))
             if item is None:
-                continue
-            if only_evaluator is not None and _item_evaluator(item) != only_evaluator:
                 continue
             try:
                 score = Decimal(str(raw))
             except Exception:
                 continue
-            item.leader_score = score
-            if s.get("comment") is not None:
-                item.leader_comment = s.get("comment")
-            item.awarded_points = score
-            item.final_score = score
-            scored_ids.add(item.id)
-    if only_evaluator is None:
-        return []
-    return [i for i in _items_by_evaluator(db, assessment_id, only_evaluator) if i.id not in scored_ids]
+            if target == "trainer":
+                item.trainer_score = score
+                if s.get("comment") is not None:
+                    item.trainer_comment = s.get("comment")
+            else:
+                item.leader_score = score
+                if s.get("comment") is not None:
+                    item.leader_comment = s.get("comment")
+                item.awarded_points = score
+                item.final_score = score
+    if target == "trainer":
+        return [i for i in items if i.trainer_score is None]
+    return [i for i in items if i.leader_score is None]
 
 
 def _recalc_assessment_total(db: Session, assessment: PerformanceAssessment) -> Decimal:

@@ -300,6 +300,9 @@ class PerformanceAssessmentItem(Base):
     self_comment: Mapped[Optional[str]] = mapped_column(Text)
     leader_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     leader_comment: Mapped[Optional[str]] = mapped_column(Text)
+    # 全表双评（入职考核）：主管分 leader_score、培训部分 trainer_score，各自算总分判通过
+    trainer_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)
+    trainer_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     final_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     metric_key: Mapped[Optional[str]] = mapped_column(String(80))
     max_points: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
