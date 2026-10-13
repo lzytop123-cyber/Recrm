@@ -332,17 +332,16 @@ def _record_party_confirm(
     return conf
 
 
-def _try_complete_onboarding(db: Session, assessment: PerformanceAssessment, user: User, *, action: str) -> bool:
-    """三方都确认后完成入职考核并写合格结论。返回是否已完成。"""
-    if not _all_parties_confirmed(assessment):
-        return False
+def _complete_onboarding(db: Session, assessment: PerformanceAssessment, user: User, *, action: str) -> None:
+    """入职考核完成：写结论（双评判定）+ 状态/版本/日志。HR 复核通过即调用（已取消三方确认）。"""
     from_status = assessment.status
     assessment.status = ASSESS_COMPLETED
     assessment.completed_at = datetime.now(timezone.utc)
     assessment.confirmed_revision = assessment.revision
     assessment.current_handler_type = None
     assessment.current_handler_id = None
-    _apply_onboarding_grade(assessment, _recalc_dual_review(db, assessment))
+    dual = _recalc_dual_review(db, assessment)
+    _apply_onboarding_grade(assessment, dual)
     _bump(assessment)
     _log(
         db,
@@ -351,8 +350,19 @@ def _try_complete_onboarding(db: Session, assessment: PerformanceAssessment, use
         actor_id=user.id,
         from_status=from_status,
         to_status=assessment.status,
-        note=assessment.grade_label,
+        note=assessment.grade_label or dual.get("outcome_label"),
     )
+
+
+def _try_complete_onboarding(db: Session, assessment: PerformanceAssessment, user: User, *, action: str) -> bool:
+    """三方都确认后完成入职考核并写合格结论。返回是否已完成。
+
+    ⚠️ 2026-10-13 起入职考核已取消「三方确认」环节（改由 HR 复核直接完成），
+    此函数仅为历史遗留单据保留（万一还有停在 employee_confirm 的旧单）。
+    """
+    if not _all_parties_confirmed(assessment):
+        return False
+    _complete_onboarding(db, assessment, user, action=action)
     return True
 
 
@@ -530,14 +540,7 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
         actions.extend(["hr_approve", "hr_return"])
     if status == ASSESS_EMPLOYEE_CONFIRM_PENDING:
         if _is_onboarding(assessment):
-            conf = _confirmations(assessment)
-            if is_manager and not conf.get("manager"):
-                actions.append("party_confirm")
-            if _can_training_sign(assessment, user) and not conf.get("training"):
-                actions.append("party_confirm")
-            if _is_hr(user) and not conf.get("hr"):
-                actions.append("party_confirm")
-            # 入职结果无需员工确认；员工仅可申诉
+            # 三方确认已取消（HR 复核即完成）；仅历史遗留单据保留员工申诉入口
             if is_employee:
                 actions.append("appeal")
         elif is_employee:
@@ -560,15 +563,15 @@ def allowed_actions(assessment: PerformanceAssessment, user: User) -> list[str]:
 
 def next_step_label(assessment: PerformanceAssessment) -> str:
     if assessment.status == ASSESS_TRAINING_PENDING and _is_onboarding(assessment):
-        # M3 无培训维度时仍走培训部确认节点
-        return "培训部评分/确认"
+        return "培训部评分"
     if assessment.status == ASSESS_EMPLOYEE_CONFIRM_PENDING and _is_onboarding(assessment):
+        # 三方确认已取消；仅历史遗留单据（仍停在 employee_confirm）会走到这里
         conf = _confirmations(assessment)
         missing = [k for k in ONBOARD_CONFIRM_PARTIES if not conf.get(k)]
         labels = {"manager": "主管确认", "training": "培训部确认", "hr": "HR确认"}
         if missing:
-            return "三方确认：" + "、".join(labels[m] for m in missing)
-        return "三方确认完成"
+            return "待确认：" + "、".join(labels[m] for m in missing)
+        return "待完成"
     mapping = {
         ASSESS_EMPLOYEE_PENDING: "员工填写实际并提交",
         ASSESS_MANAGER_PENDING: "各部门主管评分",
@@ -711,9 +714,9 @@ def detail_payload(db: Session, assessment: PerformanceAssessment, user: User) -
         "completed_at": assessment.completed_at.isoformat() if assessment.completed_at else None,
         "grade_label": assessment.grade_label,
         "pass_score": ONBOARD_PASS_SCORE if _is_onboarding(assessment) else None,
-        "confirmations": _confirmations(assessment) if _is_onboarding(assessment) else None,
-        # 本人可签的确认方（后端判定，前端只按这个渲染按钮）
-        "can_confirm_parties": _can_confirm_parties(assessment, user) if _is_onboarding(assessment) else None,
+        # 三方确认已取消（2026-10-13）：不再下发确认状态与可签方
+        "confirmations": None,
+        "can_confirm_parties": None,
         "hr_followup": (_workflow(assessment).get("hr_followup") if _is_onboarding(assessment) else None),
     }
 
@@ -982,12 +985,15 @@ def hr_review(
     if assessment.status != ASSESS_HR_REVIEW_PENDING:
         raise HTTPException(status_code=409, detail={"code": "KPI_ACTION_NOT_ALLOWED", "message": "当前不在 HR 复核"})
     from_status = assessment.status
+    if approve and _is_onboarding(assessment):
+        # 入职考核已取消「三方确认」环节（2026-10-13）：HR 复核通过即完成，结论按双评判定
+        _complete_onboarding(db, assessment, user, action="hr_review")
+        db.commit()
+        return detail_payload(db, assessment, user)
     if approve:
         assessment.status = ASSESS_EMPLOYEE_CONFIRM_PENDING
         assessment.current_handler_type = "employee"
         assessment.current_handler_id = assessment.user_id
-        if _is_onboarding(assessment):
-            _ensure_confirmations(assessment)
     else:
         assessment.status = ASSESS_MANAGER_PENDING
         assessment.current_handler_type = "manager"
@@ -1010,7 +1016,7 @@ def result_confirm(db: Session, assessment_id: int, user: User, *, revision: int
     if _is_onboarding(assessment):
         raise HTTPException(
             status_code=422,
-            detail="入职考核无需员工确认，请由主管、培训部、HR 完成三方确认",
+            detail="入职考核无需员工确认，HR 复核通过后即完成。",
         )
     from_status = assessment.status
     assessment.status = ASSESS_COMPLETED
@@ -1032,7 +1038,29 @@ def party_confirm(
     revision: int,
     party: str,
 ) -> dict:
-    """入职考核三方确认：主管 / 培训部 / HR（无需员工确认）。"""
+    """入职考核三方确认 —— 2026-10-13 起该环节已取消（HR 复核通过即完成）。"""
+    assessment = _assessment(db, assessment_id)
+    if not _is_onboarding(assessment):
+        raise HTTPException(status_code=422, detail="仅入职考核支持三方确认")
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "code": "KPI_ACTION_NOT_ALLOWED",
+            "message": "入职考核已取消「三方确认」环节：HR 复核通过后考核即完成，无需再确认。",
+            "details": {"status": _public_status(assessment.status)},
+        },
+    )
+
+
+def _party_confirm_legacy(
+    db: Session,
+    assessment_id: int,
+    user: User,
+    *,
+    revision: int,
+    party: str,
+) -> dict:
+    """历史遗留实现（三方确认），保留以便回滚/排查，当前不再被路由调用。"""
     assessment = _assessment(db, assessment_id)
     _check_revision(assessment, revision)
     if not _is_onboarding(assessment):

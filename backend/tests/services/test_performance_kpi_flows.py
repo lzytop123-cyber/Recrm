@@ -368,8 +368,8 @@ def test_onboarding_m3_always_enters_training_node(db_session: Session) -> None:
     assert out["training_ack_only"] is False
 
 
-def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> None:
-    """三方确认齐后才完成；低于 75 写不合格并挂 HR 跟进。"""
+def test_onboarding_hr_review_completes_case(db_session: Session) -> None:
+    """三方确认已取消：HR 复核通过即完成；双边都不通过写不合格并挂 HR 跟进。"""
     from app.models.performance import (
         ASSESS_COMPLETED,
         ASSESS_EMPLOYEE_CONFIRM_PENDING,
@@ -463,33 +463,30 @@ def test_onboarding_tripartite_confirm_and_pass_line(db_session: Session) -> Non
     hr.roles = [existing_hr_role]
     db_session.commit()
 
-    flow.hr_review(db_session, asmt.id, hr, revision=asmt.revision, approve=True)
+    # 三方确认已取消（2026-10-13）：HR 复核通过即完成考核
+    out = flow.hr_review(db_session, asmt.id, hr, revision=asmt.revision, approve=True)
     asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
-    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
+    assert asmt.status == ASSESS_COMPLETED
+    assert out["status"] == ASSESS_COMPLETED
+    assert asmt.grade_label == "不合格"  # 主管 30 / 培训部 30 双边都不通过
+    assert out["hr_followup"]["needed"] is True
+    assert out["dual_outcome"] == "fail"
 
-    # 入职无需员工确认
     from fastapi import HTTPException
 
+    # 已完成：员工不能再确认（旧行为下员工也不可确认）
     try:
         flow.result_confirm(db_session, asmt.id, subject, revision=asmt.revision)
         assert False, "入职不应允许员工 result_confirm"
     except HTTPException as exc:
+        assert exc.status_code in (409, 422)
+
+    # 三方确认接口已作废：调用应被拒绝
+    try:
+        flow.party_confirm(db_session, asmt.id, mgr, revision=asmt.revision, party="manager")
+        assert False, "三方确认已取消，不应成功"
+    except HTTPException as exc:
         assert exc.status_code == 422
-
-    flow.party_confirm(db_session, asmt.id, mgr, revision=asmt.revision, party="manager")
-    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
-    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
-
-    flow.party_confirm(db_session, asmt.id, training, revision=asmt.revision, party="training")
-    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
-    assert asmt.status == ASSESS_EMPLOYEE_CONFIRM_PENDING
-
-    out = flow.party_confirm(db_session, asmt.id, hr, revision=asmt.revision, party="hr")
-    assert out["status"] == ASSESS_COMPLETED
-    asmt = db_session.query(PerformanceAssessment).filter_by(id=opened["assessment_id"]).one()
-    assert asmt.grade_label == "不合格"
-    assert asmt.status == ASSESS_COMPLETED
-    assert out["hr_followup"]["needed"] is True
 
 
 def test_onboarding_dual_review_pending_gm(db_session: Session) -> None:
