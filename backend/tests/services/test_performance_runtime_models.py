@@ -47,8 +47,11 @@ def test_alembic_head_chains_from_confirmed_revision() -> None:
     heads = script.get_heads()
     assert len(heads) == 1
     head = script.get_revision(heads[0])
-    assert head.revision == "b6c7d8e9f0a1"
-    assert head.down_revision == "a5b6c7d8e9f0"
+    # 2026-10-12 起 head 为入职考核全表双评（trainer_score）；须单一 head 且链条连续
+    assert head.revision == "d8e9f0a1b2c3"
+    assert head.down_revision == "c7d8e9f0a1b2"
+    chain = script.get_revision("c7d8e9f0a1b2")
+    assert chain.down_revision == "b6c7d8e9f0a1"
 
 
 def test_legacy_approved_template_still_readable(db_session: Session) -> None:
