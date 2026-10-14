@@ -29,6 +29,7 @@ from app.schemas.performance import (
     TemplateUpdateRequest,
 )
 from app.services import performance as perf_service
+from app.services import performance_cycle_ops as cycle_ops
 from app.services import performance_template as tpl_service
 
 router = APIRouter(prefix="/performance", tags=["目标绩效"])
@@ -395,7 +396,7 @@ def reset_cycle(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.reset_cycle(db, current_user, period_label)
+        cycle_ops.reset_cycle(db, current_user, period_label)
     )
 
 
@@ -406,7 +407,7 @@ def calibrate(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.start_calibration(db, current_user, period_label)
+        cycle_ops.start_calibration(db, current_user, period_label)
     )
 
 
@@ -417,7 +418,7 @@ def lock_cycle(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.lock_cycle(db, current_user, period_label)
+        cycle_ops.lock_cycle(db, current_user, period_label)
     )
 
 
@@ -428,7 +429,7 @@ def generate_payroll(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.generate_payroll(db, current_user, period_label)
+        cycle_ops.generate_payroll(db, current_user, period_label)
     )
 
 
@@ -439,7 +440,7 @@ def review_payroll(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.review_payroll(db, current_user, period_label)
+        cycle_ops.review_payroll(db, current_user, period_label)
     )
 
 
@@ -450,5 +451,5 @@ def publish_payroll(
     period_label: Optional[str] = Query(None),
 ) -> PerformanceCycleOut:
     return PerformanceCycleOut.model_validate(
-        perf_service.publish_payroll(db, current_user, period_label)
+        cycle_ops.publish_payroll(db, current_user, period_label)
     )

@@ -102,13 +102,14 @@ def _person(
 @pytest.mark.parametrize(
     "case,kwargs,expect_status,expect_code",
     [
-        ("matched", {"employment_status": "正式", "attendance_days": 30}, "matched", "scope_and_policy_matched"),
-        ("wrong_job", {"job_title": "品宣专员", "attendance_days": 30}, None, None),  # 不进候选池
-        ("probation", {"employment_status": "试用", "attendance_days": 25}, "excluded", "probation"),
-        ("ten_days", {"attendance_days": 10}, "excluded", "insufficient_days"),
-        ("boundary_15", {"attendance_days": 15}, "matched", "scope_and_policy_matched"),
-        ("long_leave", {"employment_status": "长期休假", "attendance_days": 30}, "excluded", "long_leave"),
-        ("no_manager", {"manager_id": None, "attendance_days": 30}, "blocked", "missing_manager"),
+        ("matched", {"employment_status": "正式"}, "matched", "scope_and_policy_matched"),
+        ("wrong_job", {"job_title": "品宣专员"}, None, None),  # 不进候选池
+        ("probation", {"employment_status": "试用"}, "excluded", "probation"),
+        # 10 月共 31 天：10-22 入职 → 在岗 10 天；10-17 入职 → 在岗 15 天
+        ("ten_days", {"hire_date": date(2026, 10, 22)}, "excluded", "insufficient_days"),
+        ("boundary_15", {"hire_date": date(2026, 10, 17)}, "matched", "scope_and_policy_matched"),
+        ("long_leave", {"employment_status": "长期休假"}, "excluded", "long_leave"),
+        ("no_manager", {"manager_id": None}, "blocked", "missing_manager"),
     ],
 )
 def test_match_personnel_cases(db_session: Session, case, kwargs, expect_status, expect_code) -> None:
@@ -287,3 +288,102 @@ def test_other_template_assessment_warns_not_blocks(db_session: Session) -> None
     assert "讲师月度积分" in person["warnings"][0]["message"]
     assert result["summary"]["warned"] >= 1
 
+
+
+def _closed_cycle(db: Session) -> PerformanceCycle:
+    cycle = PerformanceCycle(period_label="2026-09", status="assessing", cycle_type="monthly")
+    db.add(cycle)
+    db.commit()
+    return cycle
+
+
+def _seed_september(db: Session, user_id: int, *, last_day: int = 30, absent: dict[int, str] | None = None) -> None:
+    absent = absent or {}
+    for day in range(1, last_day + 1):
+        matcher.seed_attendance_days(
+            db, user_id, date(2026, 9, day), 1, status=absent.get(day, "正常")
+        )
+    db.commit()
+
+
+def test_closed_period_deducts_absence_and_leave(db_session: Session) -> None:
+    from app.models.hr import HrLeaveRequest
+
+    dept, _, mgr, tpl, _ = _setup(db_session)
+    cycle = _closed_cycle(db_session)
+    user = _person(
+        db_session, username="closed_u", dept_id=dept.id, job_title="市场业务",
+        manager_id=mgr.id, attendance_days=None,
+    )
+    _seed_september(db_session, user.id, absent={3: "请假", 4: "旷工", 5: "休息日", 6: "缺卡"})
+    db_session.add(
+        HrLeaveRequest(
+            employee_id=user.id, leave_type="annual", start_date=date(2026, 9, 3),
+            end_date=date(2026, 9, 9), days=Decimal("7"), status="approved",
+        )
+    )
+    db_session.commit()
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    person = next(p for p in result["people"] if p["user_id"] == user.id)
+    # 9/3-9/9 请假单 7 天 + 9/4 旷工（已在请假区间内，不重复扣）= 30 - 7
+    assert person["days_in_period"] == 23
+
+
+def test_closed_period_without_full_attendance_falls_back_to_hire_estimate(db_session: Session) -> None:
+    dept, _, mgr, tpl, _ = _setup(db_session)
+    cycle = _closed_cycle(db_session)
+    user = _person(
+        db_session, username="partial_u", dept_id=dept.id, job_title="市场业务",
+        manager_id=mgr.id, attendance_days=None, hire_date=date(2026, 9, 11),
+    )
+    _seed_september(db_session, user.id, last_day=20, absent={12: "旷工"})
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    person = next(p for p in result["people"] if p["user_id"] == user.id)
+    assert person["days_in_period"] == 20
+
+
+def test_open_period_ignores_attendance(db_session: Session) -> None:
+    dept, _, mgr, tpl, cycle = _setup(db_session)
+    user = _person(
+        db_session, username="open_u", dept_id=dept.id, job_title="市场业务",
+        manager_id=mgr.id, attendance_days=None,
+    )
+    matcher.seed_attendance_days(db_session, user.id, date(2026, 10, 1), 7, status="旷工")
+    db_session.commit()
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    person = next(p for p in result["people"] if p["user_id"] == user.id)
+    assert person["days_in_period"] == 31
+
+
+@pytest.mark.parametrize(
+    "status,is_active,expected",
+    [
+        ("正式", True, "regular"),
+        (None, True, "regular"),
+        ("Regular", True, "regular"),
+        ("试用", True, "probation"),
+        ("试用期", True, "probation"),
+        ("待入职", True, "pending"),
+        ("长期休假", True, "long_leave"),
+        ("离职", True, "resigned"),
+        ("已离职", True, "resigned"),
+        ("Resigned", True, "resigned"),
+        ("正式", False, "resigned"),
+    ],
+)
+def test_employment_state_normalization(status, is_active, expected) -> None:
+    from app.services.employment_status import employment_state
+
+    assert employment_state(status, is_active=is_active).value == expected
+
+
+def test_resigned_but_active_account_excluded(db_session: Session) -> None:
+    dept, _, mgr, tpl, cycle = _setup(db_session)
+    user = _person(
+        db_session, username="left_u", dept_id=dept.id, job_title="市场业务",
+        manager_id=mgr.id, employment_status="已离职",
+    )
+    result = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    person = next(p for p in result["people"] if p["user_id"] == user.id)
+    assert person["match_status"] == "excluded"
+    assert person["allowed_action"] == "none"

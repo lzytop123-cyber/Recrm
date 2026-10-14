@@ -459,23 +459,42 @@ def test_current_month_cycle_id_prefers_latest(db_session: Session) -> None:
     assert batch_svc.current_month_cycle_id(db_session) == later.id
 
 
-def test_multi_batch_rejects_same_person_across_templates(db_session: Session) -> None:
+def test_multi_batch_allows_same_person_across_templates(db_session: Session) -> None:
+    """跨团队考核：同一人可同时进入多个模板批次。"""
     _, mgr, u1, _, tpl_mkt, cycle = _fixture(db_session)
-    _, ops_emp, tpl_ops = _second_dept_template(db_session, mgr, cycle)
+    _, _ops_emp, tpl_ops = _second_dept_template(db_session, mgr, cycle)
+    # 第二模板范围不含 u1，按范围外手动纳入
     payload = {
         "cycle_id": cycle.id,
         "batches": [
             {"template_id": tpl_mkt.id, "people": [{"user_id": u1.id, "selected": True}]},
-            {"template_id": tpl_ops.id, "people": [{"user_id": u1.id, "selected": True}]},
+            {
+                "template_id": tpl_ops.id,
+                "people": [
+                    {
+                        "user_id": u1.id,
+                        "selected": True,
+                        "adjustment_reason": "按新制度同时参加两套考核",
+                    }
+                ],
+            },
         ],
         **_due_chain(),
     }
-    with pytest.raises(HTTPException) as exc:
-        batch_svc.create_multi_assessment_batches(
-            db_session, mgr, payload, idempotency_key="multi-dup-user"
+    result = batch_svc.create_multi_assessment_batches(
+        db_session, mgr, payload, idempotency_key="multi-same-user-ok"
+    )
+    assert len(result["batches"]) == 2
+    rows = (
+        db_session.query(PerformanceAssessment)
+        .filter(
+            PerformanceAssessment.cycle_id == cycle.id,
+            PerformanceAssessment.user_id == u1.id,
         )
-    assert exc.value.status_code == 422
-    assert exc.value.detail["code"] == "KPI_MULTI_PERSON_DUPLICATE"
+        .all()
+    )
+    assert len(rows) == 2
+    assert {r.template_id for r in rows} == {tpl_mkt.id, tpl_ops.id}
 
 
 def test_assessment_history_scopes_manager_and_employee(db_session: Session) -> None:
@@ -615,8 +634,10 @@ def test_department_progress_merges_same_name_different_ids(
         },
     }
 
+    from app.services import performance_batch_progress
+
     monkeypatch.setattr(
-        batch_svc,
+        performance_batch_progress,
         "batch_progress_out",
         lambda db, batch: fake[batch.id],
     )

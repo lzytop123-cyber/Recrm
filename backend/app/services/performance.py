@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -30,10 +29,6 @@ from app.models.performance import (
     ASSESS_PENDING_MANAGER,
     ASSESS_PENDING_SELF,
     CYCLE_STATUS_ASSESSING,
-    CYCLE_STATUS_CALIBRATING,
-    CYCLE_STATUS_LOCKED,
-    CYCLE_STATUS_PAYROLL,
-    CYCLE_STATUS_PUBLISHED,
     PerformanceAppeal,
     PerformanceAssessment,
     PerformanceAssessmentItem,
@@ -47,6 +42,18 @@ from app.schemas.performance import (
     AppealResolveRequest,
     ManagerRateRequest,
     SelfRateRequest,
+)
+from app.services.performance_scoring import (  # noqa: F401
+    GRADE_COEFF,
+    _archive_item_finals,
+    _as_int_score,
+    _bonus,
+    _fill_score_caches,
+    _freeze_actuals,
+    _grade_and_coeff,
+    _item_effective_score,
+    compute_weighted_score,
+    resolve_grade,
 )
 
 
@@ -94,108 +101,6 @@ def _match_label(adjustment_type: Optional[str]) -> Optional[str]:
     if adjustment_type == "automatic":
         return "自动匹配"
     return None
-
-
-def _grade_and_coeff(score: int) -> tuple[str, Decimal]:
-    if score >= 90:
-        return "A+", Decimal("1.20")
-    if score >= 85:
-        return "A", Decimal("1.10")
-    if score >= 70:
-        return "B", Decimal("1.00")
-    if score >= 60:
-        return "C", Decimal("0.85")
-    return "D", Decimal("0.70")
-
-
-def _bonus(coeff: Decimal) -> Decimal:
-    return (Decimal("5000") * coeff).quantize(Decimal("0.01"))
-
-
-GRADE_COEFF = {
-    "A+": Decimal("1.20"),
-    "A": Decimal("1.10"),
-    "B": Decimal("1.00"),
-    "C": Decimal("0.85"),
-    "D": Decimal("0.70"),
-}
-
-
-def resolve_grade(score) -> str:
-    s = Decimal(str(score or 0))
-    if s >= 95:
-        return "A+"
-    if s >= 85:
-        return "A"
-    if s >= 75:
-        return "B"
-    if s >= 65:
-        return "C"
-    return "D"
-
-
-def _item_effective_score(item) -> Decimal:
-    for attr in ("final_score", "leader_score", "system_score", "self_score"):
-        v = getattr(item, attr, None)
-        if v is not None:
-            return Decimal(str(v))
-    return Decimal("0")
-
-
-def compute_weighted_score(items) -> Decimal:
-    """加权平均，权重合计为分母。空列表返回 0。"""
-    rows = list(items or [])
-    total_w = sum(Decimal(str(getattr(i, "weight", 0) or 0)) for i in rows)
-    if total_w <= 0:
-        return Decimal("0.00")
-    acc = sum(_item_effective_score(i) * Decimal(str(i.weight)) for i in rows)
-    return (acc / total_w).quantize(Decimal("0.01"))
-
-
-def _as_int_score(val: Decimal) -> int:
-    return int(val.quantize(Decimal("1")))
-
-
-def _fill_score_caches(assessment: PerformanceAssessment, items: list[PerformanceAssessmentItem]) -> None:
-    if getattr(assessment, "engine_version", None) not in (None, "", "legacy"):
-        return
-    okr = [i for i in items if i.data_source == "okr"]
-    kpi = [i for i in items if i.data_source == "system"]
-    behavior = [i for i in items if i.data_source == "manual"]
-    self_items = [i for i in items if i.data_source in ("self_manual", "manual")]
-    if okr:
-        assessment.okr_score = _as_int_score(compute_weighted_score(okr))
-    if kpi:
-        assessment.kpi_score = _as_int_score(compute_weighted_score(kpi))
-    if behavior:
-        assessment.behavior_score = _as_int_score(compute_weighted_score(behavior))
-    if self_items and any(i.self_score is not None for i in self_items):
-        assessment.self_score = _as_int_score(compute_weighted_score(self_items))
-    if any(i.leader_score is not None or i.system_score is not None for i in items):
-        total = compute_weighted_score(items)
-        assessment.manager_score = _as_int_score(total)
-        assessment.grade = resolve_grade(total)
-        assessment.coefficient = GRADE_COEFF[assessment.grade]
-        assessment.bonus_amount = _bonus(assessment.coefficient)
-
-
-def _freeze_actuals(db, assessment: PerformanceAssessment, items: list[PerformanceAssessmentItem]) -> None:
-    from app.services.performance_data_source import resolve_actual
-
-    for item in items:
-        actual, _score = resolve_actual(item, assessment, db)
-        item.actual_value = actual
-        item.system_score = None
-
-
-def _archive_item_finals(items: list[PerformanceAssessmentItem]) -> None:
-    for item in items:
-        if item.leader_score is not None:
-            item.final_score = item.leader_score
-        elif item.system_score is not None:
-            item.final_score = item.system_score
-        elif item.self_score is not None:
-            item.final_score = item.self_score
 
 
 def status_from_instance(instance) -> str:
@@ -768,42 +673,6 @@ def ensure_cycle(db: Session, period_label: str | None = None) -> PerformanceCyc
     return enrich_cycle(db, cycle)
 
 
-def reset_cycle(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    """管理员重置周期：清空分数与申诉，回到待自评，可重新打分。"""
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="仅管理者可重置考核周期")
-    cycle = ensure_cycle(db, period_label)
-
-    assessment_ids = [
-        aid
-        for (aid,) in db.query(PerformanceAssessment.id)
-        .filter(PerformanceAssessment.cycle_id == cycle.id)
-        .all()
-    ]
-    if assessment_ids:
-        db.query(PerformanceAppeal).filter(
-            PerformanceAppeal.assessment_id.in_(assessment_ids)
-        ).delete(synchronize_session=False)
-
-    db.query(PerformanceAssessment).filter(PerformanceAssessment.cycle_id == cycle.id).delete(
-        synchronize_session=False
-    )
-    _seed_roster(db, cycle)
-
-    cycle.calibration_started = False
-    cycle.locked = False
-    cycle.locked_at = None
-    cycle.payroll_batch_no = None
-    cycle.payroll_created = False
-    cycle.payroll_reviewed = False
-    cycle.payroll_published = False
-    cycle.status = CYCLE_STATUS_ASSESSING
-    cycle.remark = f"已于 {_now().isoformat()} 重置为待自评"
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
-
-
 def get_workbench(db: Session, user: User, period_label: str | None = None) -> dict:
     """HR 总览。**只读**：没有周期时不自动创建（否则一打开页面就凭空出现历史周期）。
 
@@ -992,109 +861,3 @@ def resolve_appeal(
     db.commit()
     db.refresh(appeal)
     return enrich_appeal(db, appeal)
-
-
-def start_calibration(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="无权发起校准")
-    cycle = ensure_cycle(db, period_label)
-    if cycle.locked:
-        raise HTTPException(status_code=400, detail="已锁定")
-    pending_self = (
-        db.query(PerformanceAssessment)
-        .filter(
-            PerformanceAssessment.cycle_id == cycle.id,
-            PerformanceAssessment.status == ASSESS_PENDING_SELF,
-        )
-        .count()
-    )
-    pending_mgr = (
-        db.query(PerformanceAssessment)
-        .filter(
-            PerformanceAssessment.cycle_id == cycle.id,
-            PerformanceAssessment.status == ASSESS_PENDING_MANAGER,
-        )
-        .count()
-    )
-    if pending_self or pending_mgr:
-        raise HTTPException(
-            status_code=400,
-            detail=f"仍有 {pending_self} 项待自评、{pending_mgr} 项待主管评价，无法发起校准",
-        )
-    cycle.calibration_started = True
-    cycle.status = CYCLE_STATUS_CALIBRATING
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
-
-
-def lock_cycle(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="无权锁定")
-    cycle = ensure_cycle(db, period_label)
-    if not cycle.calibration_started:
-        raise HTTPException(status_code=400, detail="请先发起校准")
-    cycle = enrich_cycle(db, cycle)
-    if getattr(cycle, "pending_manager", 0) or getattr(cycle, "pending_appeals", 0) or getattr(
-        cycle, "pending_self", 0
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"仍有 {cycle.pending_self} 项自评、{cycle.pending_manager} 项主管评价、"
-                f"{cycle.pending_appeals} 项申诉未完成"
-            ),
-        )
-    db.query(PerformanceAssessment).filter(
-        PerformanceAssessment.cycle_id == cycle.id,
-        PerformanceAssessment.status == ASSESS_PENDING_CALIBRATION,
-    ).update({PerformanceAssessment.status: ASSESS_COMPLETED}, synchronize_session=False)
-    cycle.locked = True
-    cycle.locked_at = _now()
-    cycle.status = CYCLE_STATUS_LOCKED
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
-
-
-def generate_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="无权生成工资批次")
-    cycle = ensure_cycle(db, period_label)
-    if not cycle.locked:
-        raise HTTPException(status_code=400, detail="请先锁定绩效")
-    ym = period_label.replace("-", "")
-    cycle.payroll_batch_no = f"GZ-{ym}"
-    cycle.payroll_created = True
-    cycle.status = CYCLE_STATUS_PAYROLL
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
-
-
-def review_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="无权复核")
-    cycle = ensure_cycle(db, period_label)
-    if not cycle.payroll_created:
-        raise HTTPException(status_code=400, detail="请先生成工资批次")
-    cycle.payroll_reviewed = True
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
-
-
-def publish_payroll(db: Session, user: User, period_label: str | None = None) -> PerformanceCycle:
-    if not can_manage_performance(user):
-        raise HTTPException(status_code=403, detail="无权发布")
-    cycle = ensure_cycle(db, period_label)
-    if not cycle.payroll_reviewed:
-        raise HTTPException(status_code=400, detail="请先完成财务复核")
-    cycle.payroll_published = True
-    cycle.status = CYCLE_STATUS_PUBLISHED
-    from app.services import hr as hr_service
-
-    hr_service.generate_payslips_for_cycle(db, cycle)
-    db.commit()
-    db.refresh(cycle)
-    return enrich_cycle(db, cycle)
