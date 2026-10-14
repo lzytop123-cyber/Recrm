@@ -114,7 +114,8 @@ def build_arrangement(db: Session, assessment: PerformanceAssessment) -> list[di
     if hr_required:
         due_parts.append(f"HR复核 {_fmt_due(wf.get('hr_review_due_at'))}")
     if onboarding:
-        due_parts.append(f"三方确认 {_fmt_due(wf.get('confirm_due_at'))}")
+        # 2026-10-13 起入职考核取消「三方确认」，HR 复核通过即完成，不再提示该节点
+        pass
     else:
         due_parts.append(f"员工结果确认 {_fmt_due(wf.get('confirm_due_at'))}")
 
