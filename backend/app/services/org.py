@@ -83,8 +83,12 @@ def build_employee_todos(user: User) -> list[dict]:
 
 def list_departments_flat(db: Session) -> list[Department]:
     depts = db.query(Department).order_by(Department.id.asc()).all()
+    # 与员工列表默认「启用」一致，停用账号不计入树节点人数
     counts = {
-        d.id: db.query(User).filter(User.department_id == d.id).count() for d in depts
+        d.id: db.query(User)
+        .filter(User.department_id == d.id, User.is_active.is_(True))
+        .count()
+        for d in depts
     }
     for d in depts:
         d.user_count = counts.get(d.id, 0)  # type: ignore[attr-defined]
@@ -92,7 +96,7 @@ def list_departments_flat(db: Session) -> list[Department]:
 
 
 def _rollup_subtree_user_counts(dept: Department) -> int:
-    """将 user_count 汇总为「本部门 + 全部下级」人数，供组织树展示。"""
+    """将 user_count 汇总为「本部门 + 全部下级」启用人数，供组织树展示。"""
     total = int(getattr(dept, "user_count", 0) or 0)
     for child in getattr(dept, "children", None) or []:
         total += _rollup_subtree_user_counts(child)
@@ -208,7 +212,11 @@ def update_department(db: Session, dept_id: int, payload: DepartmentUpdate) -> D
         setattr(dept, k, v)
     db.commit()
     db.refresh(dept)
-    dept.user_count = db.query(User).filter(User.department_id == dept.id).count()  # type: ignore[attr-defined]
+    dept.user_count = (
+        db.query(User)
+        .filter(User.department_id == dept.id, User.is_active.is_(True))
+        .count()
+    )  # type: ignore[attr-defined]
     dept.children = []  # type: ignore[attr-defined]
     return dept
 
