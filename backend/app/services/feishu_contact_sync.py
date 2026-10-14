@@ -528,7 +528,11 @@ def _upsert_employee(
     if mobile and user.phone != mobile:
         user.phone = mobile
         changed = True
-    if user.job_title != job_title:
+    if user.job_title != job_title and not (user.job_title or "").strip():
+        # 岗位采用「飞书只填空缺、不覆盖」策略：
+        # 岗位在本系统内是「考核分组」的匹配依据（KPI 模板按 部门+岗位 匹配人员），
+        # 若每次通讯录同步都用飞书值覆盖，会让 HR 在本系统里维护的考核分组被打回，
+        # 导致月度模板匹配不到人（2026-10-14 实际发生过）。系统内已填写的岗位以此为准。
         user.job_title = job_title
         changed = True
     if employee_no and user.employee_no != employee_no:
