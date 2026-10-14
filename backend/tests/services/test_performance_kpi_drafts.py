@@ -9,12 +9,20 @@ from app.models.user import User
 from app.services.performance_kpi import confirm_import, preview_import
 
 
-def test_thirteen_drafts_reload_does_not_duplicate(db_session: Session) -> None:
-    assert len(FAMILIES) == 13
-    assert len({item["family_code"] for item in FAMILIES}) == 13
+def test_all_drafts_reload_does_not_duplicate(db_session: Session) -> None:
+    """草稿家族数 = FAMILIES 长度（2026-10 起新增《团队KPI考核表》5 套 → 18）；重复加载不产生重复模板。"""
+    from app.data.performance_templates import FAMILIES as _F
+
+    assert len(FAMILIES) == len(_F) and len(FAMILIES) == 18
+    assert len({item["family_code"] for item in FAMILIES}) == len(FAMILIES)
     load_drafts(db_session)
     load_drafts(db_session)
-    assert db_session.query(PerformanceTemplate).filter(PerformanceTemplate.engine_version == "kpi-v2").count() == 13
+    assert (
+        db_session.query(PerformanceTemplate)
+        .filter(PerformanceTemplate.engine_version == "kpi-v2")
+        .count()
+        == len(FAMILIES)
+    )
     ops = db_session.query(PerformanceTemplate).filter(PerformanceTemplate.family_code == "AI_OPS_MONTHLY").one()
     assert ops.status == "draft"
     assert str(ops.nominal_total) in {"110", "110.00"}
@@ -25,6 +33,11 @@ def test_thirteen_drafts_reload_does_not_duplicate(db_session: Session) -> None:
         "LIVE_HOST_MONTHLY",
         "LIVE_ADS_MONTHLY",
         "LECTURER_MONTHLY",
+        "LIVE_TEAM_MONTHLY",
+        "BRAND_DEPT_MONTHLY",
+        "DESIGN_MONTHLY",
+        "ASSOC_DEV_MONTHLY",
+        "CONTENT_DEPT_MONTHLY",
     ):
         row = db_session.query(PerformanceTemplate).filter(PerformanceTemplate.family_code == code).one()
         assert (row.blocking_issues_json or "[]") == "[]"
