@@ -1,0 +1,108 @@
+把本地环境对齐成线上（Recrm）— 2026-10-13
+==============================================
+
+【为什么两边不一样】
+
+1) 数据不一样（最主要）
+   线上库(生产)每天在变：HR 发起/评分、同事填材料、我改配置。
+   你本地那份库是你自己的，不会自动同步。
+   → 这两天线上特意改过的：15 人岗位、4 套旧模板停用、5 套新媒体新模板(草稿)。
+
+2) 代码不一样
+   线上代码全部已提交并推到 GitHub(ofer/Recrm + recrm-frontend)，
+   你本地只要 git pull 就一致。
+   （服务器上有 3 个未提交的部署脚本 deploy.sh / deploy-fe.sh / deploy-pkg.sh，
+     那是服务器专用的，你本地不需要，不影响。）
+
+3) 数据库结构不一样
+   这两天加了新列（如 performance_assessment_items.trainer_score）。
+   本地库如果没跑迁移，一进考核页就报 500。
+   → 必须 alembic upgrade head（对齐到 d8e9f0a1b2c3）。
+
+4) 本地配置不一样
+   backend/.env 里的数据库连接、LLM key；前端 vite 代理指向本机后端。
+
+
+【第 0 步：先备份你本地库（别丢数据）】
+   Windows/Navicat：右键本地库 → 转储 SQL 文件 → 存成 本地备份_20261013.sql
+   命令行：pg_dump -U postgres -d crm_okr > 本地备份_20261013.sql
+
+
+【第 1 步：代码拉最新（两个仓库都要）】
+
+   cd 你放代码的目录\Recrm
+   git stash            （如果提示有本地改动；没有就跳过）
+   git checkout main
+   git pull
+
+   cd ..\recrm-frontend
+   git stash
+   git checkout main
+   git pull
+
+
+【第 2 步：数据库对齐（用我发的 crm_okr_full_20261013.sql）】
+
+   ★ 这是"完全一致"的做法：本地库恢复成线上库的快照（人员、岗位、模板、考核单全一样）
+
+   Navicat 做法：
+     1. 新建/确认本地有一个库名叫 crm_okr（和文件里的名字一致）
+     2. 右键该库 → 运行 SQL 文件 → 选 crm_okr_full_20261013.sql → 开始
+     3. 文件开头自带 DROP 语句，重复执行也没问题（会先清空再导入）
+
+   命令行做法：
+     psql -U postgres -d crm_okr -f crm_okr_full_20261013.sql
+
+   注意：如果本地库名不叫 crm_okr，要么先建同名库，要么在本机把库名换掉再导入。
+
+   只想同步"配置"、保留自己的测试数据：
+     不给全量，改用 crm_okr_config_20261013.sql（只含人员/部门/角色权限/模板/指标/审批规则），
+     但它是 data-only，需要往空库导入 + 关外键触发器，比较麻烦，不推荐。
+
+
+【第 3 步：后端跑起来】
+
+   cd Recrm\backend
+   .venv\Scripts\activate          （Mac / Linux 用： source .venv/bin/activate）
+   alembic upgrade head            （要打印 d8e9f0a1b2c3 (head)）
+   pip install -r requirements.txt （如果报缺包）
+   uvicorn app.main:app --reload --port 8000
+
+   检查 backend\.env 里的数据库连接（要指向本地库）：
+     DATABASE_URL=postgresql://crm:你的密码@127.0.0.1:5432/crm_okr
+
+   健康检查：浏览器打开 http://127.0.0.1:8000/health  →  {"status":"ok"}
+
+
+【第 4 步：前端跑起来】
+
+   cd recrm-frontend
+   npm install          ★ package-lock.json 有变化，必须重装
+   npm run dev          → 打开 http://localhost:5173
+
+   vite.config.ts 里 /api 代理指向 http://192.168.1.6:8000（你自己 10-08 提交的配置），
+   如果本机 IP 变了，改成 http://127.0.0.1:8000 即可。
+
+
+【第 5 步：怎么确认已经一致】
+
+   □ 考核模板管理：共 18 套模板
+        · 4 套已停用（直播主播/直播投手/品宣/内容制作月度「旧·9月止」）
+        · 5 套新媒体新模板为【草稿】：直播团队月度 / 品宣月度 / 设计月度 / 拓协专员月度 / 内容制作月度
+   □ 人员档案：郭雪栋 岗位 = 品宣
+   □ 考核单：共 21 张（含 #208 刘祥 第5天 已完成·合格、#210 张卓新 第3个月 已完成·合格）
+   □ KPI 周期：2026年9月（进行中）+ 2026年10月
+   □ 发起考核页：模板卡片上有【手动添加人员】按钮（今天刚上线的新功能）
+
+
+【常见坑】
+
+   · 进考核页报 500 → 本地库没跑 alembic upgrade head
+   · 界面是旧的 → 前端没 npm install / 没重启 npm run dev，浏览器没强刷（Ctrl+F5）
+   · 登录不上 → 本地库恢复后账号密码跟线上一致（超管 admin，密码见线上口径）
+   · 端口占用 → 后端换 --port 8001，同时改 vite 代理
+
+
+【安全提醒】
+   crm_okr_full_20261013.sql 含公司员工、薪资等真实数据，别外发、别传网盘；
+   同步完成后可以删掉。
