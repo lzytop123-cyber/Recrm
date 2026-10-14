@@ -2,7 +2,7 @@
 初始化种子数据：部门、权限、预置角色、管理员账号。
 用法（在 backend 目录、已激活 venv）：
   python -m app.seed
-默认管理员：admin / admin123
+默认管理员：admin / admin123（仅空库首次创建时生效；生产环境 2026-10-14 已改密，改密不会被部署覆盖）
 """
 import json
 

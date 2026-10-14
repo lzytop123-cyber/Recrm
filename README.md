@@ -84,7 +84,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 | 用户名 | 密码 |
 |--------|------|
-| admin  | admin123 |
+| admin  | 首次部署默认 admin123（登录后请立即修改，生产已改） |
 
 > 生产环境请务必修改 `.env` 中的 `SECRET_KEY`，并更换管理员密码。
 
@@ -143,7 +143,7 @@ npm run dev
 
 1. 先启动后端，再启动前端
 2. 打开 http://127.0.0.1:5173 ，应跳转到登录页
-3. 使用 `admin` / `admin123` 登录
+3. 使用管理员账号登录（首次部署默认 admin / admin123，生产环境已改密）
 4. 登录成功后进入首页看板，左侧菜单按管理员权限展示
 5. 也可在 http://127.0.0.1:8000/docs 用 `POST /api/v1/auth/login` 或 OAuth2 Authorize 验证
 
