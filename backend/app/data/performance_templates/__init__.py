@@ -37,6 +37,12 @@ FAMILY_SCOPES: dict[str, list[dict[str, str]]] = {
     "LIVE_HOST_MONTHLY": [{"department_name": "直播运营组", "job_title": "直播主播"}],
     "LIVE_ADS_MONTHLY": [{"department_name": "直播运营组", "job_title": "直播投放"}],
     "LECTURER_MONTHLY": [{"department_name": "讲师交付组", "job_title": "讲师"}],
+    # 2026-10 起《团队KPI考核表.xlsx》：岗位名即团队名（部门统一挂 新媒体运营交付中心）
+    "LIVE_TEAM_MONTHLY": [{"department_name": "新媒体运营交付中心", "job_title": "直播团队"}],
+    "BRAND_DEPT_MONTHLY": [{"department_name": "新媒体运营交付中心", "job_title": "品宣"}],
+    "DESIGN_MONTHLY": [{"department_name": "新媒体运营交付中心", "job_title": "设计"}],
+    "ASSOC_DEV_MONTHLY": [{"department_name": "新媒体运营交付中心", "job_title": "拓协专员"}],
+    "CONTENT_DEPT_MONTHLY": [{"department_name": "新媒体运营交付中心", "job_title": "内容制作"}],
 }
 
 
