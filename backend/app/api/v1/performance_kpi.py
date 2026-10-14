@@ -112,6 +112,15 @@ class MatchPersonnelMultiIn(BaseModel):
     template_ids: list[int]
 
 
+class AddablePersonnelIn(BaseModel):
+    """搜索可手动添加进本模板考核的人员（范围外，如跨团队考核）。"""
+
+    cycle_id: int
+    template_id: int
+    keyword: str = ""
+    limit: int = 20
+
+
 class BatchPersonIn(BaseModel):
     user_id: int
     selected: bool = True
@@ -211,6 +220,25 @@ def match_personnel(
     from app.services import performance_personnel_matcher as matcher
 
     return matcher.match_personnel(db, cycle_id=payload.cycle_id, template_id=payload.template_id)
+
+
+@router.post("/assessments/addable-personnel", summary="搜索可手动添加进考核的人员（范围外）")
+def addable_personnel(
+    payload: AddablePersonnelIn,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(MANAGE)],
+) -> dict:
+    """用于跨团队/跨岗位考核：搜索模板适用范围之外、可手动纳入的在职人员。"""
+    from app.services import performance_assessment_batch as batch_svc
+
+    people = batch_svc.search_addable_personnel(
+        db,
+        cycle_id=payload.cycle_id,
+        template_id=payload.template_id,
+        keyword=payload.keyword,
+        limit=payload.limit,
+    )
+    return {"people": people}
 
 
 @router.post("/assessments/match-personnel-multi", summary="按多个模板匹配考核人员")

@@ -628,3 +628,112 @@ def test_department_progress_merges_same_name_different_ids(
     assert dept["total"] == 5
     assert dept["pending_employee"] == 5
     assert set(dept["batch_ids"]) == {b1.id, b2.id}
+
+
+def _add_out_of_scope_user(db: Session, dept_id: int, mgr_id: int, name: str = "郭雪栋") -> User:
+    """部门相同、岗位不符（不在模板适用范围内）的在职人员。"""
+    u = User(
+        username=f"oosc_{name}",
+        password_hash=hash_password("x"),
+        real_name=name,
+        is_active=True,
+        department_id=dept_id,
+        job_title="品宣",
+        manager_id=mgr_id,
+        employment_status="正式",
+        hire_date=date(2025, 1, 1),
+    )
+    db.add(u)
+    db.flush()
+    matcher.seed_attendance_days(db, u.id, date(2026, 10, 1), 30)
+    db.commit()
+    return u
+
+
+def test_out_of_scope_person_can_be_manually_added(db_session: Session) -> None:
+    """跨团队考核：范围外人员作为 extra 纳入匹配，填原因后可发起。"""
+    dept, mgr, u1, _, tpl, cycle = _fixture(db_session)
+    extra = _add_out_of_scope_user(db_session, dept.id, mgr.id)
+
+    # 默认匹配：范围外的人不在名单里
+    base = matcher.match_personnel(db_session, cycle_id=cycle.id, template_id=tpl.id)
+    assert extra.id not in {p["user_id"] for p in base["people"]}
+
+    # 显式作为 extra：进入名单，标记 out_of_scope + 需手动纳入
+    with_extra = matcher.match_personnel(
+        db_session, cycle_id=cycle.id, template_id=tpl.id, extra_user_ids=[extra.id]
+    )
+    row = next(p for p in with_extra["people"] if p["user_id"] == extra.id)
+    assert row["match_status"] == "excluded"
+    assert row["reason_code"] == "out_of_scope"
+    assert row["allowed_action"] == "manual_include"
+
+    # 搜索接口：能被搜到且 addable=True；范围内的人不出现在搜索结果里
+    found = batch_svc.search_addable_personnel(
+        db_session, cycle_id=cycle.id, template_id=tpl.id, keyword="郭雪栋"
+    )
+    assert [f["user_id"] for f in found] == [extra.id] and found[0]["addable"] is True
+    in_scope_search = batch_svc.search_addable_personnel(
+        db_session, cycle_id=cycle.id, template_id=tpl.id, keyword="张明"
+    )
+    assert in_scope_search == []
+
+    # 发起：范围外人员 + 填写原因 → 成功建单
+    payload = {
+        "cycle_id": cycle.id,
+        "template_id": tpl.id,
+        "people": [
+            {"user_id": u1.id, "selected": True, "adjustment_reason": None},
+            {"user_id": extra.id, "selected": True, "adjustment_reason": "按新表同时参加品宣与内容制作考核"},
+        ],
+        **_due_chain(),
+    }
+    out = batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-extra-1")
+    ids = [a.user_id for a in db_session.query(PerformanceAssessment).filter_by(batch_id=out["id"]).all()]
+    assert extra.id in ids and u1.id in ids
+
+
+def test_out_of_scope_person_requires_reason(db_session: Session) -> None:
+    """范围外人员不填原因 → 422（必须说明为什么纳入）。"""
+    dept, mgr, _, _, tpl, cycle = _fixture(db_session)
+    extra = _add_out_of_scope_user(db_session, dept.id, mgr.id, name="刘涛涛")
+    payload = {
+        "cycle_id": cycle.id,
+        "template_id": tpl.id,
+        "people": [{"user_id": extra.id, "selected": True, "adjustment_reason": None}],
+        **_due_chain(),
+    }
+    with pytest.raises(HTTPException) as exc:
+        batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-extra-2")
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "KPI_PERSON_EXCLUDED_REASON_REQUIRED"
+
+
+def test_resigned_out_of_scope_person_cannot_be_added(db_session: Session) -> None:
+    """范围外但已离职 → blocked，不可手动纳入。"""
+    dept, mgr, _, _, tpl, cycle = _fixture(db_session)
+    gone = _add_out_of_scope_user(db_session, dept.id, mgr.id, name="离职者")
+    gone.employment_status = "离职"
+    gone.is_active = False
+    db_session.commit()
+
+    res = matcher.match_personnel(
+        db_session, cycle_id=cycle.id, template_id=tpl.id, extra_user_ids=[gone.id]
+    )
+    row = next(p for p in res["people"] if p["user_id"] == gone.id)
+    # 离职：excluded + allowed_action=none（前端不给纳入按钮）
+    assert row["match_status"] == "excluded"
+    assert row["reason_code"] == "inactive_employment"
+    assert row["allowed_action"] == "none"
+
+    payload = {
+        "cycle_id": cycle.id,
+        "template_id": tpl.id,
+        "people": [{"user_id": gone.id, "selected": True, "adjustment_reason": "想纳入"}],
+        **_due_chain(),
+    }
+    with pytest.raises(HTTPException) as exc:
+        batch_svc.create_assessment_batch(db_session, mgr, payload, idempotency_key="idem-extra-3")
+    # 即使填了原因，离职/停用人员仍被硬拦截
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "KPI_PERSON_RESIGNED"

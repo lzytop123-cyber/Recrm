@@ -197,6 +197,13 @@ def _launch_one_batch(
     _validate_deadlines(payload)
     match_result = match_personnel(db, cycle_id=cycle_id, template_id=template_id)
     by_id = _index_match(match_result)
+    # 手动添加的范围外人员（部门/岗位不符）：作为 extra 再匹配一次，走"手动纳入+必填原因"
+    extra_ids = [int(r["user_id"]) for r in people_in if int(r["user_id"]) not in by_id]
+    if extra_ids:
+        match_result = match_personnel(
+            db, cycle_id=cycle_id, template_id=template_id, extra_user_ids=extra_ids
+        )
+        by_id = _index_match(match_result)
 
     selected_ids: list[int] = []
     for idx, row in enumerate(people_in):
@@ -258,7 +265,9 @@ def _launch_one_batch(
         raise HTTPException(status_code=422, detail="至少选择1人")
 
     for uid in selected_ids:
-        again = match_personnel(db, cycle_id=cycle_id, template_id=template_id)
+        again = match_personnel(
+            db, cycle_id=cycle_id, template_id=template_id, extra_user_ids=extra_ids or None
+        )
         person = _index_match(again).get(uid)
         if person and person["match_status"] == "blocked":
             raise HTTPException(
@@ -508,6 +517,65 @@ def create_multi_assessment_batches(
         idempotent=False,
         assessment_ids_by_batch={b.id: ids for b, ids in launched},
     )
+
+
+def search_addable_personnel(
+    db: Session,
+    *,
+    cycle_id: int,
+    template_id: int,
+    keyword: str = "",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """搜索可**手动添加**进本模板考核的人员（范围外，部门/岗位不符）。
+
+    仅返回不在模板适用范围内的在职人员，附带 blocked 信息：
+    - addable=True 且 blocked_reason 为空 → 可添加（发起时必须填写原因）
+    - blocked_reason 非空（离职/停用、无主管、本周期已有同模板考核）→ 不可添加
+    """
+    from sqlalchemy import or_
+
+    kw = (keyword or "").strip()
+    q = db.query(User).filter(User.is_active.is_(True))
+    if kw:
+        like = f"%{kw}%"
+        q = q.filter(or_(User.real_name.ilike(like), User.job_title.ilike(like), User.username.ilike(like)))
+    rows = q.order_by(User.id.desc()).limit(max(1, min(limit, 50))).all()
+
+    base = match_personnel(db, cycle_id=cycle_id, template_id=template_id)
+    in_scope_ids = {int(p["user_id"]) for p in (base.get("people") or [])}
+
+    probe_ids = [u.id for u in rows if u.id not in in_scope_ids]
+    if not probe_ids:
+        return []
+    probed = match_personnel(
+        db, cycle_id=cycle_id, template_id=template_id, extra_user_ids=probe_ids
+    )
+    by_id = {int(p["user_id"]): p for p in (probed.get("people") or [])}
+
+    out: list[dict[str, Any]] = []
+    for u in rows:
+        if u.id in in_scope_ids:
+            continue  # 已在适用范围内，不需要手动添加
+        info = by_id.get(u.id) or {}
+        blocked = info.get("match_status") == "blocked"
+        reason = info.get("reason") if blocked else None
+        out.append(
+            {
+                "user_id": u.id,
+                "name": u.real_name,
+                "job_title": u.job_title,
+                "department_id": u.department_id,
+                "department_name": info.get("department_name") or info.get("department"),
+                "manager_id": u.manager_id,
+                "employment_status": u.employment_status,
+                "addable": not blocked,
+                "blocked_reason": reason,
+                "match_status": info.get("match_status"),
+                "reason_code": info.get("reason_code"),
+            }
+        )
+    return out
 
 
 def match_personnel_multi(db: Session, *, cycle_id: int, template_ids: list[int]) -> dict[str, Any]:

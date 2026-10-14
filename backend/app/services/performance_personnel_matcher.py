@@ -180,7 +180,19 @@ def _other_template_assessments_map(
     return out
 
 
-def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str, Any]:
+def match_personnel(
+    db: Session,
+    *,
+    cycle_id: int,
+    template_id: int,
+    extra_user_ids: Optional[list[int]] = None,
+) -> dict[str, Any]:
+    """按模板适用范围匹配人员。
+
+    extra_user_ids：**手动添加的范围外人员**（部门/岗位不符），
+    会以 match_status='excluded' / allowed_action='manual_include' 进入名单，
+    发起时必须填写原因；离职/停用、无主管、本周期已有同模板考核的仍被 blocked。
+    """
     cycle = db.query(PerformanceCycle).filter(PerformanceCycle.id == cycle_id).first()
     if cycle is None:
         raise HTTPException(status_code=404, detail="考核周期不存在")
@@ -229,6 +241,22 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
             if u.id not in seen_ids:
                 seen_ids.add(u.id)
                 candidates.append(u)
+
+    # 手动添加的范围外人员（部门/岗位不符）也纳入候选，便于发起时按"手动纳入+原因"处理
+    out_of_scope_ids: set[int] = set()
+    for uid in extra_user_ids or []:
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if uid in seen_ids:
+            continue
+        extra = db.query(User).filter(User.id == uid).first()
+        if extra is None:
+            continue
+        seen_ids.add(uid)
+        out_of_scope_ids.add(uid)
+        candidates.append(extra)
 
     other_by_user = _other_template_assessments_map(
         db,
@@ -286,6 +314,13 @@ def match_personnel(db: Session, *, cycle_id: int, template_id: int) -> dict[str
             match_status = "excluded"
             reason_code = "insufficient_days"
             reason = f"本月在岗{days}天，少于{min_days}天"
+            allowed_action = "manual_include"
+
+        # 手动添加的范围外人员：部门/岗位不符（无其它阻断原因时），需填原因后纳入
+        if user.id in out_of_scope_ids and match_status == "matched":
+            match_status = "excluded"
+            reason_code = "out_of_scope"
+            reason = "不在模板适用范围内（部门/岗位不符），属手动添加"
             allowed_action = "manual_include"
 
         warnings: list[dict[str, Any]] = []
