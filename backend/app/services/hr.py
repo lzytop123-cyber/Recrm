@@ -53,7 +53,12 @@ from app.models.performance import PerformanceAssessment, PerformanceCycle
 from app.models.platform import Delegation
 from app.models.project import TASK_STATUS_DONE, ProjectTask
 from app.models.schedule import SCHEDULE_ACTIVE_STATUSES, Schedule
-from app.models.ticket import TICKET_STATUS_CLOSED, TICKET_STATUS_COMPLETED, Ticket
+from app.models.ticket import (
+    TICKET_STATUS_CANCELLED,
+    TICKET_STATUS_CLOSED,
+    TICKET_STATUS_COMPLETED,
+    Ticket,
+)
 from app.models.timesheet import Timesheet
 from app.models.user import User
 from app.schemas.hr import (
@@ -548,7 +553,9 @@ def _scan_open_items(db: Session, employee_id: int) -> list[dict]:
         db.query(Ticket)
         .filter(
             Ticket.assignee_id == employee_id,
-            Ticket.status.notin_([TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED]),
+            Ticket.status.notin_(
+                [TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED, TICKET_STATUS_CANCELLED]
+            ),
         )
         .all()
     )

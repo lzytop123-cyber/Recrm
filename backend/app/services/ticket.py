@@ -1,5 +1,5 @@
 """
-工单业务逻辑：创建、分派、受理、转派、评论、完成、确认评价、关闭、退回、重开、SLA 扫描升级。
+工单业务逻辑：创建、分派、受理、转派、评论、完成、确认评价、关闭、取消、退回、重开、SLA 扫描升级。
 """
 from __future__ import annotations
 
@@ -20,10 +20,12 @@ from app.models.project import (
     ProjectTask,
 )
 from app.models.ticket import (
+    TICKET_CANCELABLE_STATUSES,
     TICKET_PRIORITIES,
     TICKET_PRIORITY_NORMAL,
     TICKET_REOPEN_BUSINESS_DAYS,
     TICKET_SLA_HOURS,
+    TICKET_STATUS_CANCELLED,
     TICKET_STATUS_CLOSED,
     TICKET_STATUS_COMPLETED,
     TICKET_STATUS_PENDING_ACCEPT,
@@ -39,6 +41,7 @@ from app.models.ticket import (
 from app.models.user import User
 from app.schemas.ticket import (
     TicketAssignRequest,
+    TicketCancelRequest,
     TicketCloseRequest,
     TicketCommentRequest,
     TicketCompleteRequest,
@@ -97,7 +100,12 @@ def _effective_now(ticket: Ticket) -> datetime:
 def _is_overdue(ticket: Ticket) -> bool:
     if not ticket.due_at:
         return False
-    if ticket.status in {TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED, TICKET_STATUS_PENDING_CONFIRM}:
+    if ticket.status in {
+        TICKET_STATUS_COMPLETED,
+        TICKET_STATUS_CLOSED,
+        TICKET_STATUS_CANCELLED,
+        TICKET_STATUS_PENDING_CONFIRM,
+    }:
         return False
     due = _aware(ticket.due_at)
     return bool(due and due < _effective_now(ticket))
@@ -116,7 +124,12 @@ def _sla_used_ratio(ticket: Ticket) -> Optional[float]:
 
 
 def _is_near_sla(ticket: Ticket) -> bool:
-    if ticket.status in {TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED, TICKET_STATUS_PENDING_CONFIRM}:
+    if ticket.status in {
+        TICKET_STATUS_COMPLETED,
+        TICKET_STATUS_CLOSED,
+        TICKET_STATUS_CANCELLED,
+        TICKET_STATUS_PENDING_CONFIRM,
+    }:
         return False
     if _is_overdue(ticket):
         return False
@@ -467,6 +480,8 @@ def _attach_action_flags(user: User, ticket: Ticket) -> None:
         TICKET_STATUS_COMPLETED,
     }
     ticket.can_return = _can_confirm(user, ticket) and ticket.status == TICKET_STATUS_PENDING_CONFIRM  # type: ignore[attr-defined]
+    # 取消不走跨部门验收审批人限制：发起人/管理员随时可取消未完结工单
+    ticket.can_cancel = _base_can_confirm(user, ticket) and ticket.status in TICKET_CANCELABLE_STATUSES  # type: ignore[attr-defined]
     ticket.can_reopen = _can_reopen(ticket) and _can_confirm(user, ticket)  # type: ignore[attr-defined]
     ticket.next_actor_hint = _next_actor_hint(ticket)  # type: ignore[attr-defined]
     from sqlalchemy.orm import object_session
@@ -718,8 +733,8 @@ def update_ticket(db: Session, user: User, ticket_id: int, payload: TicketUpdate
     assert_can_view(user, ticket)
     if ticket.creator_id != user.id and not _is_admin(user):
         raise HTTPException(status_code=403, detail="仅发起人或系统管理员可编辑")
-    if ticket.status in {TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED}:
-        raise HTTPException(status_code=400, detail="已完成/已关闭工单不可编辑")
+    if ticket.status in {TICKET_STATUS_COMPLETED, TICKET_STATUS_CLOSED, TICKET_STATUS_CANCELLED}:
+        raise HTTPException(status_code=400, detail="已完成/已关闭/已取消工单不可编辑")
 
     data = payload.model_dump(exclude_unset=True)
     if "ticket_type" in data and data["ticket_type"] not in TICKET_TYPES:
@@ -1152,6 +1167,41 @@ def close_ticket(
     return enrich_detail(db, ticket, user=user)
 
 
+def cancel_ticket(
+    db: Session, user: User, ticket_id: int, payload: TicketCancelRequest
+) -> Ticket:
+    """发起人取消工单（未验收完结前）；不做满意度，不计入正式关闭。"""
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="工单不存在")
+    assert_can_view(user, ticket)
+    if not _base_can_confirm(user, ticket):
+        raise HTTPException(status_code=403, detail="仅发起人可取消（系统管理员可应急代办）")
+    if ticket.status not in TICKET_CANCELABLE_STATUSES:
+        raise HTTPException(status_code=400, detail="仅待分派/待接收/处理中/待确认工单可取消")
+
+    from app.services import approval_flow
+
+    for biz_type in ("ticket", "ticket_cross_accept"):
+        open_inst = approval_flow.find_open_instance(db, biz_type, ticket.id)
+        if open_inst is not None:
+            approval_flow.cancel_instance(
+                db, open_inst, reason="发起人取消工单", commit=False
+            )
+
+    # 终态：清暂停标记即可，不必把暂停时长加回 due_at
+    ticket.sla_paused_at = None
+    ticket.status = TICKET_STATUS_CANCELLED
+    ticket.closed_at = _now()
+    reason = payload.reason.strip()
+    if _is_admin(user) and ticket.creator_id != user.id:
+        reason = f"[管理员代办] {reason}"
+    _add_record(db, ticket, user, "cancel", reason)
+    db.commit()
+    db.refresh(ticket)
+    return enrich_detail(db, ticket, user=user)
+
+
 def reopen_ticket(
     db: Session, user: User, ticket_id: int, payload: TicketReopenRequest
 ) -> Ticket:
@@ -1188,8 +1238,8 @@ def comment_ticket(
     if not ticket:
         raise HTTPException(status_code=404, detail="工单不存在")
     assert_can_view(user, ticket)
-    if ticket.status == TICKET_STATUS_CLOSED:
-        raise HTTPException(status_code=400, detail="已关闭工单不可评论")
+    if ticket.status in {TICKET_STATUS_CLOSED, TICKET_STATUS_CANCELLED}:
+        raise HTTPException(status_code=400, detail="已关闭/已取消工单不可评论")
     _add_record(db, ticket, user, "comment", payload.content.strip())
     db.commit()
     db.refresh(ticket)
@@ -1300,6 +1350,7 @@ def ticket_stats(db: Session, user: User) -> dict:
         ),
         "completed": sum(1 for x in all_items if x.status == TICKET_STATUS_COMPLETED),
         "closed": sum(1 for x in all_items if x.status == TICKET_STATUS_CLOSED),
+        "cancelled": sum(1 for x in all_items if x.status == TICKET_STATUS_CANCELLED),
         "overdue": sum(1 for x in all_items if getattr(x, "is_overdue", False)),
         "near_sla": sum(1 for x in all_items if getattr(x, "is_near_sla", False)),
         "mine_created": len(created),

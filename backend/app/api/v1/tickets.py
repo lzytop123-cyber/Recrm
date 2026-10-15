@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.ticket import (
     TicketAssignRequest,
+    TicketCancelRequest,
     TicketCloseRequest,
     TicketCommentRequest,
     TicketCompleteRequest,
@@ -211,6 +212,18 @@ def close_ticket(
 ) -> TicketDetailOut:
     return TicketDetailOut.model_validate(
         ticket_service.close_ticket(db, current_user, ticket_id, payload)
+    )
+
+
+@router.post("/{ticket_id}/cancel", response_model=TicketDetailOut, summary="取消工单")
+def cancel_ticket(
+    ticket_id: int,
+    payload: TicketCancelRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(PermissionChecker(["ticket:view"]))],
+) -> TicketDetailOut:
+    return TicketDetailOut.model_validate(
+        ticket_service.cancel_ticket(db, current_user, ticket_id, payload)
     )
 
 

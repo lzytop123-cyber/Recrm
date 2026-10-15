@@ -1,6 +1,6 @@
 """
 协作：工单流转。
-对齐 PRD 5.1（创建、分派、受理、转派、完成、关闭、评价、重开、SLA 提醒与升级）。
+对齐 PRD 5.1（创建、分派、受理、转派、完成、关闭、评价、取消、重开、SLA 提醒与升级）。
 """
 from datetime import datetime
 from typing import Optional
@@ -36,6 +36,7 @@ TICKET_STATUS_PROCESSING = "processing"
 TICKET_STATUS_PENDING_CONFIRM = "pending_confirm"
 TICKET_STATUS_COMPLETED = "completed"
 TICKET_STATUS_CLOSED = "closed"
+TICKET_STATUS_CANCELLED = "cancelled"
 
 TICKET_STATUSES = {
     TICKET_STATUS_PENDING_ASSIGN,
@@ -44,6 +45,15 @@ TICKET_STATUSES = {
     TICKET_STATUS_PENDING_CONFIRM,
     TICKET_STATUS_COMPLETED,
     TICKET_STATUS_CLOSED,
+    TICKET_STATUS_CANCELLED,
+}
+
+# 未验收完结前可取消的状态（不含已完成/已关闭）
+TICKET_CANCELABLE_STATUSES = {
+    TICKET_STATUS_PENDING_ASSIGN,
+    TICKET_STATUS_PENDING_ACCEPT,
+    TICKET_STATUS_PROCESSING,
+    TICKET_STATUS_PENDING_CONFIRM,
 }
 
 TICKET_PRIORITY_LOW = "low"

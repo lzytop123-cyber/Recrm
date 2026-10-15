@@ -58,6 +58,10 @@ class TicketReopenRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
 
+class TicketCancelRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class TicketReturnRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
@@ -124,6 +128,7 @@ class TicketOut(BaseModel):
     can_complete: bool = False
     can_confirm: bool = False
     can_return: bool = False
+    can_cancel: bool = False
     next_actor_hint: Optional[str] = None
 
 
@@ -144,6 +149,7 @@ class TicketStatsOut(BaseModel):
     pending_confirm: int
     completed: int
     closed: int
+    cancelled: int = 0
     overdue: int
     near_sla: int
     mine_created: int
